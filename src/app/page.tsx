@@ -2,509 +2,391 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Heart, Activity, UtensilsCrossed, Brain, GraduationCap,
-  CheckCircle2, ChevronLeft, Play, Check
+  Home, ListChecks, User, GraduationCap, Users,
+  X, Play, ChevronRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-// ===== Paleta + tipografía
-const theme = { bg: '#ffffff', text: '#111111', line: '#ececec', accent: '#ffd54f' };
+/* =========================
+   Configuración visual
+========================= */
+const COLORS = {
+  bg: '#ffffff',
+  text: '#111111',
+  line: '#ececec',
+  accent: '#FFD54F', // amarillo
+  black: '#000000',
+};
 
-function FontLoader() {
+type TabKey = 'inicio' | 'habitos' | 'mizona' | 'formacion' | 'amigos';
+
+/* =========================
+   Pensamientos (L → D)
+========================= */
+type Thought = { title: string; text: string };
+
+const THOUGHTS_BY_DAY: Record<number, Thought> = {
+  1: {
+    title: 'Visualízate',
+    text:
+      'Imagina por un momento que ya lo lograste. Si tu reto es empezar a correr, mírate dentro de unos meses cruzando la meta, rodeado de gente, con una sonrisa de orgullo por el camino recorrido. Hoy dedica 2–3 minutos a cerrar los ojos y verte consiguiendo tus objetivos.',
+  },
+  2: {
+    title: 'Un paso más',
+    text:
+      'No importa lo lejos que esté tu meta. Hoy comprométete a dar un paso pequeño: si quieres leer, abre el libro y lee 5 páginas; si quieres entrenar, haz 10 minutos. Lo pequeño de hoy se suma a lo de ayer y te acerca al mañana.',
+  },
+  3: {
+    title: 'Eres constante',
+    text:
+      'La disciplina no es perfección, es volver incluso en los días que pesan. Hoy elige una acción mínima para no romper la cadena: escribe una frase en tu diario, haz 5 flexiones o prepara una ensalada sencilla. Mantén el hilo.',
+  },
+  4: {
+    title: 'Confía en ti',
+    text:
+      'Piensa en un reto que ya superaste. Esa misma fuerza vive en ti. Hoy escribe tres cualidades tuyas que te ayudarán a conseguir tu meta y léelas cuando dudes.',
+  },
+  5: {
+    title: 'El presente cuenta',
+    text:
+      'Lo único que importa es lo que hagas hoy. Empieza con algo sencillo: guarda 1€ si tu meta es ahorrar; elige una comida sana si quieres mejorar tu salud. El cambio comienza ahora.',
+  },
+  6: {
+    title: 'Pequeñas victorias',
+    text:
+      'Celebra lo pequeño. Hoy sal a caminar 10 minutos, bebe un vaso de agua extra o envía ese mensaje pendiente. Son victorias que, sumadas, transforman tu vida.',
+  },
+  0: {
+    title: 'Reflexiona y agradece',
+    text:
+      'Mira atrás y reconoce lo que lograste esta semana. Haz una pausa, respira y agradece un momento, una persona o una acción que te haya hecho avanzar. Ese agradecimiento alimenta la motivación para empezar de nuevo mañana.',
+  },
+};
+
+function todayThought(): Thought {
+  const idx = new Date().getDay(); // 0=Domingo..6=Sábado
+  return THOUGHTS_BY_DAY[idx];
+}
+
+/* =========================
+   Hábitos destacados (Inicio)
+========================= */
+interface HabitCardData {
+  key: string;
+  title: string;
+  subtitle: string;
+  image: string; // ruta pública
+}
+
+const FEATURED_HABITS: HabitCardData[] = [
+  {
+    key: 'lectura',
+    title: 'La máquina lectora',
+    subtitle: 'Conviértete en un superlector',
+    image: '/images/reading.jpg',
+  },
+  {
+    key: 'burpees',
+    title: 'Unos f*kn burpees',
+    subtitle: 'Comienza hoy y no pares',
+    image: '/images/burpees.jpg',
+  },
+  {
+    key: 'ahorro',
+    title: 'Ahorra sin darte cuenta',
+    subtitle: 'Un hábito pequeño que cambia tu futuro',
+    image: '/images/savings.jpg',
+  },
+  {
+    key: 'meditacion',
+    title: 'Medita 5 minutos',
+    subtitle: 'Encuentra calma en tu día',
+    image: '/images/meditation.jpg',
+  },
+];
+
+/* =========================
+   Componentes
+========================= */
+
+function SafeContainer({ children }: { children: React.ReactNode }) {
   return (
-    <style>{`
-      @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
-      * { font-family: 'Poppins', sans-serif; }
-      body { background:${theme.bg}; color:${theme.text}; }
-    `}</style>
+    <div className="mx-auto w-full max-w-md px-4" style={{ paddingBottom: 'calc(72px + env(safe-area-inset-bottom, 0px))' }}>
+      {children}
+    </div>
   );
 }
 
-// ===== Programas (demo)
-const PROGRAMS = {
-  smoke_quit_21: {
-    id: 'smoke_quit_21',
-    pillar: 'Hábitos',
-    title: 'Dejar de fumar (21 días)',
-    cover: 'https://images.unsplash.com/photo-1517260917478-4524462bca31?q=80&w=1200&auto=format&fit=crop',
-    duration: 21,
-    intro:
-      'Plan guiado paso a paso para sustituir el hábito, gestionar ansiedad y construir identidad libre de tabaco.',
-    days: Array.from({ length: 21 }).map((_, i) => {
-      const d = i + 1;
-      const stepsByDay: Record<number, string[]> = {
-        1: ['Define tu porqué (2 líneas).', 'Registra los cigarrillos de hoy sin cambiar nada.'],
-        2: ['Elige sustituto (chicle/agua/respiración 4-7-8).', 'Retrasa el primer cigarro 10 min.'],
-        3: ['Identifica disparadores (café/estrés).', 'Cambia 1 disparador por paseo 3’.'],
-        7: ['Mini-meta: mañana 25% menos.', 'Prepara snacks saludables.'],
-        14: ['Escribe 3 beneficios notados.', 'Doble hidratación hoy.'],
-        21: ['Día sin fumar.', 'Plan de mantenimiento para recaídas.'],
-      };
-      const steps = stepsByDay[d] || [
-        'Repite sustituto cuando aparezca el impulso.',
-        'Registro breve: hora + situación + emoción.',
-      ];
-      const tipPool = [
-        'Respiración 4-7-8: 4s inhala, 7s sostén, 8s exhala.',
-        'Agua fría reduce el ansia en ~2 min.',
-        'Muévete 60–120s: cambia el estado del cuerpo.',
-      ];
-      return { day: d, steps, tip: tipPool[i % tipPool.length] };
-    }),
-  },
-  train_from_zero_14: {
-    id: 'train_from_zero_14',
-    pillar: 'Training',
-    title: 'Entreno desde 0 (14 días)',
-    cover:
-      'https://images.unsplash.com/photo-1517963628607-235ccdd5476b?q=80&w=1200&auto=format&fit=crop',
-    duration: 14,
-    intro: 'Rutinas de 10–15 min: movilidad + fuerza básica en casa.',
-  },
-};
-
-const sections = [
-  {
-    title: 'Hábitos',
-    items: [
-      {
-        title: 'Constancia de corredor',
-        img: 'https://images.unsplash.com/photo-1552674605-db6ffd4facb5?q=80&w=800&auto=format&fit=crop',
-      },
-      { title: 'Dejar de fumar', img: PROGRAMS.smoke_quit_21.cover, programId: 'smoke_quit_21' },
-      {
-        title: 'Go Vegan',
-        img: 'https://images.unsplash.com/photo-1490645935967-10de6ba17061?q=80&w=800&auto=format&fit=crop',
-      },
-    ],
-  },
-  {
-    title: 'Training',
-    items: [
-      {
-        title: 'Entreno desde 0',
-        img: PROGRAMS.train_from_zero_14.cover,
-        programId: 'train_from_zero_14',
-      },
-      {
-        title: 'Plan mensual',
-        img: 'https://images.unsplash.com/photo-1576678927484-cc907957088c?q=80&w=800&auto=format&fit=crop',
-      },
-      {
-        title: 'Elige extraordinario',
-        img: 'https://images.unsplash.com/photo-1534367610401-9f51f0b2dd0e?q=80&w=800&auto=format&fit=crop',
-      },
-    ],
-  },
-  {
-    title: 'Alimentación',
-    items: [
-      {
-        title: 'Menú semanal',
-        img: 'https://images.unsplash.com/photo-1504754524776-8f4f37790ca0?q=80&w=800&auto=format&fit=crop',
-      },
-      {
-        title: 'Recetas',
-        img: 'https://images.unsplash.com/photo-1482049016688-2d3e1b311543?q=80&w=800&auto=format&fit=crop',
-      },
-      {
-        title: 'Planifica tu menú',
-        img: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?q=80&w=800&auto=format&fit=crop',
-      },
-    ],
-  },
-];
-
-const tabs = [
-  { key: 'inicio', label: 'Hábitos', icon: Heart },
-  { key: 'training', label: 'Training', icon: Activity },
-  { key: 'food', label: 'Alimentación', icon: UtensilsCrossed },
-  { key: 'mind', label: 'Desarrollo', icon: Brain },
-  { key: 'academy', label: 'Formación', icon: GraduationCap },
-];
-
-const loadProgress = (id: string) => {
-  try {
-    return JSON.parse(localStorage.getItem(`prog_${id}`) || 'null');
-  } catch {
-    return null;
-  }
-};
-const saveProgress = (id: string, data: any) => {
-  try {
-    localStorage.setItem(`prog_${id}`, JSON.stringify(data));
-  } catch {}
-};
-
-function BottomTab({
+function BottomNav({
   active,
   onChange,
 }: {
-  active: string;
-  onChange: (k: string) => void;
+  active: TabKey;
+  onChange: (k: TabKey) => void;
 }) {
+  const items: { key: TabKey; label: string; icon: React.ElementType }[] = [
+    { key: 'inicio', label: 'Inicio', icon: Home },
+    { key: 'habitos', label: 'Hábitos', icon: ListChecks },
+    { key: 'mizona', label: 'Mi Zona', icon: User },
+    { key: 'formacion', label: 'Formación', icon: GraduationCap },
+    { key: 'amigos', label: 'Amigos', icon: Users },
+  ];
+
   return (
     <div
-      className="fixed bottom-0 inset-x-0 z-20 border-t"
-      style={{ background: theme.accent, borderColor: '#0000001a' }}
+      className="fixed inset-x-0 bottom-0 z-30 border-t"
+      style={{ background: COLORS.accent, borderColor: '#00000014', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
     >
-      <div className="mx-auto max-w-md grid grid-cols-5">
-        {tabs.map(({ key, label, icon: Icon }) => (
-          <button
-            key={key}
-            onClick={() => onChange(key)}
-            className={`flex flex-col items-center justify-center py-2 text-[11px] ${
-              active === key ? 'opacity-100' : 'opacity-80'
-            }`}
-          >
-            <div
-              className={`h-8 w-8 rounded-xl flex items-center justify-center ${
-                active === key ? 'bg-black text-white' : 'text-black'
-              }`}
+      <div className="mx-auto grid max-w-md grid-cols-5">
+        {items.map(({ key, label, icon: Icon }) => {
+          const isActive = key === active;
+          const isMiZona = key === 'mizona' && isActive;
+          return (
+            <button
+              key={key}
+              onClick={() => onChange(key)}
+              className="flex flex-col items-center justify-center py-2 text-[11px]"
+              style={{ paddingInline: 6 }}
             >
-              <Icon className="h-5 w-5" />
-            </div>
-            <span className="mt-1 leading-none text-black">{label}</span>
-          </button>
-        ))}
+              <div
+                className="flex h-8 w-8 items-center justify-center rounded-xl"
+                style={{
+                  background: isMiZona ? COLORS.black : isActive ? COLORS.black : 'transparent',
+                  color: isMiZona ? '#fff' : isActive ? '#fff' : COLORS.text,
+                }}
+              >
+                <Icon className="h-5 w-5" />
+              </div>
+              <span
+                className="mt-1 leading-none"
+                style={{ color: isMiZona ? '#fff' : COLORS.text }}
+              >
+                {label}
+              </span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
 }
 
-function ProgressStreak({ days = 5, goal = 21 }: { days?: number; goal?: number }) {
-  const pct = Math.min(100, Math.round((days / goal) * 100));
-  return (
-    <div
-      className="w-full rounded-2xl border p-3 bg-white/80"
-      style={{ borderColor: theme.line }}
-    >
-      <div className="flex items-center justify-between text-sm">
-        <div className="flex items-center gap-2 font-medium">
-          <CheckCircle2 className="h-4 w-4" />
-          <span>Racha: {days} días</span>
-        </div>
-        <span className="text-black/60">Objetivo: {goal} días</span>
-      </div>
-      <div className="mt-2 h-2 w-full overflow-hidden rounded-full" style={{ background: '#0000001a' }}>
-        <div className="h-full transition-all" style={{ width: `${pct}%`, background: theme.text }} />
-      </div>
-    </div>
-  );
-}
-
-function Section({
-  title,
-  items,
-  onOpenProgram,
+function ThoughtModal({
+  open,
+  onClose,
+  thought,
 }: {
-  title: string;
-  items: any[];
-  onOpenProgram: (id: string) => void;
+  open: boolean;
+  onClose: () => void;
+  thought: Thought;
 }) {
   return (
-    <div className="mt-6">
-      <h3 className="text-sm font-semibold text-black/80 mb-3">{title}</h3>
-      <div className="grid grid-cols-3 gap-3">
-        {items.map((it, i) => (
-          <motion.button
-            key={i}
-            whileTap={{ scale: 0.98 }}
-            whileHover={{ y: -2 }}
-            className="group overflow-hidden rounded-xl border bg-white shadow-sm"
-            style={{ borderColor: theme.line }}
-            onClick={() =>
-              it.programId ? onOpenProgram(it.programId) : alert(`${title} → ${it.title}`)
-            }
-          >
-            <div className="aspect-square w-full overflow-hidden">
-              <img
-                src={it.img}
-                alt={it.title}
-                className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-              />
-            </div>
-            <div className="px-2 py-2 text-[11px] text-black/80 text-left truncate">{it.title}</div>
-          </motion.button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ProgramHeader({ title, onBack }: { title: string; onBack: () => void }) {
-  return (
-    <div className="flex items-center gap-3">
-      <button className="h-9 w-9 rounded-xl bg-black text-white flex items-center justify-center" onClick={onBack}>
-        <ChevronLeft className="h-5 w-5" />
-      </button>
-      <h2 className="text-xl font-semibold">{title}</h2>
-    </div>
-  );
-}
-
-function TodayCard({
-  day,
-  total,
-  tip,
-  steps,
-  done,
-  onToggleStep,
-  onCompleteDay,
-}: {
-  day: number;
-  total: number;
-  tip: string;
-  steps: string[];
-  done: boolean[];
-  onToggleStep: (i: number) => void;
-  onCompleteDay: () => void;
-}) {
-  return (
-    <div className="mt-4 p-4 rounded-2xl bg-white border" style={{ borderColor: theme.line }}>
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-sm text-black/60">Hoy</div>
-          <div className="text-lg font-semibold">
-            Día {day} / {total}
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+        >
+          <div className="flex h-full items-center justify-center p-6">
+            <motion.div
+              className="relative w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl"
+              initial={{ scale: 0.95, opacity: 0, y: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 10 }}
+            >
+              <button
+                onClick={onClose}
+                className="absolute right-3 top-3 rounded-full p-1 text-black/70 hover:bg-black/5"
+                aria-label="Cerrar"
+              >
+                <X className="h-5 w-5" />
+              </button>
+              <h3 className="mb-2 text-xl font-semibold">{thought.title}</h3>
+              <p className="whitespace-pre-line text-sm text-black/70">{thought.text}</p>
+            </motion.div>
           </div>
-        </div>
-        <div className="text-xs bg-black text-white rounded-full px-2 py-1">Consejo</div>
-      </div>
-      <p className="mt-2 text-sm text-black/70">{tip}</p>
-
-      <div className="mt-3 space-y-2">
-        {steps.map((s, i) => (
-          <button
-            key={i}
-            onClick={() => onToggleStep(i)}
-            className={`w-full flex items-center gap-3 p-3 rounded-xl border transition ${
-              done[i] ? 'bg-green-50 border-green-200' : 'bg-white hover:bg-neutral-50'
-            }`}
-            style={{ borderColor: done[i] ? '#a7f3d0' : theme.line }}
-          >
-            <div
-              className={`h-6 w-6 rounded-md flex items-center justify-center ${
-                done[i] ? 'bg-green-500 text-white' : 'bg-black/5'
-              }`}
-            >
-              {done[i] ? <Check className="h-4 w-4" /> : null}
-            </div>
-            <span className="text-sm text-left">{s}</span>
-          </button>
-        ))}
-      </div>
-
-      <button
-        onClick={onCompleteDay}
-        className="mt-4 w-full flex items-center justify-center gap-2 rounded-xl py-3 text-white font-medium"
-        style={{ background: done.every(Boolean) ? '#16a34a' : theme.text, opacity: done.every(Boolean) ? 1 : 0.9 }}
-      >
-        <Play className="h-4 w-4" /> Marcar día como completado
-      </button>
-    </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 
-function ProgramView({ program, onBack }: { program: any; onBack: () => void }) {
-  const stored = loadProgress(program.id);
-  const [day, setDay] = useState<number>(stored?.day || 1);
-  const today = useMemo(() => program.days?.[day - 1], [program, day]);
-  const [done, setDone] = useState<boolean[]>(
-    stored?.done || (today ? today.steps.map(() => false) : [])
+function HabitCard({
+  data,
+  onStart,
+}: {
+  data: HabitCardData;
+  onStart: (key: string) => void;
+}) {
+  return (
+    <motion.div
+      whileHover={{ y: -2 }}
+      className="relative overflow-hidden rounded-2xl"
+      style={{ border: `1px solid ${COLORS.line}` }}
+    >
+      <img
+        src={data.image}
+        alt={data.title}
+        className="h-[180px] w-full object-cover"
+        loading="lazy"
+      />
+      <div className="absolute inset-0 bg-gradient-to-t from-black/55 to-black/0" />
+      <div className="absolute inset-0 flex flex-col justify-end p-4">
+        <div className="text-white/90 text-xs">{data.subtitle}</div>
+        <div className="text-white text-2xl font-extrabold leading-tight">{data.title}</div>
+        <button
+          onClick={() => onStart(data.key)}
+          className="mt-3 inline-flex items-center gap-2 self-start rounded-full bg-white/95 px-4 py-2 text-sm font-medium text-black hover:bg-white"
+        >
+          <Play className="h-4 w-4" />
+          Empezar ahora
+        </button>
+      </div>
+    </motion.div>
   );
+}
 
+/* =========================
+   Página principal
+========================= */
+
+export default function Page() {
+  const [tab, setTab] = useState<TabKey>('inicio');
+
+  // Splash 1.5s
+  const [showSplash, setShowSplash] = useState(true);
   useEffect(() => {
-    if (today) setDone(today.steps.map(() => false));
-  }, [day]);
+    const t = setTimeout(() => setShowSplash(false), 1500);
+    return () => clearTimeout(t);
+  }, []);
 
+  // Pensamiento del día (persistencia por fecha)
+  const t = useMemo(() => todayThought(), []);
+  const [openThought, setOpenThought] = useState(false);
   useEffect(() => {
-    saveProgress(program.id, { day, done });
-  }, [program.id, day, done]);
+    if (showSplash) return;
+    const key = `thought_${new Date().toDateString()}`;
+    const dismissed = localStorage.getItem(key);
+    if (!dismissed) {
+      setOpenThought(true);
+      localStorage.setItem(key, 'shown'); // para que no se vuelva a abrir solo
+    }
+  }, [showSplash]);
 
-  if (!today) {
+  if (showSplash) {
     return (
-      <div className="pt-6">
-        <ProgramHeader title={program.title} onBack={onBack} />
-        <div className="mt-6 p-4 rounded-2xl bg-white border text-center" style={{ borderColor: theme.line }}>
-          <div className="text-xl font-semibold">¡Programa completado! 🎉</div>
-          <p className="text-sm text-black/70 mt-2">
-            Has terminado los {program.duration} días. Define un plan de mantenimiento semanal.
-          </p>
-          <button onClick={onBack} className="mt-4 rounded-xl px-4 py-2 bg-black text-white">
-            Volver
-          </button>
-        </div>
+      <div className="flex min-h-screen items-center justify-center" style={{ background: COLORS.accent }}>
+        {/* Splash con tu imagen exacta */}
+        <img
+          src="/images/splash.jpg"
+          alt="Build your habits"
+          className="h-screen w-screen object-cover"
+        />
       </div>
     );
   }
 
   return (
-    <div className="pt-6">
-      <ProgramHeader title={program.title} onBack={onBack} />
-      <div className="mt-4 rounded-2xl overflow-hidden border" style={{ borderColor: theme.line }}>
-        <img src={program.cover} alt={program.title} className="h-40 w-full object-cover" />
-      </div>
-      <p className="mt-3 text-sm text-black/70">{program.intro}</p>
-
-      <TodayCard
-        day={day}
-        total={program.duration}
-        tip={today.tip}
-        steps={today.steps}
-        done={done}
-        onToggleStep={(i) => setDone((d) => d.map((v, idx) => (idx === i ? !v : v)))}
-        onCompleteDay={() => setDay((d) => Math.min(program.duration + 1, d + 1))}
-      />
-      <div className="mt-3 text-center text-xs text-black/50">
-        Progreso guardado en este navegador.
-      </div>
-    </div>
-  );
-}
-
-export default function Page() {
-  const [active, setActive] = useState('inicio');
-  const [openProgramId, setOpenProgramId] = useState<string | null>(null);
-  const program = openProgramId ? (PROGRAMS as any)[openProgramId] : null;
-
-  return (
-    <div className="min-h-screen" style={{ background: theme.bg, color: theme.text }}>
-      <FontLoader />
-      <div className="mx-auto max-w-md pb-24 px-4 pt-10">
-        {!program && (
-          <>
-            <div className="text-center">
-              <h1 className="text-lg font-semibold">Pensamiento del día</h1>
-              <p className="mt-1 text-sm text-black/70">
-                ¿Qué diferencia hay entre una persona proactiva y reactiva?
-              </p>
+    <div className="min-h-screen" style={{ background: COLORS.bg, color: COLORS.text }}>
+      <SafeContainer>
+        {tab === 'inicio' && (
+          <div className="py-6">
+            {/* Cabecera */}
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h1 className="text-lg font-semibold">Pensamiento del día</h1>
+                <p className="text-xs text-black/60">
+                  {t.title}: toca para leerlo de nuevo
+                </p>
+              </div>
+              <button
+                onClick={() => setOpenThought(true)}
+                className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white"
+              >
+                Ver pensamiento
+              </button>
             </div>
-            <div className="mt-5">
-              <ProgressStreak days={5} goal={21} />
-            </div>
-          </>
-        )}
 
-        <AnimatePresence mode="wait">
-          {!program && active === 'inicio' && (
-            <motion.div
-              key="inicio"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-            >
-              {sections.map((s) => (
-                <Section
-                  key={s.title}
-                  title={s.title}
-                  items={s.items}
-                  onOpenProgram={setOpenProgramId}
+            {/* Cards de hábitos */}
+            <div className="space-y-4">
+              {FEATURED_HABITS.slice(0, 4).map((h) => (
+                <HabitCard
+                  key={h.key}
+                  data={h}
+                  onStart={(key) => alert(`Abrir programa: ${key}`)}
                 />
               ))}
-            </motion.div>
-          )}
+            </div>
 
-          {!program && active === 'training' && (
-            <motion.div
-              key="training"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="pt-6"
+            {/* CTA final tipo Nike */}
+            <div
+              className="mt-6 overflow-hidden rounded-2xl border bg-white"
+              style={{ borderColor: COLORS.line }}
             >
-              <h2 className="text-xl font-semibold">Training</h2>
-              <p className="text-black/70 mt-2 text-sm">Elige un programa.</p>
-              <Section
-                title="Recomendados"
-                items={sections[1].items}
-                onOpenProgram={setOpenProgramId}
-              />
-            </motion.div>
-          )}
-
-          {!program && active === 'food' && (
-            <motion.div
-              key="food"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="pt-6"
-            >
-              <h2 className="text-xl font-semibold">Alimentación</h2>
-              <p className="text-black/70 mt-2 text-sm">Planifica tus menús y recetas.</p>
-              <Section
-                title="Empieza aquí"
-                items={sections[2].items}
-                onOpenProgram={setOpenProgramId}
-              />
-            </motion.div>
-          )}
-
-          {!program && active === 'mind' && (
-            <motion.div
-              key="mind"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="pt-6"
-            >
-              <h2 className="text-xl font-semibold">Desarrollo personal</h2>
-              <ul className="mt-3 space-y-2 text-sm text-black/80">
-                <li className="p-3 rounded-xl bg-white border" style={{ borderColor: theme.line }}>
-                  21 días de meditación guiada
-                </li>
-                <li className="p-3 rounded-xl bg-white border" style={{ borderColor: theme.line }}>
-                  Diario de gratitud
-                </li>
-                <li className="p-3 rounded-xl bg-white border" style={{ borderColor: theme.line }}>
-                  Detox de redes
-                </li>
-              </ul>
-            </motion.div>
-          )}
-
-          {!program && active === 'academy' && (
-            <motion.div
-              key="academy"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="pt-6"
-            >
-              <h2 className="text-xl font-semibold">Formación</h2>
-              <p className="text-black/70 mt-2 text-sm">
-                Cursos cortos por pilares: Salud, Bienestar emocional, Finanzas.
-              </p>
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                {[
-                  'Hábitos atómicos: resumen práctico',
-                  'Finanzas personales: 0 → 1',
-                  'Sueño: guía express',
-                  'Nutrición sin líos',
-                ].map((t) => (
-                  <button
-                    key={t}
-                    className="p-3 text-left rounded-xl bg-white border shadow-sm hover:-translate-y-0.5 transition"
-                    style={{ borderColor: theme.line }}
-                  >
-                    <div className="text-sm font-medium">{t}</div>
-                    <div className="text-[11px] text-black/60 mt-1">Lección 5–8 min</div>
-                  </button>
-                ))}
+              <div className="p-5">
+                <div className="mb-3 text-2xl font-bold leading-snug">
+                  ¿Listo para más? <br /> Descubre todos los hábitos
+                </div>
+                <button
+                  onClick={() => setTab('habitos')}
+                  className="inline-flex items-center gap-2 rounded-full bg-black px-5 py-3 text-white"
+                >
+                  Ver hábitos <ChevronRight className="h-4 w-4" />
+                </button>
               </div>
-            </motion.div>
-          )}
+            </div>
+          </div>
+        )}
 
-          {program && (
-            <motion.div key={program.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <ProgramView program={program} onBack={() => setOpenProgramId(null)} />
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+        {tab === 'habitos' && (
+          <div className="py-6">
+            <h2 className="text-xl font-semibold">Hábitos</h2>
+            <p className="mt-1 text-sm text-black/70">
+              Explora programas para instaurar o eliminar hábitos.
+            </p>
+            {/* Aquí listaremos categorías y programas reales */}
+            <div className="mt-4 grid grid-cols-1 gap-4">
+              {FEATURED_HABITS.map((h) => (
+                <HabitCard
+                  key={h.key}
+                  data={h}
+                  onStart={(key) => alert(`Abrir programa: ${key}`)}
+                />
+              ))}
+            </div>
+          </div>
+        )}
 
-      <BottomTab active={active} onChange={setActive} />
+        {tab === 'mizona' && (
+          <div className="py-6">
+            <h2 className="text-xl font-semibold">Mi Zona</h2>
+            <p className="mt-1 text-sm text-black/70">Tu progreso, rachas y objetivos.</p>
+          </div>
+        )}
+
+        {tab === 'formacion' && (
+          <div className="py-6">
+            <h2 className="text-xl font-semibold">Formación</h2>
+            <p className="mt-1 text-sm text-black/70">
+              Cursos cortos por pilares: Salud, Bienestar emocional y Finanzas.
+            </p>
+          </div>
+        )}
+
+        {tab === 'amigos' && (
+          <div className="py-6">
+            <h2 className="text-xl font-semibold">Amigos</h2>
+            <p className="mt-1 text-sm text-black/70">Comparte retos y rachas con tu gente.</p>
+          </div>
+        )}
+      </SafeContainer>
+
+      <BottomNav active={tab} onChange={setTab} />
+
+      {/* Modal Pensamiento */}
+      <ThoughtModal open={openThought} onClose={() => setOpenThought(false)} thought={t} />
     </div>
   );
 }
