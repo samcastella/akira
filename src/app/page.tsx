@@ -3,7 +3,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import {
-  Home, ListChecks, User, GraduationCap, Users, X, ChevronRight, ChevronDown, ChevronUp, ArrowLeft,
+  Home,
+  ListChecks,
+  User,
+  GraduationCap,
+  Users,
+  X,
+  ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  ArrowLeft,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Archivo_Black } from 'next/font/google';
@@ -31,13 +40,34 @@ type TabKey = 'inicio' | 'habitos' | 'mizona' | 'formacion' | 'amigos';
 type Thought = { title: string; text: string };
 
 const THOUGHTS_BY_DAY: Record<number, Thought> = {
-  1: { title: 'Visualízate', text: 'Imagina por un momento que ya lo lograste. Si tu reto es empezar a correr, mírate dentro de unos meses cruzando la meta... Hoy dedica 2–3 minutos a cerrar los ojos y verte consiguiendo tus objetivos.' },
-  2: { title: 'Un paso más', text: 'No importa lo lejos que esté tu meta. Hoy comprométete a dar un paso pequeño: 5 páginas de lectura o 10 minutos de entreno.' },
-  3: { title: 'Eres constante', text: 'La disciplina es volver incluso en los días que pesan. Elige una acción mínima para no romper la cadena.' },
-  4: { title: 'Confía en ti', text: 'Piensa en un reto que ya superaste. Escribe tres cualidades tuyas que te ayudarán a conseguir tu meta.' },
-  5: { title: 'El presente cuenta', text: 'Empieza con algo sencillo hoy: guarda 1€ o elige una comida sana. El cambio comienza ahora.' },
-  6: { title: 'Pequeñas victorias', text: 'Camina 10 minutos, bebe un vaso de agua extra o envía ese mensaje pendiente. Suma victorias.' },
-  0: { title: 'Reflexiona y agradece', text: 'Reconoce lo logrado esta semana. Respira y agradece una acción que te hizo avanzar.' },
+  1: {
+    title: 'Visualízate',
+    text: 'Imagina por un momento que ya lo lograste. Si tu reto es empezar a correr, mírate dentro de unos meses cruzando la meta... Hoy dedica 2–3 minutos a cerrar los ojos y verte consiguiendo tus objetivos.',
+  },
+  2: {
+    title: 'Un paso más',
+    text: 'No importa lo lejos que esté tu meta. Hoy comprométete a dar un paso pequeño: 5 páginas de lectura o 10 minutos de entreno.',
+  },
+  3: {
+    title: 'Eres constante',
+    text: 'La disciplina es volver incluso en los días que pesan. Elige una acción mínima para no romper la cadena.',
+  },
+  4: {
+    title: 'Confía en ti',
+    text: 'Piensa en un reto que ya superaste. Escribe tres cualidades tuyas que te ayudarán a conseguir tu meta.',
+  },
+  5: {
+    title: 'El presente cuenta',
+    text: 'Empieza con algo sencillo hoy: guarda 1€ o elige una comida sana. El cambio comienza ahora.',
+  },
+  6: {
+    title: 'Pequeñas victorias',
+    text: 'Camina 10 minutos, bebe un vaso de agua extra o envía ese mensaje pendiente. Suma victorias.',
+  },
+  0: {
+    title: 'Reflexiona y agradece',
+    text: 'Reconoce lo logrado esta semana. Respira y agradece una acción que te hizo avanzar.',
+  },
 };
 
 const todayThought = () => THOUGHTS_BY_DAY[new Date().getDay()];
@@ -70,29 +100,139 @@ const READING_PROGRAM: ProgramDef = {
   ],
   days: [
     // Semana 1
-    { tasks: ['Ve a una librería y elige un libro ≤ 200–300 páginas.', 'Colócalo en un lugar visible.', 'Define hora/lugar y pon una alarma diaria.'] },    // Día 1
-    { tasks: ['Lee 1 página.', 'Escribe por qué elegiste ese libro.', 'Haz una foto de tu rincón de lectura.'] },                                         // Día 2
-    { tasks: ['Lee 1–5 páginas (si lees más, genial).', 'Prepara tu ritual (café, té, luz).', 'Marca una frase que te inspire.'] },                      // Día 3
-    { tasks: ['Lee 1–5 páginas.', 'Lee en voz alta un párrafo.', 'Escribe una frase sobre lo que sentiste.'] },                                         // Día 4
-    { tasks: ['Lee 1–5 páginas en un lugar distinto.', 'Apunta una idea clave.', 'Cuéntaselo a alguien.'] },                                           // Día 5
-    { tasks: ['Lee 1–5 páginas.', 'Evalúa tu concentración (1–5).', 'Ajusta la hora si no encaja.'] },                                                  // Día 6
-    { tasks: ['Lee 1–5 páginas.', 'Relee tus notas o frases marcadas.', 'Celebra la primera semana.'] },                                               // Día 7
+    {
+      tasks: [
+        'Ve a una librería y elige un libro ≤ 200–300 páginas.',
+        'Colócalo en un lugar visible.',
+        'Define hora/lugar y pon una alarma diaria.',
+      ],
+    }, // Día 1
+    {
+      tasks: [
+        'Lee 1 página.',
+        'Escribe por qué elegiste ese libro.',
+        'Haz una foto de tu rincón de lectura.',
+      ],
+    }, // Día 2
+    {
+      tasks: [
+        'Lee 1–5 páginas (si lees más, genial).',
+        'Prepara tu ritual (café, té, luz).',
+        'Marca una frase que te inspire.',
+      ],
+    }, // Día 3
+    {
+      tasks: [
+        'Lee 1–5 páginas.',
+        'Lee en voz alta un párrafo.',
+        'Escribe una frase sobre lo que sentiste.',
+      ],
+    }, // Día 4
+    {
+      tasks: [
+        'Lee 1–5 páginas en un lugar distinto.',
+        'Apunta una idea clave.',
+        'Cuéntaselo a alguien.',
+      ],
+    }, // Día 5
+    {
+      tasks: [
+        'Lee 1–5 páginas.',
+        'Evalúa tu concentración (1–5).',
+        'Ajusta la hora si no encaja.',
+      ],
+    }, // Día 6
+    {
+      tasks: [
+        'Lee 1–5 páginas.',
+        'Relee tus notas o frases marcadas.',
+        'Celebra la primera semana.',
+      ],
+    }, // Día 7
     // Semana 2
-    { tasks: ['Lee 5 páginas.', 'Apunta 1 frase aplicable hoy.', 'Compártela con alguien.'] },                                                         // 8
-    { tasks: ['Lee 6 páginas.', 'Asocia lectura a otro hábito (después de desayunar).', 'Escribe lo más útil del día.'] },                              // 9
-    { tasks: ['Lee 6–7 páginas.', 'Marca 2 aprendizajes clave.', 'Recompénsate con algo sencillo.'] },                                                 // 10
-    { tasks: ['Lee 7 páginas.', 'Comparte lo más interesante con un amigo.', 'Haz check en tu racha.'] },                                              // 11
-    { tasks: ['Lee 8 páginas.', 'Marca una idea aplicable hoy.', 'Ponla en práctica.'] },                                                              // 12
-    { tasks: ['Lee 8–9 páginas.', 'Escribe una reflexión de 2 frases.', 'Haz una foto del libro y compártela.'] },                                     // 13
-    { tasks: ['Lee 10 páginas en tu lugar favorito.', 'Balance de semana: ¿qué aprendiste?', 'Recompénsate.'] },                                       // 14
+    {
+      tasks: ['Lee 5 páginas.', 'Apunta 1 frase aplicable hoy.', 'Compártela con alguien.'],
+    }, // 8
+    {
+      tasks: [
+        'Lee 6 páginas.',
+        'Asocia lectura a otro hábito (después de desayunar).',
+        'Escribe lo más útil del día.',
+      ],
+    }, // 9
+    {
+      tasks: [
+        'Lee 6–7 páginas.',
+        'Marca 2 aprendizajes clave.',
+        'Recompénsate con algo sencillo.',
+      ],
+    }, // 10
+    {
+      tasks: [
+        'Lee 7 páginas.',
+        'Comparte lo más interesante con un amigo.',
+        'Haz check en tu racha.',
+      ],
+    }, // 11
+    {
+      tasks: ['Lee 8 páginas.', 'Marca una idea aplicable hoy.', 'Ponla en práctica.'],
+    }, // 12
+    {
+      tasks: [
+        'Lee 8–9 páginas.',
+        'Escribe una reflexión de 2 frases.',
+        'Haz una foto del libro y compártela.',
+      ],
+    }, // 13
+    {
+      tasks: [
+        'Lee 10 páginas en tu lugar favorito.',
+        'Balance de semana: ¿qué aprendiste?',
+        'Recompénsate.',
+      ],
+    }, // 14
     // Semana 3
-    { tasks: ['Escribe: “Soy el tipo de persona que lee cada día”.', 'Lee 10 páginas.', 'Habla con alguien de tu hábito.'] },                           // 15
-    { tasks: ['Elige tu próxima lectura.', 'Lee 11 páginas.', 'Haz una story con tu frase favorita.'] },                                                // 16
-    { tasks: ['Lee 12 páginas.', 'Mini-resumen (3–4 frases).', 'Meta: terminar libro en X días.'] },                                                   // 17
-    { tasks: ['Lee 12–13 páginas.', 'Marca 2 ideas prácticas.', 'Aplica 1 hoy mismo.'] },                                                              // 18
-    { tasks: ['Lee 13 páginas.', 'Cuenta a alguien qué estás aprendiendo.', 'Refuerza tu identidad lectora.'] },                                       // 19
-    { tasks: ['Lee 14 páginas.', 'Repasa todas tus notas.', 'Elige la idea más transformadora.'] },                                                     // 20
-    { tasks: ['Lee 15 páginas o termina el libro.', 'Balance final del reto.', 'Comparte tu logro y planifica el siguiente libro.'] },                 // 21
+    {
+      tasks: [
+        'Escribe: “Soy el tipo de persona que lee cada día”.',
+        'Lee 10 páginas.',
+        'Habla con alguien de tu hábito.',
+      ],
+    }, // 15
+    {
+      tasks: [
+        'Elige tu próxima lectura.',
+        'Lee 11 páginas.',
+        'Haz una story con tu frase favorita.',
+      ],
+    }, // 16
+    {
+      tasks: ['Lee 12 páginas.', 'Mini-resumen (3–4 frases).', 'Meta: terminar libro en X días.'],
+    }, // 17
+    {
+      tasks: ['Lee 12–13 páginas.', 'Marca 2 ideas prácticas.', 'Aplica 1 hoy mismo.'],
+    }, // 18
+    {
+      tasks: [
+        'Lee 13 páginas.',
+        'Cuenta a alguien qué estás aprendiendo.',
+        'Refuerza tu identidad lectora.',
+      ],
+    }, // 19
+    {
+      tasks: [
+        'Lee 14 páginas.',
+        'Repasa todas tus notas.',
+        'Elige la idea más transformadora.',
+      ],
+    }, // 20
+    {
+      tasks: [
+        'Lee 15 páginas o termina el libro.',
+        'Balance final del reto.',
+        'Comparte tu logro y planifica el siguiente libro.',
+      ],
+    }, // 21
   ],
 };
 
@@ -103,8 +243,8 @@ const PROGRAMS: Record<string, ProgramDef> = {
 /* ===== Estado en localStorage para programas activos ===== */
 
 type ProgramState = {
-  startDate: string;            // YYYY-MM-DD
-  completedDates: string[];     // YYYY-MM-DD (días marcados)
+  startDate: string; // YYYY-MM-DD
+  completedDates: string[]; // YYYY-MM-DD (días marcados)
 };
 
 type ProgramsStore = Record<string, ProgramState>;
@@ -177,10 +317,20 @@ interface HabitCardData {
 }
 
 const FEATURED_HABITS: HabitCardData[] = [
-  { key: 'lectura',    title: 'La máquina lectora',      subtitle: 'Conviértete en un superlector',                      image: '/reading.jpg' },
-  { key: 'burpees',    title: 'Unos f*kn burpees',       subtitle: 'Comienza hoy y no pares',                            image: '/burpees.jpg' },
-  { key: 'ahorro',     title: 'Ahorra sin darte cuenta', subtitle: 'Un hábito pequeño que cambia tu futuro',            image: '/savings.jpg' },
-  { key: 'meditacion', title: 'Medita 5 minutos',        subtitle: 'Encuentra calma en tu día',                         image: '/meditation.jpg' },
+  {
+    key: 'lectura',
+    title: 'La máquina lectora',
+    subtitle: 'Conviértete en un superlector',
+    image: '/reading.jpg',
+  },
+  { key: 'burpees', title: 'Unos f*kn burpees', subtitle: 'Comienza hoy y no pares', image: '/burpees.jpg' },
+  {
+    key: 'ahorro',
+    title: 'Ahorra sin darte cuenta',
+    subtitle: 'Un hábito pequeño que cambia tu futuro',
+    image: '/savings.jpg',
+  },
+  { key: 'meditacion', title: 'Medita 5 minutos', subtitle: 'Encuentra calma en tu día', image: '/meditation.jpg' },
 ];
 
 /* ===== Layout ===== */
@@ -206,11 +356,11 @@ function BottomNav({
   onChange: (k: TabKey) => void;
 }) {
   const items: { key: TabKey; label: string; icon: React.ElementType }[] = [
-    { key: 'inicio',    label: 'Inicio',     icon: Home },
-    { key: 'habitos',   label: 'Hábitos',    icon: ListChecks },
-    { key: 'mizona',    label: 'Mi zona',    icon: User },
-    { key: 'formacion', label: 'Formación',  icon: GraduationCap },
-    { key: 'amigos',    label: 'Amigos',     icon: Users },
+    { key: 'inicio', label: 'Inicio', icon: Home },
+    { key: 'habitos', label: 'Hábitos', icon: ListChecks },
+    { key: 'mizona', label: 'Mi zona', icon: User },
+    { key: 'formacion', label: 'Formación', icon: GraduationCap },
+    { key: 'amigos', label: 'Amigos', icon: Users },
   ];
 
   return (
@@ -298,7 +448,7 @@ function ThoughtModal({
   );
 }
 
-/* ===== Card Hábito (4:5, full-bleed) ===== */
+/* ===== Card Hábito (4:5, full-bleed, Safari-safe) ===== */
 function HabitCard({
   data,
   onOpen,
@@ -308,17 +458,28 @@ function HabitCard({
 }) {
   return (
     <button className="relative block overflow-hidden" onClick={() => onOpen(data.key)}>
-      <div className="relative w-full" style={{ aspectRatio: '4 / 5' }}>
+      {/* Contenedor con relación 4:5 usando padding-bottom (125%) */}
+      <div
+        className="relative w-full rounded-none"
+        style={{
+          height: 0,
+          paddingBottom: '125%',
+          backgroundColor: '#111', // fondo de seguridad
+        }}
+      >
         <Image
           src={data.image}
           alt={data.title}
           fill
           sizes="(max-width: 768px) 100vw, 600px"
           className="object-cover"
+          priority={data.key === 'lectura'} // mejora LCP en la primera card
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-black/0" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent" />
       </div>
-      <div className="absolute inset-0 flex flex-col justify-end p-5 text-left">
+
+      {/* Texto sobre la imagen */}
+      <div className="pointer-events-none absolute inset-0 flex flex-col justify-end p-5 text-left">
         <div className="text-white/85 text-sm">{data.subtitle}</div>
         <div className={`${archivoBlack.className} text-white text-4xl leading-tight`}>
           {data.title}
@@ -347,7 +508,10 @@ function HabitDetail({
     const onStorage = () => setProgress(getProgressPercent(program.key));
     window.addEventListener('storage', onStorage);
     const id = setInterval(onStorage, 800);
-    return () => { window.removeEventListener('storage', onStorage); clearInterval(id); };
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      clearInterval(id);
+    };
   }, [program.key]);
 
   const handleStart = () => {
@@ -359,9 +523,12 @@ function HabitDetail({
 
   return (
     <div className="pb-6">
-      {/* Header image */}
-      <div className="relative w-full rounded-b-2xl overflow-hidden" style={{ aspectRatio: '16 / 9' }}>
-        <Image src={program.image} alt={program.name} fill className="object-cover" />
+      {/* Header image (16:9, Safari-safe) */}
+      <div
+        className="relative w-full overflow-hidden rounded-b-2xl"
+        style={{ height: 0, paddingBottom: '56.25%', backgroundColor: '#111' }}
+      >
+        <Image src={program.image} alt={program.name} fill className="object-cover" priority />
         <div className="absolute left-3 top-3">
           <button onClick={onBack} className="rounded-full bg-black/60 p-2 text-white">
             <ArrowLeft className="h-5 w-5" />
@@ -372,11 +539,11 @@ function HabitDetail({
       {/* Título y beneficios */}
       <div className="mt-4">
         <h1 className={`${archivoBlack.className} text-3xl leading-tight`}>{program.name}</h1>
-        <p className="mt-2 text-sm text-black/70">
-          Beneficios de la lectura:
-        </p>
+        <p className="mt-2 text-sm text-black/70">Beneficios de la lectura:</p>
         <ul className="mt-2 list-disc pl-5 text-sm text-black/80">
-          {program.benefits.map((b, i) => (<li key={i}>{b}</li>))}
+          {program.benefits.map((b, i) => (
+            <li key={i}>{b}</li>
+          ))}
         </ul>
       </div>
 
@@ -391,13 +558,11 @@ function HabitDetail({
         </button>
         <AnimatePresence>
           {openedHow && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-            >
+            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}>
               <ul className="space-y-2 px-4 pb-4 text-sm text-black/70">
-                {program.howItWorks.map((it, i) => (<li key={i}>• {it}</li>))}
+                {program.howItWorks.map((it, i) => (
+                  <li key={i}>• {it}</li>
+                ))}
               </ul>
             </motion.div>
           )}
@@ -407,10 +572,7 @@ function HabitDetail({
       {/* Botón Empezar + progreso */}
       <div className="mt-5 rounded-2xl border p-4" style={{ borderColor: COLORS.line }}>
         <div className="flex items-center justify-between">
-          <button
-            onClick={handleStart}
-            className="rounded-full bg-black px-5 py-3 text-sm font-medium text-white"
-          >
+          <button onClick={handleStart} className="rounded-full bg-black px-5 py-3 text-sm font-medium text-white">
             Empezar ahora
           </button>
           <div className="text-sm text-black/60">Día {dayIndex} / 21</div>
@@ -418,18 +580,13 @@ function HabitDetail({
 
         {/* Mensaje de ánimo al empezar */}
         {justStarted && (
-          <div className="mt-3 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">
-            ¡Enhorabuena por tu primer día del reto!
-          </div>
+          <div className="mt-3 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">¡Enhorabuena por tu primer día del reto!</div>
         )}
 
         {/* Barra de progreso */}
         <div className="mt-4">
           <div className="h-3 w-full rounded-full bg-gray-200">
-            <div
-              className="h-3 rounded-full bg-black transition-all"
-              style={{ width: `${progress}%` }}
-            />
+            <div className="h-3 rounded-full bg-black transition-all" style={{ width: `${progress}%` }} />
           </div>
           <div className="mt-1 text-right text-xs text-black/60">{progress}%</div>
         </div>
@@ -440,7 +597,7 @@ function HabitDetail({
 
 /* ===== Mi Zona (habit tracker) ===== */
 function MiZona() {
-  const [storeVersion, setStoreVersion] = useState(0);
+  const [, setStoreVersion] = useState(0);
   const store = loadStore();
 
   // Programas activos
@@ -463,9 +620,7 @@ function MiZona() {
   return (
     <div className="py-6">
       <h2 className="text-xl font-semibold">Mi Zona</h2>
-      <p className="mt-1 text-sm text-black/70">
-        Marca tu progreso diario. Puedes llevar varios programas a la vez.
-      </p>
+      <p className="mt-1 text-sm text-black/70">Marca tu progreso diario. Puedes llevar varios programas a la vez.</p>
 
       <div className="mt-4 space-y-3">
         {activeKeys.map((key) => {
@@ -486,11 +641,16 @@ function MiZona() {
               <div className="bg-[#f7f7f7] px-4 py-3">
                 <div className="mb-2 text-sm text-black/60">Hábito del día (Día {day}/21)</div>
                 <ul className="mb-3 list-disc pl-5 text-sm text-black/80">
-                  {todayTasks.map((t, i) => (<li key={i}>{t}</li>))}
+                  {todayTasks.map((t, i) => (
+                    <li key={i}>{t}</li>
+                  ))}
                 </ul>
 
                 <button
-                  onClick={() => { toggleTodayComplete(key); bump(); }}
+                  onClick={() => {
+                    toggleTodayComplete(key);
+                    bump();
+                  }}
                   className="inline-flex items-center gap-3"
                 >
                   <span
@@ -502,13 +662,11 @@ function MiZona() {
                   >
                     {done && (
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                        <path d="M20 6L9 17l-5-5" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M20 6L9 17l-5-5" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
                     )}
                   </span>
-                  <span className="text-sm font-medium">
-                    {done ? '¡Marcado hoy!' : 'Marcar completado hoy'}
-                  </span>
+                  <span className="text-sm font-medium">{done ? '¡Marcado hoy!' : 'Marcar completado hoy'}</span>
                 </button>
               </div>
 
@@ -517,10 +675,7 @@ function MiZona() {
                 <div className="text-xs text-black/60">Progreso</div>
                 <div className="flex-1 px-3">
                   <div className="h-2 w-full rounded-full bg-gray-200">
-                    <div
-                      className="h-2 rounded-full bg-black"
-                      style={{ width: `${getProgressPercent(key)}%` }}
-                    />
+                    <div className="h-2 rounded-full bg-black" style={{ width: `${getProgressPercent(key)}%` }} />
                   </div>
                 </div>
                 <div className="text-xs text-black/60">{getProgressPercent(key)}%</div>
@@ -619,14 +774,14 @@ export default function Page() {
                 program={PROGRAMS[selectedHabit] ?? READING_PROGRAM}
                 onBack={() => setSelectedHabit(null)}
                 onStarted={() => {
-                  // Al empezar, hacemos visible Mi Zona con el nuevo tracker si el usuario va allí
+                  // Al empezar, Mi Zona tendrá el tracker listo
                 }}
               />
             )}
           </div>
         )}
 
-        {/* HÁBITOS (lista simple reutilizando cards) */}
+        {/* HÁBITOS */}
         {tab === 'habitos' && (
           <div className="py-6">
             {!selectedHabit ? (
@@ -642,16 +797,12 @@ export default function Page() {
                 </div>
               </>
             ) : (
-              <HabitDetail
-                program={PROGRAMS[selectedHabit] ?? READING_PROGRAM}
-                onBack={() => setSelectedHabit(null)}
-                onStarted={() => {}}
-              />
+              <HabitDetail program={PROGRAMS[selectedHabit] ?? READING_PROGRAM} onBack={() => setSelectedHabit(null)} onStarted={() => {}} />
             )}
           </div>
         )}
 
-        {/* MI ZONA (habit tracker) */}
+        {/* MI ZONA */}
         {tab === 'mizona' && <MiZona />}
 
         {/* Páginas placeholder */}
