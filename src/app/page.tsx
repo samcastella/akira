@@ -8,14 +8,14 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { Archivo_Black } from 'next/font/google';
 
-/* ====== Tipografía para TÍTULOS de las cards ====== */
+/* ===== Tipografía para títulos de cards ===== */
 const archivoBlack = Archivo_Black({
   weight: '400',
   subsets: ['latin'],
   variable: '--font-archivo-black',
 });
 
-/* ====== Colores ====== */
+/* ===== Colores ===== */
 const COLORS = {
   bg: '#ffffff',
   text: '#111111',
@@ -25,7 +25,7 @@ const COLORS = {
 
 type TabKey = 'inicio' | 'habitos' | 'mizona' | 'formacion' | 'amigos';
 
-/* ====== Pensamientos (L→D) ====== */
+/* ===== Pensamientos (L→D) ===== */
 type Thought = { title: string; text: string };
 
 const THOUGHTS_BY_DAY: Record<number, Thought> = {
@@ -40,7 +40,7 @@ const THOUGHTS_BY_DAY: Record<number, Thought> = {
 
 const todayThought = () => THOUGHTS_BY_DAY[new Date().getDay()];
 
-/* ====== Hábitos destacados ====== */
+/* ===== Hábitos destacados ===== */
 interface HabitCardData {
   key: string;
   title: string;
@@ -49,25 +49,26 @@ interface HabitCardData {
 }
 
 const FEATURED_HABITS: HabitCardData[] = [
-  { key: 'lectura',    title: 'La máquina lectora',     subtitle: 'Conviértete en un superlector',                      image: '/reading.jpg' },
-  { key: 'burpees',    title: 'Unos f*kn burpees',      subtitle: 'Comienza hoy y no pares',                            image: '/burpees.jpg' },
+  { key: 'lectura',    title: 'La máquina lectora',      subtitle: 'Conviértete en un superlector',                      image: '/reading.jpg' },
+  { key: 'burpees',    title: 'Unos f*kn burpees',       subtitle: 'Comienza hoy y no pares',                            image: '/burpees.jpg' },
   { key: 'ahorro',     title: 'Ahorra sin darte cuenta', subtitle: 'Un hábito pequeño que cambia tu futuro',            image: '/savings.jpg' },
-  { key: 'meditacion', title: 'Medita 5 minutos',       subtitle: 'Encuentra calma en tu día',                         image: '/meditation.jpg' },
+  { key: 'meditacion', title: 'Medita 5 minutos',        subtitle: 'Encuentra calma en tu día',                         image: '/meditation.jpg' },
 ];
 
-/* ====== Layout helpers ====== */
+/* ===== Layout helpers ===== */
 function SafeContainer({ children }: { children: React.ReactNode }) {
   return (
     <div
       className="mx-auto w-full max-w-md px-4"
-      style={{ paddingBottom: 'calc(80px + env(safe-area-inset-bottom, 0px))' }}
+      // + altura (≈30% más) porque “Mi zona” sobresale y la barra es más alta
+      style={{ paddingBottom: 'calc(120px + env(safe-area-inset-bottom, 0px))' }}
     >
       {children}
     </div>
   );
 }
 
-/* ====== Bottom Nav ====== */
+/* ===== Bottom Nav (custom) ===== */
 function BottomNav({
   active,
   onChange,
@@ -78,7 +79,7 @@ function BottomNav({
   const items: { key: TabKey; label: string; icon: React.ElementType }[] = [
     { key: 'inicio', label: 'Inicio', icon: Home },
     { key: 'habitos', label: 'Hábitos', icon: ListChecks },
-    { key: 'mizona', label: 'Mi Zona', icon: User },
+    { key: 'mizona', label: 'Mi zona', icon: User },
     { key: 'formacion', label: 'Formación', icon: GraduationCap },
     { key: 'amigos', label: 'Amigos', icon: Users },
   ];
@@ -86,35 +87,71 @@ function BottomNav({
   return (
     <div
       className="fixed inset-x-0 bottom-0 z-30"
-      style={{ background: COLORS.accent, paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+      style={{
+        background: COLORS.accent,
+        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+      }}
     >
-      <div className="mx-auto grid max-w-md grid-cols-5">
+      <div className="relative mx-auto grid max-w-md grid-cols-5 items-end py-3">
         {items.map(({ key, label, icon: Icon }) => {
           const isActive = key === active;
-          const isMiZona = key === 'mizona'; // <- SIEMPRE resaltada
-          return (
-            <button
-              key={key}
-              onClick={() => onChange(key)}
-              className="flex flex-col items-center justify-center py-2 text-[11px]"
-              style={{ paddingInline: 6 }}
-            >
-              <div
-                className="flex h-8 w-8 items-center justify-center rounded-xl"
-                style={{
-                  background: isMiZona ? COLORS.black : isActive ? COLORS.black : 'transparent',
-                  color: isMiZona ? '#fff' : isActive ? '#fff' : COLORS.text,
-                }}
-              >
-                <Icon className="h-5 w-5" />
+          const isMiZona = key === 'mizona';
+
+          if (isMiZona) {
+            // Botón central grande “flotando”
+            const bg = isActive ? COLORS.accent : COLORS.black;
+            const fg = isActive ? COLORS.text : '#fff';
+            return (
+              <div key={key} className="col-span-1 -translate-y-5">
+                <button
+                  onClick={() => onChange(key)}
+                  className="mx-auto flex flex-col items-center"
+                  style={{ paddingInline: 4 }}
+                  aria-label={label}
+                >
+                  <div
+                    className="flex items-center justify-center rounded-2xl shadow-lg"
+                    style={{
+                      height: 64,
+                      width: 130,
+                      background: bg,
+                      color: fg,
+                    }}
+                  >
+                    <Icon className="h-7 w-7" />
+                  </div>
+                  <span className="mt-1 text-[12px] leading-none" style={{ color: fg }}>
+                    {label}
+                  </span>
+                </button>
               </div>
-              <span
-                className="mt-1 leading-none"
-                style={{ color: isMiZona ? '#fff' : COLORS.text }}
+            );
+          }
+
+          // Resto de elementos (pill blanca al estar activos)
+          return (
+            <div key={key} className="col-span-1">
+              <button
+                onClick={() => onChange(key)}
+                className="flex flex-col items-center justify-center"
+                style={{ paddingInline: 8 }}
+                aria-label={label}
               >
-                {label}
-              </span>
-            </button>
+                <div
+                  className="flex items-center justify-center rounded-xl px-4 transition"
+                  style={{
+                    height: 40,                 // + altura
+                    background: isActive ? '#ffffff' : 'transparent',
+                    color: COLORS.text,
+                  }}
+                >
+                  <Icon className="h-6 w-6" />
+                </div>
+                <span className="mt-1 text-[12px] leading-none" style={{ color: COLORS.text }}>
+                  {label}
+                </span>
+              </button>
+            </div>
           );
         })}
       </div>
@@ -122,7 +159,7 @@ function BottomNav({
   );
 }
 
-/* ====== Modal Pensamiento ====== */
+/* ===== Modal Pensamiento ===== */
 function ThoughtModal({
   open,
   onClose,
@@ -165,7 +202,7 @@ function ThoughtModal({
   );
 }
 
-/* ====== Card de hábito (4:5, full-bleed, sin recuadro) ====== */
+/* ===== Card de hábito (4:5, full-bleed, sin recuadro) ===== */
 function HabitCard({
   data,
   onStart,
@@ -207,7 +244,7 @@ function HabitCard({
   );
 }
 
-/* ====== Página ====== */
+/* ===== Página ===== */
 export default function Page() {
   const [tab, setTab] = useState<TabKey>('inicio');
 
@@ -218,7 +255,7 @@ export default function Page() {
     return () => clearTimeout(t);
   }, []);
 
-  // Pensamiento del día (se muestra 1 vez/día)
+  // Pensamiento del día (1 vez/día)
   const thought = useMemo(() => todayThought(), []);
   const [openThought, setOpenThought] = useState(false);
   useEffect(() => {
