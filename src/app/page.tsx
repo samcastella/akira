@@ -19,7 +19,7 @@ const archivoBlack = Archivo_Black({
 const COLORS = {
   bg: '#ffffff',
   text: '#111111',
-  accent: '#FFD54F', // barra inferior
+  accent: '#FFD54F', // amarillo barra
   black: '#000000',
 };
 
@@ -56,19 +56,20 @@ const FEATURED_HABITS: HabitCardData[] = [
 ];
 
 /* ===== Layout helpers ===== */
+const NAV_HEIGHT = 84; // px (≈ +30 %)
+
 function SafeContainer({ children }: { children: React.ReactNode }) {
   return (
     <div
       className="mx-auto w-full max-w-md px-4"
-      // + altura (≈30% más) porque “Mi zona” sobresale y la barra es más alta
-      style={{ paddingBottom: 'calc(120px + env(safe-area-inset-bottom, 0px))' }}
+      style={{ paddingBottom: `calc(${NAV_HEIGHT}px + env(safe-area-inset-bottom, 0px))` }}
     >
       {children}
     </div>
   );
 }
 
-/* ===== Bottom Nav (custom) ===== */
+/* ===== Bottom Nav ===== */
 function BottomNav({
   active,
   onChange,
@@ -77,81 +78,49 @@ function BottomNav({
   onChange: (k: TabKey) => void;
 }) {
   const items: { key: TabKey; label: string; icon: React.ElementType }[] = [
-    { key: 'inicio', label: 'Inicio', icon: Home },
-    { key: 'habitos', label: 'Hábitos', icon: ListChecks },
-    { key: 'mizona', label: 'Mi zona', icon: User },
-    { key: 'formacion', label: 'Formación', icon: GraduationCap },
-    { key: 'amigos', label: 'Amigos', icon: Users },
+    { key: 'inicio',    label: 'Inicio',     icon: Home },
+    { key: 'habitos',   label: 'Hábitos',    icon: ListChecks },
+    { key: 'mizona',    label: 'Mi zona',    icon: User },             // especial
+    { key: 'formacion', label: 'Formación',  icon: GraduationCap },
+    { key: 'amigos',    label: 'Amigos',     icon: Users },
   ];
 
   return (
     <div
       className="fixed inset-x-0 bottom-0 z-30"
       style={{
+        height: `calc(${NAV_HEIGHT}px + env(safe-area-inset-bottom, 0px))`,
         background: COLORS.accent,
         paddingBottom: 'env(safe-area-inset-bottom, 0px)',
       }}
     >
-      <div className="relative mx-auto grid max-w-md grid-cols-5 items-end py-3">
+      <div className="mx-auto grid h-full max-w-md grid-cols-5">
         {items.map(({ key, label, icon: Icon }) => {
           const isActive = key === active;
-          const isMiZona = key === 'mizona';
 
-          if (isMiZona) {
-            // Botón central grande “flotando”
-            const bg = isActive ? COLORS.accent : COLORS.black;
-            const fg = isActive ? COLORS.text : '#fff';
-            return (
-              <div key={key} className="col-span-1 -translate-y-5">
-                <button
-                  onClick={() => onChange(key)}
-                  className="mx-auto flex flex-col items-center"
-                  style={{ paddingInline: 4 }}
-                  aria-label={label}
-                >
-                  <div
-                    className="flex items-center justify-center rounded-2xl shadow-lg"
-                    style={{
-                      height: 64,
-                      width: 130,
-                      background: bg,
-                      color: fg,
-                    }}
-                  >
-                    <Icon className="h-7 w-7" />
-                  </div>
-                  <span className="mt-1 text-[12px] leading-none" style={{ color: fg }}>
-                    {label}
-                  </span>
-                </button>
-              </div>
-            );
+          // Fondo y color por pestaña
+          let bg = COLORS.accent;
+          let fg = COLORS.text;
+
+          if (key === 'mizona') {
+            bg = isActive ? '#ffffff' : COLORS.black;
+            fg = isActive ? COLORS.text : '#ffffff';
+          } else {
+            bg = isActive ? '#ffffff' : COLORS.accent;
+            fg = COLORS.text;
           }
 
-          // Resto de elementos (pill blanca al estar activos)
           return (
-            <div key={key} className="col-span-1">
-              <button
-                onClick={() => onChange(key)}
-                className="flex flex-col items-center justify-center"
-                style={{ paddingInline: 8 }}
-                aria-label={label}
-              >
-                <div
-                  className="flex items-center justify-center rounded-xl px-4 transition"
-                  style={{
-                    height: 40,                 // + altura
-                    background: isActive ? '#ffffff' : 'transparent',
-                    color: COLORS.text,
-                  }}
-                >
-                  <Icon className="h-6 w-6" />
-                </div>
-                <span className="mt-1 text-[12px] leading-none" style={{ color: COLORS.text }}>
-                  {label}
-                </span>
-              </button>
-            </div>
+            <button
+              key={key}
+              onClick={() => onChange(key)}
+              className="flex h-full flex-col items-center justify-center transition-colors"
+              style={{ background: bg, color: fg }}
+              aria-label={label}
+            >
+              <Icon className="h-6 w-6" />
+              <span className="mt-1 text-[12px] leading-none">{label}</span>
+            </button>
           );
         })}
       </div>
@@ -364,4 +333,5 @@ export default function Page() {
     </div>
   );
 }
+
 
