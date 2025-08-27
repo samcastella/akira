@@ -1,103 +1,80 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Home, ListChecks, User, GraduationCap, Users, X, ChevronRight } from 'lucide-react';
+import Image from 'next/image';
+import {
+  Home, ListChecks, User, GraduationCap, Users, X, ChevronRight,
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Archivo_Black } from 'next/font/google';
 
-/* =========================
-   Configuración visual
-========================= */
+/* ====== Tipografía para TÍTULOS de las cards ====== */
+const archivoBlack = Archivo_Black({
+  weight: '400',
+  subsets: ['latin'],
+  variable: '--font-archivo-black',
+});
+
+/* ====== Colores ====== */
 const COLORS = {
   bg: '#ffffff',
   text: '#111111',
-  line: '#ececec',
-  accent: '#FFD54F', // amarillo
+  accent: '#FFD54F', // barra inferior
   black: '#000000',
 };
 
 type TabKey = 'inicio' | 'habitos' | 'mizona' | 'formacion' | 'amigos';
 
-/* =========================
-   Pensamientos (L → D)
-========================= */
+/* ====== Pensamientos (L→D) ====== */
 type Thought = { title: string; text: string };
 
 const THOUGHTS_BY_DAY: Record<number, Thought> = {
-  1: {
-    title: 'Visualízate',
-    text:
-      'Imagina por un momento que ya lo lograste. Si tu reto es empezar a correr, mírate dentro de unos meses cruzando la meta, rodeado de gente, con una sonrisa de orgullo por el camino recorrido. Hoy dedica 2–3 minutos a cerrar los ojos y verte consiguiendo tus objetivos.',
-  },
-  2: {
-    title: 'Un paso más',
-    text:
-      'No importa lo lejos que esté tu meta. Hoy comprométete a dar un paso pequeño: si quieres leer, abre el libro y lee 5 páginas; si quieres entrenar, haz 10 minutos. Lo pequeño de hoy se suma a lo de ayer y te acerca al mañana.',
-  },
-  3: {
-    title: 'Eres constante',
-    text:
-      'La disciplina no es perfección, es volver incluso en los días que pesan. Hoy elige una acción mínima para no romper la cadena: escribe una frase en tu diario, haz 5 flexiones o prepara una ensalada sencilla. Mantén el hilo.',
-  },
-  4: {
-    title: 'Confía en ti',
-    text:
-      'Piensa en un reto que ya superaste. Esa misma fuerza vive en ti. Hoy escribe tres cualidades tuyas que te ayudarán a conseguir tu meta y léelas cuando dudes.',
-  },
-  5: {
-    title: 'El presente cuenta',
-    text:
-      'Lo único que importa es lo que hagas hoy. Empieza con algo sencillo: guarda 1€ si tu meta es ahorrar; elige una comida sana si quieres mejorar tu salud. El cambio comienza ahora.',
-  },
-  6: {
-    title: 'Pequeñas victorias',
-    text:
-      'Celebra lo pequeño. Hoy sal a caminar 10 minutos, bebe un vaso de agua extra o envía ese mensaje pendiente. Son victorias que, sumadas, transforman tu vida.',
-  },
-  0: {
-    title: 'Reflexiona y agradece',
-    text:
-      'Mira atrás y reconoce lo que lograste esta semana. Haz una pausa, respira y agradece un momento, una persona o una acción que te haya hecho avanzar. Ese agradecimiento alimenta la motivación para empezar de nuevo mañana.',
-  },
+  1: { title: 'Visualízate', text: 'Imagina por un momento que ya lo lograste. Si tu reto es empezar a correr, mírate dentro de unos meses cruzando la meta... Hoy dedica 2–3 minutos a cerrar los ojos y verte consiguiendo tus objetivos.' },
+  2: { title: 'Un paso más', text: 'No importa lo lejos que esté tu meta. Hoy comprométete a dar un paso pequeño: 5 páginas de lectura o 10 minutos de entreno.' },
+  3: { title: 'Eres constante', text: 'La disciplina es volver incluso en los días que pesan. Elige una acción mínima para no romper la cadena.' },
+  4: { title: 'Confía en ti', text: 'Piensa en un reto que ya superaste. Escribe tres cualidades tuyas que te ayudarán a conseguir tu meta.' },
+  5: { title: 'El presente cuenta', text: 'Empieza con algo sencillo hoy: guarda 1€ o elige una comida sana. El cambio comienza ahora.' },
+  6: { title: 'Pequeñas victorias', text: 'Camina 10 minutos, bebe un vaso de agua extra o envía ese mensaje pendiente. Suma victorias.' },
+  0: { title: 'Reflexiona y agradece', text: 'Reconoce lo logrado esta semana. Respira y agradece una acción que te hizo avanzar.' },
 };
 
-function todayThought(): Thought {
-  const idx = new Date().getDay(); // 0=Dom, 1=Lun...
-  return THOUGHTS_BY_DAY[idx];
-}
+const todayThought = () => THOUGHTS_BY_DAY[new Date().getDay()];
 
-/* =========================
-   Hábitos destacados
-========================= */
+/* ====== Hábitos destacados ====== */
 interface HabitCardData {
   key: string;
   title: string;
   subtitle: string;
-  image: string; // ruta pública
+  image: string; // ruta pública en /public
 }
 
 const FEATURED_HABITS: HabitCardData[] = [
-  { key: 'lectura',    title: 'La máquina lectora',   subtitle: 'Conviértete en un superlector', image: '/reading.jpg' },
-  { key: 'burpees',    title: 'Unos f*kn burpees',    subtitle: 'Comienza hoy y no pares',        image: '/burpees.jpg' },
-  { key: 'ahorro',     title: 'Ahorra sin darte cuenta', subtitle: 'Un hábito pequeño que cambia tu futuro', image: '/savings.jpg' },
-  { key: 'meditacion', title: 'Medita 5 minutos',     subtitle: 'Encuentra calma en tu día',     image: '/meditation.jpg' },
+  { key: 'lectura',    title: 'La máquina lectora',     subtitle: 'Conviértete en un superlector',                      image: '/reading.jpg' },
+  { key: 'burpees',    title: 'Unos f*kn burpees',      subtitle: 'Comienza hoy y no pares',                            image: '/burpees.jpg' },
+  { key: 'ahorro',     title: 'Ahorra sin darte cuenta', subtitle: 'Un hábito pequeño que cambia tu futuro',            image: '/savings.jpg' },
+  { key: 'meditacion', title: 'Medita 5 minutos',       subtitle: 'Encuentra calma en tu día',                         image: '/meditation.jpg' },
 ];
 
-/* =========================
-   Componentes
-========================= */
-
+/* ====== Layout helpers ====== */
 function SafeContainer({ children }: { children: React.ReactNode }) {
   return (
     <div
       className="mx-auto w-full max-w-md px-4"
-      style={{ paddingBottom: 'calc(72px + env(safe-area-inset-bottom, 0px))' }}
+      style={{ paddingBottom: 'calc(80px + env(safe-area-inset-bottom, 0px))' }}
     >
       {children}
     </div>
   );
 }
 
-function BottomNav({ active, onChange }: { active: TabKey; onChange: (k: TabKey) => void }) {
+/* ====== Bottom Nav ====== */
+function BottomNav({
+  active,
+  onChange,
+}: {
+  active: TabKey;
+  onChange: (k: TabKey) => void;
+}) {
   const items: { key: TabKey; label: string; icon: React.ElementType }[] = [
     { key: 'inicio', label: 'Inicio', icon: Home },
     { key: 'habitos', label: 'Hábitos', icon: ListChecks },
@@ -108,13 +85,13 @@ function BottomNav({ active, onChange }: { active: TabKey; onChange: (k: TabKey)
 
   return (
     <div
-      className="fixed inset-x-0 bottom-0 z-30 border-t"
-      style={{ background: COLORS.accent, borderColor: '#00000014', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+      className="fixed inset-x-0 bottom-0 z-30"
+      style={{ background: COLORS.accent, paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
     >
       <div className="mx-auto grid max-w-md grid-cols-5">
         {items.map(({ key, label, icon: Icon }) => {
           const isActive = key === active;
-          const isMiZona = key === 'mizona' && isActive;
+          const isMiZona = key === 'mizona'; // <- SIEMPRE resaltada
           return (
             <button
               key={key}
@@ -131,7 +108,10 @@ function BottomNav({ active, onChange }: { active: TabKey; onChange: (k: TabKey)
               >
                 <Icon className="h-5 w-5" />
               </div>
-              <span className="mt-1 leading-none" style={{ color: isMiZona ? '#fff' : COLORS.text }}>
+              <span
+                className="mt-1 leading-none"
+                style={{ color: isMiZona ? '#fff' : COLORS.text }}
+              >
                 {label}
               </span>
             </button>
@@ -142,7 +122,16 @@ function BottomNav({ active, onChange }: { active: TabKey; onChange: (k: TabKey)
   );
 }
 
-function ThoughtModal({ open, onClose, thought }: { open: boolean; onClose: () => void; thought: Thought }) {
+/* ====== Modal Pensamiento ====== */
+function ThoughtModal({
+  open,
+  onClose,
+  thought,
+}: {
+  open: boolean;
+  onClose: () => void;
+  thought: Thought;
+}) {
   return (
     <AnimatePresence>
       {open && (
@@ -159,7 +148,11 @@ function ThoughtModal({ open, onClose, thought }: { open: boolean; onClose: () =
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.95, opacity: 0, y: 10 }}
             >
-              <button onClick={onClose} className="absolute right-3 top-3 rounded-full p-1 text-black/70 hover:bg-black/5" aria-label="Cerrar">
+              <button
+                onClick={onClose}
+                className="absolute right-3 top-3 rounded-full p-1 text-black/70 hover:bg-black/5"
+                aria-label="Cerrar"
+              >
                 <X className="h-5 w-5" />
               </button>
               <h3 className="mb-2 text-xl font-semibold">{thought.title}</h3>
@@ -172,22 +165,36 @@ function ThoughtModal({ open, onClose, thought }: { open: boolean; onClose: () =
   );
 }
 
-function HabitCard({ data, onStart }: { data: HabitCardData; onStart: (key: string) => void }) {
+/* ====== Card de hábito (4:5, full-bleed, sin recuadro) ====== */
+function HabitCard({
+  data,
+  onStart,
+}: {
+  data: HabitCardData;
+  onStart: (key: string) => void;
+}) {
   return (
     <div className="relative overflow-hidden">
-      {/* Imagen full-bleed */}
-      <img
-        src={data.image}
-        alt={data.title}
-        className="block h-[240px] w-full object-cover"
-        loading="lazy"
-      />
-      {/* Overlay para legibilidad */}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/25 to-black/0" />
+      {/* Contenedor con aspect-ratio 4/5 para que todas midan igual */}
+      <div className="relative w-full" style={{ aspectRatio: '4 / 5' }}>
+        <Image
+          src={data.image}
+          alt={data.title}
+          fill
+          sizes="(max-width: 768px) 100vw, 600px"
+          className="object-cover"
+          priority={false}
+        />
+        {/* Overlay para legibilidad */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-black/0" />
+      </div>
+
       {/* Texto dentro de la imagen */}
       <div className="absolute inset-0 flex flex-col justify-end p-5">
         <div className="text-white/85 text-sm">{data.subtitle}</div>
-        <div className="text-white text-3xl font-extrabold leading-tight">{data.title}</div>
+        <div className={`${archivoBlack.className} text-white text-4xl leading-tight`}>
+          {data.title}
+        </div>
         <button
           onClick={() => onStart(data.key)}
           className="mt-3 inline-flex items-center gap-2 self-start rounded-full bg-white/95 px-4 py-2 text-sm font-medium text-black hover:bg-white"
@@ -200,9 +207,7 @@ function HabitCard({ data, onStart }: { data: HabitCardData; onStart: (key: stri
   );
 }
 
-/* =========================
-   Página principal
-========================= */
+/* ====== Página ====== */
 export default function Page() {
   const [tab, setTab] = useState<TabKey>('inicio');
 
@@ -213,8 +218,8 @@ export default function Page() {
     return () => clearTimeout(t);
   }, []);
 
-  // Pensamiento del día (persistencia por fecha)
-  const t = useMemo(() => todayThought(), []);
+  // Pensamiento del día (se muestra 1 vez/día)
+  const thought = useMemo(() => todayThought(), []);
   const [openThought, setOpenThought] = useState(false);
   useEffect(() => {
     if (showSplash) return;
@@ -229,7 +234,9 @@ export default function Page() {
   if (showSplash) {
     return (
       <div className="flex min-h-screen items-center justify-center" style={{ background: COLORS.accent }}>
-        <img src="/splash.jpg" alt="Build your habits" className="h-screen w-screen object-cover" />
+        <div className="relative h-screen w-screen">
+          <Image src="/splash.jpg" alt="Build your habits" fill className="object-cover" priority />
+        </div>
       </div>
     );
   }
@@ -243,29 +250,35 @@ export default function Page() {
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <h1 className="text-lg font-semibold">Pensamiento del día</h1>
-                <p className="text-xs text-black/60">{t.title}: toca para leerlo de nuevo</p>
+                <p className="text-xs text-black/60">{thought.title}: toca para leerlo de nuevo</p>
               </div>
-              <button onClick={() => setOpenThought(true)} className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white">
+              <button
+                onClick={() => setOpenThought(true)}
+                className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white"
+              >
                 Ver pensamiento
               </button>
             </div>
 
-            {/* Tarjetas full-bleed sin huecos */}
+            {/* Cards a sangre (sin huecos laterales) */}
             <div className="-mx-4">
-              {FEATURED_HABITS.slice(0, 4).map((h, i) => (
-                <div key={h.key} className={i === 0 ? '' : ''}>
+              {FEATURED_HABITS.map((h) => (
+                <div key={h.key}>
                   <HabitCard data={h} onStart={(key) => alert(`Abrir programa: ${key}`)} />
                 </div>
               ))}
             </div>
 
-            {/* CTA final tipo Nike */}
-            <div className="mt-6 overflow-hidden rounded-2xl border bg-white" style={{ borderColor: COLORS.line }}>
+            {/* CTA final */}
+            <div className="mt-6 overflow-hidden rounded-2xl bg-white">
               <div className="p-5">
                 <div className="mb-3 text-2xl font-bold leading-snug">
                   ¿Listo para más? <br /> Descubre todos los hábitos
                 </div>
-                <button onClick={() => setTab('habitos')} className="inline-flex items-center gap-2 rounded-full bg-black px-5 py-3 text-white">
+                <button
+                  onClick={() => setTab('habitos')}
+                  className="inline-flex items-center gap-2 rounded-full bg-black px-5 py-3 text-white"
+                >
                   Ver hábitos <ChevronRight className="h-4 w-4" />
                 </button>
               </div>
@@ -310,7 +323,8 @@ export default function Page() {
       </SafeContainer>
 
       <BottomNav active={tab} onChange={setTab} />
-      <ThoughtModal open={openThought} onClose={() => setOpenThought(false)} thought={t} />
+      <ThoughtModal open={openThought} onClose={() => setOpenThought(false)} thought={thought} />
     </div>
   );
 }
+
