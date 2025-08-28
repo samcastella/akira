@@ -1,4 +1,3 @@
-cat > src/components/ThoughtModal.tsx <<'TSX'
 'use client';
 import { AnimatePresence, motion } from 'framer-motion';
 import { X } from 'lucide-react';
@@ -30,4 +29,3 @@ export default function ThoughtModal({
     </AnimatePresence>
   );
 }
-TSX

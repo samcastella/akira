@@ -1,8 +1,7 @@
-cat > lib/constants.ts <<'TS'
 export const COLORS = {
   bg: '#ffffff',
   text: '#111111',
-  accent: '#FFD54F',
+  accent: '#FFD54F', // barra inferior
   black: '#000000',
   line: '#eaeaea',
   green: '#22c55e',
@@ -12,4 +11,3 @@ export const COLORS = {
 };
 
 export const NAV_HEIGHT = 84;
-TS
