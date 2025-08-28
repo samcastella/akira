@@ -1,10 +1,17 @@
 @import "tailwindcss";
 
+/* =========
+   Variables
+   ========= */
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /* Pistas para el UA: permitimos claro/oscuro según media query */
+  color-scheme: light dark;
 }
 
+/* Mapea variables de Tailwind (vía @theme inline) */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -12,6 +19,7 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* Modo oscuro con media query: solo cambiamos tokens, no estilos directos */
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
@@ -19,8 +27,45 @@
   }
 }
 
+/* =====
+   Base
+   ===== */
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html, body { height: 100%; }
+
 body {
+  margin: 0;
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+
+  /* Usa las fuentes que cargas en layout (Geist) */
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system,
+    Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+
+  /* Evita “elastic scroll” en iOS dentro de la app */
+  overscroll-behavior-y: none;
+}
+
+/* Selección de texto agradable (usa el acento de la app) */
+::selection {
+  background: #FFD54F;
+  color: #111111;
+}
+
+/* Imágenes fluidas por defecto (útil cuando no usamos <Image> de Next) */
+img, video, canvas, svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+/* Quita el resalte azul por defecto en iOS */
+input, textarea, button, select, a {
+  -webkit-tap-highlight-color: transparent;
 }
