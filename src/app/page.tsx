@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import {
   Home, ListChecks, User, GraduationCap, Users, X, ChevronRight,
-  Plus, Trash2, Edit3, Pushpin, ChevronLeft
+  Plus, Trash2, Edit3, Pin, ChevronLeft
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Archivo_Black } from 'next/font/google';
@@ -20,73 +20,150 @@ const archivoBlack = Archivo_Black({
 const COLORS = {
   bg: '#ffffff',
   text: '#111111',
-  accent: '#FFD54F', // amarillo barra
+  accent: '#FFD54F',
   black: '#000000',
+  grayLight: '#f3f3f3',
   line: '#eaeaea',
 };
 
-type TabKey = 'inicio' | 'habitos' | 'mizona' | 'herramientas' | 'amigos';
-
-/* =========================
-   Utils de almacenamiento
-   ========================= */
-
-const ls = {
-  get<T>(key: string, fallback: T): T {
-    try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) as T : fallback; }
-    catch { return fallback; }
-  },
-  set<T>(key: string, value: T) { localStorage.setItem(key, JSON.stringify(value)); },
-};
-
-/* ===== Modelos ===== */
-type Note = {
-  id: string;
-  title?: string;
-  text: string;
-  pinned?: boolean;
-  createdAt: string;
-  updatedAt: string;
-};
-
-type GratitudeEntry = {
-  date: string;     // YYYY-MM-DD
-  items: string[];  // mínimo 3
-  updatedAt: string;
-};
-
-type FeelImg = {
-  id: string;
-  dataUrl: string;    // DataURL (base64)
-  caption?: string;
-  createdAt: string;
-};
-
-/* ===== Claves LS ===== */
-const LS_NOTES = 'akira_notes_v1';
-const LS_GRAT = 'akira_gratitude_v1';
-const LS_FEEL = 'akira_feelgood_v1';
+type TabKey = 'inicio' | 'habitos' | 'mizona' | 'formacion' | 'amigos';
 
 /* ===== Pensamientos (L→D) ===== */
 type Thought = { title: string; text: string };
 
 const THOUGHTS_BY_DAY: Record<number, Thought> = {
-  1: { title: 'Visualízate', text: 'Imagina por un momento que ya lo lograste. Hoy dedica 2–3 minutos a verte consiguiendo tus objetivos.' },
-  2: { title: 'Un paso más', text: 'Elige hoy una acción mínima y hazla. Lo pequeño, suma.' },
-  3: { title: 'Eres constante', text: 'La disciplina es volver incluso en los días que pesan. Una página, un paso.' },
-  4: { title: 'Confía en ti', text: 'Piensa en un reto que ya superaste. Puedes con este también.' },
-  5: { title: 'El presente cuenta', text: 'El cambio comienza ahora. Haz algo sencillo hoy.' },
-  6: { title: 'Pequeñas victorias', text: 'Suma un gesto que te acerque a tu meta y celébralo.' },
-  0: { title: 'Agradece', text: 'Reconoce lo logrado esta semana. Respira y agradece.' },
+  1: { title: 'Visualízate', text: 'Imagina por un momento que ya lo lograste. Si tu reto es empezar a correr, mírate dentro de unos meses cruzando la meta... Hoy dedica 2–3 minutos a cerrar los ojos y verte consiguiendo tus objetivos.' },
+  2: { title: 'Un paso más', text: 'No importa lo lejos que esté tu meta. Hoy comprométete a dar un paso pequeño: 5 páginas de lectura o 10 minutos de entreno.' },
+  3: { title: 'Eres constante', text: 'La disciplina es volver incluso en los días que pesan. Elige una acción mínima para no romper la cadena.' },
+  4: { title: 'Confía en ti', text: 'Piensa en un reto que ya superaste. Escribe tres cualidades tuyas que te ayudarán a conseguir tu meta.' },
+  5: { title: 'El presente cuenta', text: 'Empieza con algo sencillo hoy: guarda 1€ o elige una comida sana. El cambio comienza ahora.' },
+  6: { title: 'Pequeñas victorias', text: 'Camina 10 minutos, bebe un vaso de agua extra o envía ese mensaje pendiente. Suma victorias.' },
+  0: { title: 'Reflexiona y agradece', text: 'Reconoce lo logrado esta semana. Respira y agradece una acción que te hizo avanzar.' },
 };
+
 const todayThought = () => THOUGHTS_BY_DAY[new Date().getDay()];
 
-/* ===== Hábitos destacados (home) ===== */
+/* ===== Programas (lectura 21 días) ===== */
+
+type DayTasks = { tasks: string[] };
+type ProgramDef = {
+  key: string;
+  name: string;
+  image: string;
+  benefits: string[];
+  howItWorks: string[];
+  days: DayTasks[];
+};
+
+const READING_PROGRAM: ProgramDef = {
+  key: 'lectura',
+  name: 'Conviértete en una máquina lectora',
+  image: '/reading.jpg',
+  benefits: [
+    'Mejora tu concentración y claridad mental',
+    'Aumenta tu creatividad y vocabulario',
+    'Reduce el estrés y mejora el sueño',
+  ],
+  howItWorks: [
+    '21 días con 2–3 micro-retos diarios.',
+    'Semana 1: 1–5 páginas (súper fácil). Semana 2: 5–10. Semana 3: 10–15.',
+    'Registra cada día en “Mi Zona” marcando el check.',
+  ],
+  days: [
+    { tasks: ['Ve a una librería y elige un libro ≤ 200–300 páginas.', 'Colócalo en un lugar visible.', 'Define hora/lugar y pon una alarma diaria.'] },
+    { tasks: ['Lee 1 página.', 'Escribe por qué elegiste ese libro.', 'Haz una foto de tu rincón de lectura.'] },
+    { tasks: ['Lee 1–5 páginas (si lees más, genial).', 'Prepara tu ritual (café, té, luz).', 'Marca una frase que te inspire.'] },
+    { tasks: ['Lee 1–5 páginas.', 'Lee en voz alta un párrafo.', 'Escribe una frase sobre lo que sentiste.'] },
+    { tasks: ['Lee 1–5 páginas en un lugar distinto.', 'Apunta una idea clave.', 'Cuéntaselo a alguien.'] },
+    { tasks: ['Lee 1–5 páginas.', 'Evalúa tu concentración (1–5).', 'Ajusta la hora si no encaja.'] },
+    { tasks: ['Lee 1–5 páginas.', 'Relee tus notas o frases marcadas.', 'Celebra la primera semana.'] },
+    { tasks: ['Lee 5 páginas.', 'Apunta 1 frase aplicable hoy.', 'Compártela con alguien.'] },
+    { tasks: ['Lee 6 páginas.', 'Asocia lectura a otro hábito.', 'Escribe lo más útil del día.'] },
+    { tasks: ['Lee 6–7 páginas.', 'Marca 2 aprendizajes clave.', 'Recompénsate.'] },
+    { tasks: ['Lee 7 páginas.', 'Comparte lo interesante con un amigo.', 'Haz check en tu racha.'] },
+    { tasks: ['Lee 8 páginas.', 'Marca una idea aplicable hoy.', 'Ponla en práctica.'] },
+    { tasks: ['Lee 8–9 páginas.', 'Reflexión de 2 frases.', 'Foto del libro y compártela.'] },
+    { tasks: ['Lee 10 páginas.', 'Balance de semana.', 'Recompénsate.'] },
+    { tasks: ['Escribe: “Soy el tipo de persona que lee cada día”.', 'Lee 10 páginas.', 'Habla con alguien de tu hábito.'] },
+    { tasks: ['Elige tu próxima lectura.', 'Lee 11 páginas.', 'Story con tu frase favorita.'] },
+    { tasks: ['Lee 12 páginas.', 'Mini-resumen (3–4 frases).', 'Meta: terminar libro en X días.'] },
+    { tasks: ['Lee 12–13 páginas.', 'Marca 2 ideas prácticas.', 'Aplica 1 hoy mismo.'] },
+    { tasks: ['Lee 13 páginas.', 'Cuenta qué estás aprendiendo.', 'Refuerza tu identidad lectora.'] },
+    { tasks: ['Lee 14 páginas.', 'Repasa todas tus notas.', 'Elige la idea más transformadora.'] },
+    { tasks: ['Lee 15 páginas o termina el libro.', 'Balance final del reto.', 'Comparte tu logro y planifica el siguiente libro.'] },
+  ],
+};
+
+const PROGRAMS: Record<string, ProgramDef> = {
+  [READING_PROGRAM.key]: READING_PROGRAM,
+};
+
+/* ===== Estado en localStorage para programas ===== */
+
+type ProgramState = {
+  startDate: string;
+  completedDates: string[];
+};
+type ProgramsStore = Record<string, ProgramState>;
+
+const STORAGE_KEY = 'akira_programs_v1';
+const todayKey = () => new Date().toISOString().slice(0, 10);
+
+function loadStore(): ProgramsStore {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+function saveStore(store: ProgramsStore) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+}
+function startProgram(key: string) {
+  const store = loadStore();
+  if (!store[key]) {
+    store[key] = { startDate: todayKey(), completedDates: [] };
+    saveStore(store);
+  }
+}
+function toggleTodayComplete(key: string) {
+  const store = loadStore();
+  if (!store[key]) return;
+  const t = todayKey();
+  const set = new Set(store[key].completedDates);
+  if (set.has(t)) set.delete(t);
+  else set.add(t);
+  store[key].completedDates = Array.from(set).sort();
+  saveStore(store);
+}
+function isTodayCompleted(key: string) {
+  const store = loadStore();
+  return !!store[key]?.completedDates.includes(todayKey());
+}
+function getProgramDayIndex(key: string) {
+  const store = loadStore();
+  const start = store[key]?.startDate;
+  if (!start) return 1;
+  const startDate = new Date(start + 'T00:00:00');
+  const diffMs = Date.now() - startDate.getTime();
+  const day = Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1;
+  return Math.min(Math.max(day, 1), PROGRAMS[key]?.days.length ?? 21);
+}
+function getProgressPercent(key: string) {
+  const store = loadStore();
+  const total = PROGRAMS[key]?.days.length ?? 21;
+  const done = store[key]?.completedDates.length ?? 0;
+  return Math.min(100, Math.round((done / total) * 100));
+}
+
+/* ===== Hábitos destacados (cards) ===== */
+
 interface HabitCardData {
   key: string;
   title: string;
   subtitle: string;
-  image: string; // ruta en /public
+  image: string;
 }
 
 const FEATURED_HABITS: HabitCardData[] = [
@@ -119,11 +196,11 @@ function BottomNav({
   onChange: (k: TabKey) => void;
 }) {
   const items: { key: TabKey; label: string; icon: React.ElementType }[] = [
-    { key: 'inicio',        label: 'Inicio',        icon: Home },
-    { key: 'habitos',       label: 'Hábitos',       icon: ListChecks },
-    { key: 'mizona',        label: 'Mi zona',       icon: User },
-    { key: 'herramientas',  label: 'Herramientas',  icon: GraduationCap },
-    { key: 'amigos',        label: 'Amigos',        icon: Users },
+    { key: 'inicio',    label: 'Inicio',     icon: Home },
+    { key: 'habitos',   label: 'Hábitos',    icon: ListChecks },
+    { key: 'mizona',    label: 'Mi zona',    icon: User },
+    { key: 'formacion', label: 'Formación',  icon: GraduationCap },
+    { key: 'amigos',    label: 'Amigos',     icon: Users },
   ];
 
   return (
@@ -211,16 +288,16 @@ function ThoughtModal({
   );
 }
 
-/* ===== Card Hábito (4:5, full-bleed) ===== */
+/* ===== Card Hábito (4:5) ===== */
 function HabitCard({
   data,
-  onStart,
+  onOpen,
 }: {
   data: HabitCardData;
-  onStart: (key: string) => void;
+  onOpen: (key: string) => void;
 }) {
   return (
-    <div className="relative overflow-hidden">
+    <button className="relative block overflow-hidden" onClick={() => onOpen(data.key)}>
       <div className="relative w-full" style={{ aspectRatio: '4 / 5' }}>
         <Image
           src={data.image}
@@ -231,254 +308,210 @@ function HabitCard({
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-black/0" />
       </div>
-      <div className="absolute inset-0 flex flex-col justify-end p-5">
+      <div className="absolute inset-0 flex flex-col justify-end p-5 text-left">
         <div className="text-white/85 text-sm">{data.subtitle}</div>
         <div className={`${archivoBlack.className} text-white text-4xl leading-tight`}>
           {data.title}
         </div>
-        <button
-          onClick={() => onStart(data.key)}
-          className="mt-3 inline-flex items-center gap-2 self-start rounded-full bg-white/95 px-4 py-2 text-sm font-medium text-black hover:bg-white"
-        >
+        <div className="mt-3 inline-flex items-center gap-2 self-start rounded-full bg-white/95 px-4 py-2 text-sm font-medium text-black">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7L8 5z"/></svg>
           Empezar ahora
+        </div>
+      </div>
+    </button>
+  );
+}
+
+/* ===== Detalle de Hábito ===== */
+function HabitDetail({
+  program,
+  onBack,
+  onStarted,
+}: {
+  program: ProgramDef;
+  onBack: () => void;
+  onStarted: () => void;
+}) {
+  const [openedHow, setOpenedHow] = useState(false);
+  const [justStarted, setJustStarted] = useState(false);
+  const [progress, setProgress] = useState(getProgressPercent(program.key));
+  const dayIndex = getProgramDayIndex(program.key);
+
+  useEffect(() => {
+    const onStorage = () => setProgress(getProgressPercent(program.key));
+    window.addEventListener('storage', onStorage);
+    const id = setInterval(onStorage, 800);
+    return () => { window.removeEventListener('storage', onStorage); clearInterval(id); };
+  }, [program.key]);
+
+  const handleStart = () => {
+    startProgram(program.key);
+    setJustStarted(true);
+    setProgress(getProgressPercent(program.key));
+    onStarted();
+  };
+
+  return (
+    <div className="pb-6">
+      {/* Header image */}
+      <div className="relative w-full rounded-b-2xl overflow-hidden" style={{ aspectRatio: '16 / 9' }}>
+        <Image src={program.image} alt={program.name} fill className="object-cover" />
+        <div className="absolute left-3 top-3">
+          <button onClick={onBack} className="rounded-full bg-black/60 p-2 text-white">
+            <ArrowLeft className="h-5 w-5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Título y beneficios */}
+      <div className="mt-4">
+        <h1 className={`${archivoBlack.className} text-3xl leading-tight`}>{program.name}</h1>
+        <p className="mt-2 text-sm text-black/70">Beneficios de la lectura:</p>
+        <ul className="mt-2 list-disc pl-5 text-sm text-black/80">
+          {program.benefits.map((b, i) => (<li key={i}>{b}</li>))}
+        </ul>
+      </div>
+
+      {/* ¿Cómo funciona? */}
+      <div className="mt-4 rounded-2xl border" style={{ borderColor: COLORS.line }}>
+        <button
+          onClick={() => setOpenedHow(!openedHow)}
+          className="flex w-full items-center justify-between px-4 py-3"
+        >
+          <span className="text-base font-medium">¿Cómo funciona?</span>
+          {openedHow ? <ChevronLeft className="h-5 w-5 rotate-90" /> : <ChevronLeft className="h-5 w-5 -rotate-90" />}
         </button>
+        <AnimatePresence>
+          {openedHow && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+            >
+              <ul className="space-y-2 px-4 pb-4 text-sm text-black/70">
+                {program.howItWorks.map((it, i) => (<li key={i}>• {it}</li>))}
+              </ul>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* Botón Empezar + progreso */}
+      <div className="mt-5 rounded-2xl border p-4" style={{ borderColor: COLORS.line }}>
+        <div className="flex items-center justify-between">
+          <button
+            onClick={handleStart}
+            className="rounded-full bg-black px-5 py-3 text-sm font-medium text-white"
+          >
+            Empezar ahora
+          </button>
+          <div className="text-sm text-black/60">Día {dayIndex} / {program.days.length}</div>
+        </div>
+
+        {justStarted && (
+          <div className="mt-3 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">
+            ¡Enhorabuena por tu primer día del reto!
+          </div>
+        )}
+
+        <div className="mt-4">
+          <div className="h-3 w-full rounded-full bg-gray-200">
+            <div className="h-3 rounded-full bg-black transition-all" style={{ width: `${progress}%` }} />
+          </div>
+          <div className="mt-1 text-right text-xs text-black/60">{progress}%</div>
+        </div>
       </div>
     </div>
   );
 }
 
-/* ==============================
-   HERRAMIENTAS: 3 submódulos
-   ============================== */
+/* ===== Mi Zona ===== */
+function MiZona() {
+  const [storeVersion, setStoreVersion] = useState(0);
+  const store = loadStore();
+  const activeKeys = Object.keys(store).filter((k) => PROGRAMS[k]);
+  const bump = () => setStoreVersion((v) => v + 1);
 
-/* --- Mis notas --- */
-function ToolsNotes() {
-  const [notes, setNotes] = useState<Note[]>(() => ls.get<Note[]>(LS_NOTES, []));
-  const [editing, setEditing] = useState<Note | null>(null);
-
-  const saveAll = (next: Note[]) => { setNotes(next); ls.set(LS_NOTES, next); };
-
-  const createNote = () => {
-    const n: Note = {
-      id: crypto.randomUUID(),
-      title: '',
-      text: '',
-      pinned: false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    setEditing(n);
-  };
-
-  const saveNote = (n: Note) => {
-    n.updatedAt = new Date().toISOString();
-    const exists = notes.some(x => x.id === n.id);
-    const next = exists ? notes.map(x => x.id === n.id ? n : x) : [n, ...notes];
-    saveAll(next);
-    setEditing(null);
-  };
-
-  const togglePin = (id: string) => {
-    const next = notes.map(n => n.id === id ? { ...n, pinned: !n.pinned } : n);
-    saveAll(next);
-  };
-
-  const remove = (id: string) => {
-    if (!confirm('¿Borrar nota?')) return;
-    saveAll(notes.filter(n => n.id !== id));
-  };
-
-  const sorted = [...notes].sort((a,b) => (b.pinned?1:0) - (a.pinned?1:0) || (b.updatedAt.localeCompare(a.updatedAt)));
+  if (activeKeys.length === 0) {
+    return (
+      <div className="py-6">
+        <h2 className="text-xl font-semibold">Mi Zona</h2>
+        <p className="mt-1 text-sm text-black/70">
+          Aún no has empezado ningún programa. Ve a “Hábitos” o “Inicio” y toca un hábito para comenzarlo.
+        </p>
+      </div>
+    );
+  }
 
   return (
-    <div className="py-4">
-      {!editing ? (
-        <>
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-lg font-semibold">Mis notas</h3>
-            <button onClick={createNote} className="inline-flex items-center gap-2 rounded-full bg-black px-3 py-2 text-white text-sm">
-              <Plus className="h-4 w-4" /> Nueva
-            </button>
-          </div>
-          {sorted.length === 0 ? (
-            <p className="text-sm text-black/60">Escribe frases, reflexiones, ideas… aquí se guardarán y podrás editarlas.</p>
-          ) : (
-            <div className="space-y-3">
-              {sorted.map(n => (
-                <div key={n.id} className="rounded-2xl border p-3" style={{ borderColor: COLORS.line }}>
-                  <div className="mb-1 flex items-center gap-2">
-                    <button onClick={() => togglePin(n.id)} className="rounded p-1 hover:bg-black/5" aria-label="Fijar">
-                      <Pushpin className={`h-4 w-4 ${n.pinned ? 'text-black' : 'text-black/40'}`} />
-                    </button>
-                    <div className="text-xs text-black/50">{new Date(n.updatedAt).toLocaleString()}</div>
-                  </div>
-                  {n.title ? <div className="text-base font-semibold">{n.title}</div> : null}
-                  <div className="whitespace-pre-line text-sm text-black/80">{n.text || '— (vacía)'}</div>
-                  <div className="mt-2 flex gap-2">
-                    <button onClick={() => setEditing(n)} className="inline-flex items-center gap-1 rounded-full border px-3 py-1 text-sm" style={{ borderColor: COLORS.line }}>
-                      <Edit3 className="h-4 w-4" /> Editar
-                    </button>
-                    <button onClick={() => remove(n.id)} className="inline-flex items-center gap-1 rounded-full border px-3 py-1 text-sm" style={{ borderColor: COLORS.line }}>
-                      <Trash2 className="h-4 w-4" /> Borrar
-                    </button>
+    <div className="py-6">
+      <h2 className="text-xl font-semibold">Mi Zona</h2>
+      <p className="mt-1 text-sm text-black/70">Marca tu progreso diario. Puedes llevar varios programas a la vez.</p>
+
+      <div className="mt-4 space-y-3">
+        {activeKeys.map((key) => {
+          const p = PROGRAMS[key];
+          const day = getProgramDayIndex(key);
+          const todayTasks = p.days[day - 1]?.tasks || [];
+          const done = isTodayCompleted(key);
+
+          return (
+            <div key={key} className="overflow-hidden rounded-2xl border" style={{ borderColor: COLORS.line }}>
+              <div className="bg-white px-4 py-3">
+                <div className="text-sm text-black/60">Programa</div>
+                <div className="text-base font-semibold">{p.name}</div>
+              </div>
+
+              <div className="bg-[#f7f7f7] px-4 py-3">
+                <div className="mb-2 text-sm text-black/60">Hábito del día (Día {day}/{p.days.length})</div>
+                <ul className="mb-3 list-disc pl-5 text-sm text-black/80">
+                  {todayTasks.map((t, i) => (<li key={i}>{t}</li>))}
+                </ul>
+
+                <button
+                  onClick={() => { toggleTodayComplete(key); bump(); }}
+                  className="inline-flex items-center gap-3"
+                >
+                  <span
+                    className="flex h-6 w-6 items-center justify-center rounded-full border"
+                    style={{
+                      borderColor: done ? 'transparent' : '#c7c7c7',
+                      background: done ? '#22c55e' : 'transparent',
+                    }}
+                  >
+                    {done && (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                        <path d="M20 6L9 17l-5-5" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    )}
+                  </span>
+                  <span className="text-sm font-medium">
+                    {done ? '¡Marcado hoy!' : 'Marcar completado hoy'}
+                  </span>
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between bg-white px-4 py-3">
+                <div className="text-xs text-black/60">Progreso</div>
+                <div className="flex-1 px-3">
+                  <div className="h-2 w-full rounded-full bg-gray-200">
+                    <div className="h-2 rounded-full bg-black" style={{ width: `${getProgressPercent(key)}%` }} />
                   </div>
                 </div>
-              ))}
+                <div className="text-xs text-black/60">{getProgressPercent(key)}%</div>
+              </div>
             </div>
-          )}
-        </>
-      ) : (
-        <div className="rounded-2xl border p-3" style={{ borderColor: COLORS.line }}>
-          <div className="mb-3 flex items-center gap-2">
-            <button onClick={() => setEditing(null)} className="rounded-full p-2 hover:bg-black/5"><ChevronLeft className="h-5 w-5" /></button>
-            <div className="text-sm text-black/60">Editando nota</div>
-          </div>
-          <input
-            placeholder="Título (opcional)"
-            value={editing.title ?? ''}
-            onChange={(e) => setEditing({ ...editing, title: e.target.value })}
-            className="mb-2 w-full rounded-lg border px-3 py-2 text-sm"
-            style={{ borderColor: COLORS.line }}
-          />
-          <textarea
-            placeholder="Escribe aquí…"
-            value={editing.text}
-            onChange={(e) => setEditing({ ...editing, text: e.target.value })}
-            rows={8}
-            className="w-full rounded-lg border px-3 py-2 text-sm"
-            style={{ borderColor: COLORS.line }}
-          />
-          <div className="mt-3 flex gap-2">
-            <button onClick={() => saveNote(editing)} className="rounded-full bg-black px-4 py-2 text-sm text-white">Guardar</button>
-            <button onClick={() => setEditing(null)} className="rounded-full border px-4 py-2 text-sm" style={{ borderColor: COLORS.line }}>Cancelar</button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* --- Gratitud --- */
-function formatYMD(d: Date) { return d.toISOString().slice(0,10); }
-function addDays(d: Date, n: number) { const x = new Date(d); x.setDate(x.getDate()+n); return x; }
-
-function ToolsGratitude() {
-  const [map, setMap] = useState<Record<string, GratitudeEntry>>(() => ls.get(LS_GRAT, {} as Record<string, GratitudeEntry>));
-  const [date, setDate] = useState<Date>(new Date());
-  const key = formatYMD(date);
-  const entry = map[key] ?? { date: key, items: ['', '', ''], updatedAt: new Date().toISOString() };
-
-  const save = (e: GratitudeEntry) => {
-    const next = { ...map, [e.date]: { ...e, updatedAt: new Date().toISOString() } };
-    setMap(next); ls.set(LS_GRAT, next);
-  };
-
-  const setItem = (idx: number, val: string) => {
-    const items = [...entry.items];
-    if (idx >= items.length) items.length = idx+1;
-    items[idx] = val;
-    save({ ...entry, items });
-  };
-
-  return (
-    <div className="py-4">
-      <div className="mb-3 flex items-center justify-between">
-        <button onClick={() => setDate(addDays(date,-1))} className="rounded-full p-2 hover:bg-black/5"><ChevronLeft className="h-5 w-5" /></button>
-        <div className="text-sm font-medium">{date.toLocaleDateString()}</div>
-        <button onClick={() => setDate(addDays(date,1))} className="rounded-full p-2 hover:bg-black/5"><ChevronRight className="h-5 w-5" /></button>
-      </div>
-      <p className="mb-3 text-sm text-black/70">Escribe las cosas por las que dar las gracias hoy.</p>
-
-      {Array.from({ length: Math.max(3, entry.items.length) }).map((_, i) => (
-        <input
-          key={i}
-          placeholder={`Gracias por… #${i+1}`}
-          value={entry.items[i] ?? ''}
-          onChange={(e) => setItem(i, e.target.value)}
-          className="mb-2 w-full rounded-lg border px-3 py-2 text-sm"
-          style={{ borderColor: COLORS.line }}
-        />
-      ))}
-      <div className="mt-2">
-        <button
-          onClick={() => setItem(entry.items.length, '')}
-          className="inline-flex items-center gap-1 rounded-full border px-3 py-1 text-sm"
-          style={{ borderColor: COLORS.line }}
-        >
-          <Plus className="h-4 w-4" /> Añadir línea
-        </button>
+          );
+        })}
       </div>
     </div>
   );
-}
-
-/* --- Imágenes feel-good --- */
-function ToolsFeelGood() {
-  const [imgs, setImgs] = useState<FeelImg[]>(() => ls.get<FeelImg[]>(LS_FEEL, []));
-  const saveAll = (next: FeelImg[]) => { setImgs(next); ls.set(LS_FEEL, next); };
-
-  const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-    const arr: FeelImg[] = [];
-    for (const f of Array.from(files)) {
-      const dataUrl = await fileToDataURL(f);
-      arr.push({ id: crypto.randomUUID(), dataUrl, createdAt: new Date().toISOString() });
-    }
-    saveAll([...arr, ...imgs]);
-    e.target.value = '';
-  };
-
-  const remove = (id: string) => {
-    if (!confirm('¿Eliminar imagen?')) return;
-    saveAll(imgs.filter(i => i.id !== id));
-  };
-
-  return (
-    <div className="py-4">
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-lg font-semibold">Imágenes que me hacen sentir bien</h3>
-        <label className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-black px-3 py-2 text-white text-sm">
-          <Plus className="h-4 w-4" /> Añadir
-          <input type="file" accept="image/*" multiple onChange={onPick} className="hidden" />
-        </label>
-      </div>
-
-      {imgs.length === 0 ? (
-        <p className="text-sm text-black/60">Sube fotos que te transmitan calma y energía positiva: atardeceres, familia, mascotas…</p>
-      ) : (
-        <div className="grid grid-cols-3 gap-2">
-          {imgs.map(im => (
-            <div key={im.id} className="relative overflow-hidden rounded-lg">
-              <img src={im.dataUrl} alt="feel good" className="h-full w-full object-cover" />
-              <button
-                onClick={() => remove(im.id)}
-                className="absolute right-1 top-1 rounded-full bg-black/60 p-1 text-white"
-                aria-label="Borrar"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function fileToDataURL(file: File): Promise<string> {
-  return new Promise((res, rej) => {
-    const fr = new FileReader();
-    fr.onload = () => res(String(fr.result));
-    fr.onerror = rej;
-    fr.readAsDataURL(file);
-  });
 }
 
 /* ===== Página principal ===== */
 export default function Page() {
   const [tab, setTab] = useState<TabKey>('inicio');
+  const [selectedHabit, setSelectedHabit] = useState<string | null>(null);
 
   // Splash 1.5s
   const [showSplash, setShowSplash] = useState(true);
@@ -516,96 +549,95 @@ export default function Page() {
         {/* INICIO */}
         {tab === 'inicio' && (
           <div className="py-6">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h1 className="text-lg font-semibold">Pensamiento del día</h1>
-                <p className="text-xs text-black/60">{thought.title}: toca para leerlo de nuevo</p>
-              </div>
-              <button
-                onClick={() => setOpenThought(true)}
-                className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white"
-              >
-                Ver pensamiento
-              </button>
-            </div>
-
-            <div className="-mx-4">
-              {FEATURED_HABITS.map((h) => (
-                <div key={h.key}>
-                  <HabitCard data={h} onStart={(key) => alert(`Abrir programa: ${key}`)} />
+            {!selectedHabit ? (
+              <>
+                {/* Cabecera */}
+                <div className="mb-4 flex items-center justify-between">
+                  <div>
+                    <h1 className="text-lg font-semibold">Pensamiento del día</h1>
+                    <p className="text-xs text-black/60">{thought.title}: toca para leerlo de nuevo</p>
+                  </div>
+                  <button
+                    onClick={() => setOpenThought(true)}
+                    className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white"
+                  >
+                    Ver pensamiento
+                  </button>
                 </div>
-              ))}
-            </div>
 
-            <div className="mt-6 overflow-hidden rounded-2xl bg-white">
-              <div className="p-5">
-                <div className="mb-3 text-2xl font-bold leading-snug">
-                  ¿Listo para más? <br /> Descubre todos los hábitos
+                {/* Cards a sangre */}
+                <div className="-mx-4">
+                  {FEATURED_HABITS.map((h) => (
+                    <div key={h.key}>
+                      <HabitCard data={h} onOpen={(key) => setSelectedHabit(key)} />
+                    </div>
+                  ))}
                 </div>
-                <button
-                  onClick={() => setTab('habitos')}
-                  className="inline-flex items-center gap-2 rounded-full bg-black px-5 py-3 text-white"
-                >
-                  Ver hábitos <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
+
+                {/* CTA final */}
+                <div className="mt-6 overflow-hidden rounded-2xl bg-white">
+                  <div className="p-5">
+                    <div className="mb-3 text-2xl font-bold leading-snug">
+                      ¿Listo para más? <br /> Descubre todos los hábitos
+                    </div>
+                    <button
+                      onClick={() => setTab('habitos')}
+                      className="inline-flex items-center gap-2 rounded-full bg-black px-5 py-3 text-white"
+                    >
+                      Ver hábitos <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <HabitDetail
+                program={PROGRAMS[selectedHabit] ?? READING_PROGRAM}
+                onBack={() => setSelectedHabit(null)}
+                onStarted={() => {}}
+              />
+            )}
           </div>
         )}
 
-        {/* HÁBITOS (lista simple reutilizando cards) */}
+        {/* HÁBITOS */}
         {tab === 'habitos' && (
           <div className="py-6">
-            <h2 className="text-xl font-semibold">Hábitos</h2>
-            <p className="mt-1 text-sm text-black/70">Explora programas para instaurar o eliminar hábitos.</p>
-            <div className="mt-4 -mx-4">
-              {FEATURED_HABITS.map((h) => (
-                <div key={h.key}>
-                  <HabitCard data={h} onStart={(key) => alert(`Abrir programa: ${key}`)} />
+            {!selectedHabit ? (
+              <>
+                <h2 className="text-xl font-semibold">Hábitos</h2>
+                <p className="mt-1 text-sm text-black/70">Explora programas para instaurar o eliminar hábitos.</p>
+                <div className="mt-4 -mx-4">
+                  {FEATURED_HABITS.map((h) => (
+                    <div key={h.key}>
+                      <HabitCard data={h} onOpen={(key) => setSelectedHabit(key)} />
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </>
+            ) : (
+              <HabitDetail
+                program={PROGRAMS[selectedHabit] ?? READING_PROGRAM}
+                onBack={() => setSelectedHabit(null)}
+                onStarted={() => {}}
+              />
+            )}
           </div>
         )}
 
-        {/* MI ZONA (seguirá creciendo) */}
-        {tab === 'mizona' && (
+        {/* MI ZONA */}
+        {tab === 'mizona' && <MiZona />}
+
+        {/* Páginas placeholder */}
+        {tab === 'formacion' && (
           <div className="py-6">
-            <h2 className="text-xl font-semibold">Mi Zona</h2>
-            <p className="mt-1 text-sm text-black/70">Tu progreso, rachas y objetivos (calendario y contadores llegarán en la siguiente iteración).</p>
+            <h2 className="text-xl font-semibold">Formación</h2>
+            <p className="mt-1 text-sm text-black/70">Cursos cortos por pilares: Salud, Bienestar emocional y Finanzas.</p>
           </div>
         )}
-
-        {/* HERRAMIENTAS */}
-        {tab === 'herramientas' && (
-          <div className="py-6">
-            <h2 className="text-xl font-semibold">Herramientas</h2>
-            <p className="mt-1 text-sm text-black/70">Espacio para escribir, agradecer y guardar imágenes que te hacen bien.</p>
-
-            <div className="mt-4 space-y-6">
-              <section className="rounded-2xl border p-4" style={{ borderColor: COLORS.line }}>
-                <h3 className="mb-2 text-base font-semibold">Mis notas</h3>
-                <ToolsNotes />
-              </section>
-
-              <section className="rounded-2xl border p-4" style={{ borderColor: COLORS.line }}>
-                <h3 className="mb-2 text-base font-semibold">Diario de gratitud</h3>
-                <ToolsGratitude />
-              </section>
-
-              <section className="rounded-2xl border p-4" style={{ borderColor: COLORS.line }}>
-                <h3 className="mb-2 text-base font-semibold">Imágenes que me hacen sentir bien</h3>
-                <ToolsFeelGood />
-              </section>
-            </div>
-          </div>
-        )}
-
-        {/* AMIGOS (placeholder) */}
         {tab === 'amigos' && (
           <div className="py-6">
             <h2 className="text-xl font-semibold">Amigos</h2>
-            <p className="mt-1 text-sm text-black/70">Pronto: grupos de retos, invitaciones y puntos.</p>
+            <p className="mt-1 text-sm text-black/70">Comparte retos y rachas con tu gente.</p>
           </div>
         )}
       </SafeContainer>
