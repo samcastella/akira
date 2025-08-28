@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import {
   Home, ListChecks, User, GraduationCap, Users, X, ChevronRight,
-  Plus, Trash2, Edit3, Pin, ChevronLeft
+  Plus, Trash2, Edit3, Pin, ChevronLeft, ArrowLeft
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Archivo_Black } from 'next/font/google';
