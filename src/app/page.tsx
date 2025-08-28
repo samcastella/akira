@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import {
-  Home, ListChecks, User, GraduationCap, Users, X, ChevronRight, ChevronDown, ChevronUp, ArrowLeft,
+  Home, ListChecks, User, GraduationCap, Users, X, ChevronRight, ChevronDown, ChevronUp, ArrowLeft, Edit3, Trash2, Save, Clipboard as ClipboardIcon, NotebookPen
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Archivo_Black } from 'next/font/google';
@@ -125,7 +125,7 @@ const PROGRAMS: Record<string, ProgramDef> = {
 /* ============================= */
 type ProgramState = {
   startDate: string;                       // YYYY-MM-DD
-  completedDates?: string[];               // (LEGADO) días completados
+  completedDates?: string[];               // (LEGADO)
   completedByDate?: Record<string, number[]>; // nuevo: por día, índices de retos completados
 };
 type ProgramsStore = Record<string, ProgramState>;
@@ -135,14 +135,13 @@ function loadStore(): ProgramsStore {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     const data: ProgramsStore = raw ? JSON.parse(raw) : {};
-    // Migración desde formato viejo (si existe completedDates)
+    // Migración desde formato viejo
     Object.keys(data).forEach((k) => {
       const st = data[k];
       if (!st.completedByDate) st.completedByDate = {};
       if (st.completedDates && st.completedDates.length) {
         const prog = PROGRAMS[k];
         st.completedDates.forEach((d) => {
-          // marca TODOS los retos del día como hechos
           const dayIdx = getRelativeDayIndexForDate(k, d);
           const n = prog?.days[dayIdx - 1]?.tasks.length ?? 0;
           st.completedByDate![d] = Array.from({ length: n }, (_, i) => i);
@@ -158,7 +157,6 @@ function loadStore(): ProgramsStore {
 function saveStore(store: ProgramsStore) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
 }
-
 function ensureProgram(key: string) {
   const store = loadStore();
   if (!store[key]) {
@@ -187,8 +185,6 @@ function isTaskTodayCompleted(key: string, taskIndex: number) {
   const store = loadStore();
   return !!store[key]?.completedByDate?.[todayKey()]?.includes(taskIndex);
 }
-
-// Día relativo de un programa para una fecha concreta (1..21) o 0 si no aplica
 function getRelativeDayIndexForDate(key: string, dateStr: string): number {
   const store = loadStore();
   const start = store[key]?.startDate;
@@ -196,8 +192,6 @@ function getRelativeDayIndexForDate(key: string, dateStr: string): number {
   const idx = diffDays(new Date(dateStr + 'T00:00:00'), new Date(start + 'T00:00:00')) + 1;
   return idx >= 1 && idx <= (PROGRAMS[key]?.days.length ?? 21) ? idx : 0;
 }
-
-// Progreso: días con TODOS los retos del día completados
 function getProgressPercent(key: string) {
   const store = loadStore();
   const st = store[key];
@@ -205,7 +199,7 @@ function getProgressPercent(key: string) {
   if (!st || !prog) return 0;
   let completedDays = 0;
   const start = new Date(st.startDate + 'T00:00:00');
-  const end = new Date(); // hasta hoy
+  const end = new Date();
   const totalDays = Math.min(diffDays(end, start) + 1, prog.days.length);
   for (let i = 0; i < totalDays; i++) {
     const dKey = dateKey(addDays(start, i));
@@ -247,7 +241,8 @@ function BottomNav({ active, onChange }: { active: TabKey; onChange: (k: TabKey)
     { key: 'inicio', label: 'Inicio', icon: Home },
     { key: 'habitos', label: 'Hábitos', icon: ListChecks },
     { key: 'mizona', label: 'Mi zona', icon: User },
-    { key: 'formacion', label: 'Formación', icon: GraduationCap },
+    // Renombrado visual de "Formación" -> "Herramientas"
+    { key: 'formacion', label: 'Herramientas', icon: GraduationCap },
     { key: 'amigos', label: 'Amigos', icon: Users },
   ];
   return (
@@ -303,9 +298,10 @@ function HabitCard({ data, onOpen }: { data: HabitCardData; onOpen: (key: string
       <div className="absolute inset-0 flex flex-col justify-end p-5">
         <div className="text-white/85 text-sm">{data.subtitle}</div>
         <div className={`${archivoBlack.className} text-white text-4xl leading-tight`}>{data.title}</div>
-        <button className="mt-3 inline-flex items-center gap-2 self-start rounded-full bg-white px-4 py-2 text-sm font-medium text-black shadow"
-                onClick={(e) => { e.stopPropagation(); onOpen(data.key); }}>
-          ▶︎ Empezar ahora
+        <button
+          className="mt-3 inline-flex items-center gap-2 self-start rounded-full bg-white px-4 py-2 text-sm font-medium text-black shadow"
+          onClick={(e) => { e.stopPropagation(); onOpen(data.key); }}>
+          Empieza ahora
         </button>
       </div>
     </div>
@@ -357,7 +353,7 @@ function HabitDetail({ program, onBack, onStarted }: { program: ProgramDef; onBa
 
       <div className="mt-5 rounded-2xl border p-4" style={{ borderColor: COLORS.line }}>
         <div className="flex items-center justify-between">
-          <button onClick={handleStart} className="rounded-full bg-black px-5 py-3 text-sm font-medium text-white">Empezar ahora</button>
+          <button onClick={handleStart} className="rounded-full bg-black px-5 py-3 text-sm font-medium text-white">Empieza ahora</button>
           <div className="text-sm text-black/60">Día {dayIndex} / 21</div>
         </div>
         {justStarted && <div className="mt-3 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">¡Enhorabuena por tu primer día del reto!</div>}
@@ -371,10 +367,218 @@ function HabitDetail({ program, onBack, onStarted }: { program: ProgramDef; onBa
 }
 
 /* ============================= */
+/* Herramientas (Mis notas + Diario) */
+/* ============================= */
+type Note = { id: string; text: string; createdAt: string; updatedAt?: string };
+const NOTES_KEY = 'akira_notes_v1';
+function loadNotes(): Note[] {
+  try { return JSON.parse(localStorage.getItem(NOTES_KEY) || '[]'); } catch { return []; }
+}
+function saveNotes(notes: Note[]) { localStorage.setItem(NOTES_KEY, JSON.stringify(notes)); }
+
+type Gratitude = { date: string; items: string[]; note?: string };
+const GRAT_KEY = 'akira_gratitude_v1';
+function loadGratitude(): Record<string, Gratitude> {
+  try { return JSON.parse(localStorage.getItem(GRAT_KEY) || '{}'); } catch { return {}; }
+}
+function saveGratitude(map: Record<string, Gratitude>) { localStorage.setItem(GRAT_KEY, JSON.stringify(map)); }
+
+function Herramientas() {
+  const [tab, setTab] = useState<'notas' | 'gratitud'>('notas');
+
+  // Notas
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [draft, setDraft] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText] = useState('');
+
+  // Gratitud
+  const [grat, setGrat] = useState<Record<string, Gratitude>>({});
+  const today = todayKey();
+  const todayEntry = grat[today] || { date: today, items: ['', '', ''], note: '' };
+  const [gItems, setGItems] = useState<string[]>(todayEntry.items);
+  const [gNote, setGNote] = useState<string>(todayEntry.note || '');
+
+  useEffect(() => {
+    setNotes(loadNotes());
+    setGrat(loadGratitude());
+  }, []);
+
+  // sync cuando cambia el mapa de gratitud
+  useEffect(() => {
+    if (!grat[today]) return;
+    setGItems(grat[today].items);
+    setGNote(grat[today].note || '');
+  }, [grat]);
+
+  const addNote = () => {
+    const text = draft.trim();
+    if (!text) return;
+    const n: Note = { id: `${Date.now()}`, text, createdAt: new Date().toISOString() };
+    const next = [n, ...notes];
+    setNotes(next); saveNotes(next); setDraft('');
+  };
+  const removeNote = (id: string) => {
+    const next = notes.filter(n => n.id !== id);
+    setNotes(next); saveNotes(next);
+  };
+  const startEdit = (n: Note) => { setEditingId(n.id); setEditText(n.text); };
+  const saveEdit = () => {
+    if (!editingId) return;
+    const next = notes.map(n => n.id === editingId ? { ...n, text: editText, updatedAt: new Date().toISOString() } : n);
+    setNotes(next); saveNotes(next); setEditingId(null); setEditText('');
+  };
+  const copyToClipboard = async (text: string) => {
+    try { await navigator.clipboard.writeText(text); } catch { /* noop */ }
+  };
+
+  const saveTodayGratitude = () => {
+    const cleaned = gItems.map(s => s.trim());
+    const map = { ...grat, [today]: { date: today, items: cleaned, note: gNote.trim() } };
+    setGrat(map); saveGratitude(map);
+  };
+
+  const pastDays = Object.values(grat)
+    .filter(g => g.date !== today)
+    .sort((a, b) => b.date.localeCompare(a.date));
+
+  return (
+    <div className="py-6">
+      <h2 className="text-xl font-semibold">Herramientas</h2>
+      <p className="mt-1 text-sm text-black/70">Tu espacio para escribir y agradecer cada día.</p>
+
+      {/* Pills */}
+      <div className="mt-4 flex gap-2">
+        <button onClick={() => setTab('notas')}
+          className={`rounded-full px-4 py-2 text-sm border ${tab === 'notas' ? 'bg-black text-white' : 'bg-white text-black'}`}
+          style={{ borderColor: COLORS.line }}>
+          <span className="inline-flex items-center gap-2"><NotebookPen className="h-4 w-4" /> Mis notas</span>
+        </button>
+        <button onClick={() => setTab('gratitud')}
+          className={`rounded-full px-4 py-2 text-sm border ${tab === 'gratitud' ? 'bg-black text-white' : 'bg-white text-black'}`}
+          style={{ borderColor: COLORS.line }}>
+          Diario de gratitud
+        </button>
+      </div>
+
+      {/* --- MIS NOTAS --- */}
+      {tab === 'notas' && (
+        <div className="mt-4 space-y-4">
+          <div className="rounded-2xl border p-4" style={{ borderColor: COLORS.line }}>
+            <label className="text-sm font-medium">Escribe una nota</label>
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="Frases que te inspiran, ideas, reflexiones..."
+              className="mt-2 w-full rounded-xl border p-3 text-sm"
+              style={{ borderColor: COLORS.line }}
+              rows={4}
+            />
+            <div className="mt-3 flex justify-end">
+              <button onClick={addNote} className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white">Guardar nota</button>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border" style={{ borderColor: COLORS.line }}>
+            <div className="px-4 py-3 text-sm font-medium">Tus notas ({notes.length})</div>
+            <div className="divide-y" style={{ borderColor: COLORS.line }}>
+              {notes.length === 0 && <div className="px-4 py-4 text-sm text-black/60">Aún no tienes notas guardadas.</div>}
+              {notes.map((n) => (
+                <div key={n.id} className="px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-xs text-black/50">{new Date(n.createdAt).toLocaleString()}</div>
+                    <div className="flex gap-2">
+                      {editingId === n.id ? (
+                        <button onClick={saveEdit} className="rounded-full bg-black px-3 py-1.5 text-xs text-white inline-flex items-center gap-1"><Save className="h-4 w-4" /> Guardar</button>
+                      ) : (
+                        <button onClick={() => startEdit(n)} className="rounded-full bg-white px-3 py-1.5 text-xs inline-flex items-center gap-1 border" style={{ borderColor: COLORS.line }}><Edit3 className="h-4 w-4" /> Editar</button>
+                      )}
+                      <button onClick={() => copyToClipboard(n.text)} className="rounded-full bg-white px-3 py-1.5 text-xs inline-flex items-center gap-1 border" style={{ borderColor: COLORS.line }}><ClipboardIcon className="h-4 w-4" /> Copiar</button>
+                      <button onClick={() => removeNote(n.id)} className="rounded-full bg-white px-3 py-1.5 text-xs inline-flex items-center gap-1 border text-red-600" style={{ borderColor: COLORS.line }}><Trash2 className="h-4 w-4" /> Borrar</button>
+                    </div>
+                  </div>
+                  {editingId === n.id ? (
+                    <textarea
+                      value={editText}
+                      onChange={(e) => setEditText(e.target.value)}
+                      className="mt-2 w-full rounded-xl border p-3 text-sm"
+                      style={{ borderColor: COLORS.line }}
+                      rows={3}
+                    />
+                  ) : (
+                    <p className="mt-2 whitespace-pre-wrap text-sm">{n.text}</p>
+                  )}
+                  {n.updatedAt && <div className="mt-1 text-[11px] text-black/50">Editado: {new Date(n.updatedAt).toLocaleString()}</div>}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- DIARIO DE GRATITUD --- */}
+      {tab === 'gratitud' && (
+        <div className="mt-4 space-y-4">
+          <div className="rounded-2xl border p-4" style={{ borderColor: COLORS.line }}>
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-medium">Hoy · {new Date().toLocaleDateString()}</div>
+              <div className="text-xs text-black/60">Escribe 3 cosas por las que dar las gracias</div>
+            </div>
+
+            <div className="mt-3 space-y-2">
+              {gItems.map((val, i) => (
+                <input
+                  key={i}
+                  value={val}
+                  onChange={(e) => {
+                    const next = [...gItems]; next[i] = e.target.value; setGItems(next);
+                  }}
+                  placeholder={`Agradecimiento ${i + 1}`}
+                  className="w-full rounded-xl border p-3 text-sm"
+                  style={{ borderColor: COLORS.line }}
+                />
+              ))}
+              <textarea
+                value={gNote}
+                onChange={(e) => setGNote(e.target.value)}
+                placeholder="Notas o reflexión del día (opcional)"
+                className="w-full rounded-xl border p-3 text-sm"
+                style={{ borderColor: COLORS.line }}
+                rows={3}
+              />
+              <div className="flex justify-end">
+                <button onClick={saveTodayGratitude} className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white">Guardar</button>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border" style={{ borderColor: COLORS.line }}>
+            <div className="px-4 py-3 text-sm font-medium">Entradas anteriores</div>
+            <div className="divide-y" style={{ borderColor: COLORS.line }}>
+              {pastDays.length === 0 && <div className="px-4 py-4 text-sm text-black/60">Todavía no hay registros anteriores.</div>}
+              {pastDays.map((g) => (
+                <details key={g.date} className="group px-4 py-3">
+                  <summary className="flex cursor-pointer list-none items-center justify-between">
+                    <span className="text-sm">{new Date(g.date + 'T00:00:00').toLocaleDateString()}</span>
+                    <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
+                  </summary>
+                  <ul className="mt-2 list-disc pl-5 text-sm">
+                    {g.items.filter(Boolean).map((it, idx) => <li key={idx}>{it}</li>)}
+                  </ul>
+                  {g.note && <p className="mt-2 text-sm text-black/70 whitespace-pre-wrap">{g.note}</p>}
+                </details>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================= */
 /* Mi Zona                       */
 /* ============================= */
-
-/** Dado un día (YYYY-MM-DD) devuelve la suma de retos totales y marcados teniendo en cuenta todos los programas activos. */
 function totalsForDate(dateStr: string) {
   const store = loadStore();
   let total = 0; let done = 0;
@@ -394,7 +598,6 @@ function dayColorStatus(dateStr: string): DayColor {
   const { total, done } = totalsForDate(dateStr);
   if (total === 0) return 'empty';
   if (done === 0) {
-    // si el día ya pasó -> rojo, si es hoy/futuro -> empty
     const d = new Date(dateStr + 'T00:00:00');
     const today = new Date(todayKey() + 'T00:00:00');
     return d < today ? 'none' : 'empty';
@@ -404,7 +607,6 @@ function dayColorStatus(dateStr: string): DayColor {
 }
 
 function MiZona() {
-  // nombre opcional guardado en localStorage ("akira_name"), por defecto "Amigo/a"
   const [name, setName] = useState<string>('Amigo/a');
   const [, setTick] = useState(0);
   const bump = () => setTick((v) => v + 1);
@@ -413,11 +615,9 @@ function MiZona() {
     setName(localStorage.getItem('akira_name') || 'Amigo/a');
   }, []);
 
-  // programas activos
   const store = loadStore();
   const active = Object.keys(store).filter((k) => PROGRAMS[k]);
 
-  // métricas
   const allDatesWithAny = new Set<string>();
   let totalChecks = 0;
   Object.keys(store).forEach((k) => {
@@ -429,7 +629,6 @@ function MiZona() {
   });
   const daysWithAny = allDatesWithAny.size;
 
-  // calendario del mes actual
   const now = new Date();
   const y = now.getFullYear(); const m = now.getMonth();
   const nDays = daysInMonth(y, m);
@@ -437,7 +636,6 @@ function MiZona() {
 
   return (
     <div className="py-6">
-      {/* Saludo + métricas grandes */}
       <div className="mb-4">
         <h2 className={`${archivoBlack.className} text-3xl leading-tight`}>Hola {name}</h2>
       </div>
@@ -453,7 +651,6 @@ function MiZona() {
         </div>
       </div>
 
-      {/* Calendario mensual (círculos) */}
       <div className="rounded-2xl border p-4" style={{ borderColor: COLORS.line }}>
         <div className="mb-2 text-sm font-medium">Este mes</div>
         <div className="grid grid-cols-7 gap-2">
@@ -480,7 +677,6 @@ function MiZona() {
         </div>
       </div>
 
-      {/* Programas activos y retos del día */}
       <div className="mt-5 space-y-3">
         {active.length === 0 && (
           <div className="rounded-2xl border p-4 text-sm text-black/70" style={{ borderColor: COLORS.line }}>
@@ -494,14 +690,12 @@ function MiZona() {
           const tasks = dayIdx ? (p.days[dayIdx - 1]?.tasks ?? []) : [];
           return (
             <div key={key} className="overflow-hidden rounded-2xl border" style={{ borderColor: COLORS.line }}>
-              {/* Cabecera del programa */}
               <div className="bg-white px-4 py-3">
                 <div className="text-sm text-black/60">Programa</div>
                 <div className="text-base font-semibold">{p.name}</div>
                 <div className="text-xs text-black/60">Día {dayIdx || 1} / {p.days.length}</div>
               </div>
 
-              {/* Retos del día con checks individuales */}
               <div className="bg-[#f7f7f7] px-4 py-3">
                 <div className="mb-2 text-sm text-black/60">Retos de hoy</div>
                 <ul className="space-y-3">
@@ -512,10 +706,7 @@ function MiZona() {
                         <button
                           onClick={() => { toggleTaskToday(key, i); bump(); }}
                           className="flex h-6 w-6 items-center justify-center rounded-full"
-                          style={{
-                            background: done ? COLORS.green : COLORS.red,
-                            color: '#fff',
-                          }}
+                          style={{ background: done ? COLORS.green : COLORS.red, color: '#fff' }}
                           aria-label={done ? 'Completado' : 'Sin completar'}
                         >
                           {done ? (
@@ -637,13 +828,10 @@ export default function Page() {
         {/* MI ZONA */}
         {tab === 'mizona' && <MiZona />}
 
-        {/* Placeholders */}
-        {tab === 'formacion' && (
-          <div className="py-6">
-            <h2 className="text-xl font-semibold">Formación</h2>
-            <p className="mt-1 text-sm text-black/70">Cursos cortos por pilares: Salud, Bienestar emocional y Finanzas.</p>
-          </div>
-        )}
+        {/* HERRAMIENTAS (antes Formación) */}
+        {tab === 'formacion' && <Herramientas />}
+
+        {/* AMIGOS */}
         {tab === 'amigos' && (
           <div className="py-6">
             <h2 className="text-xl font-semibold">Amigos</h2>
