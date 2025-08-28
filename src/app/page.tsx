@@ -2,241 +2,241 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
-import Link from 'next/link';
 import {
-  Home, ListChecks, User, GraduationCap, Users, X, ChevronRight, ChevronDown, ChevronUp, ArrowLeft, Settings,
+  Home, ListChecks, User, GraduationCap, Users, X, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, ArrowLeft,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Archivo_Black } from 'next/font/google';
 
-/* ===== Tipografía para títulos de cards ===== */
+/* =================== Tipografía para títulos =================== */
 const archivoBlack = Archivo_Black({
   weight: '400',
   subsets: ['latin'],
   variable: '--font-archivo-black',
 });
 
-/* ===== Colores ===== */
+/* =================== Colores =================== */
 const COLORS = {
   bg: '#ffffff',
   text: '#111111',
-  accent: '#FFD54F', // amarillo barra
+  accent: '#FFD54F',
   black: '#000000',
   grayLight: '#f3f3f3',
   line: '#eaeaea',
+  red: '#ef4444',
+  orange: '#f59e0b',
+  green: '#22c55e',
 };
 
 type TabKey = 'inicio' | 'habitos' | 'mizona' | 'formacion' | 'amigos';
 
-/* =========================================================
-   USER STORAGE (solo front, por email) 
-   ========================================================= */
+/* =================== Pensamientos (L→D) =================== */
+type Thought = { title: string; text: string };
 
-type User = { name: string; email: string };
-
-type ProgramState = {
-  startDate: string;        // YYYY-MM-DD
-  completedDates: string[]; // YYYY-MM-DD
+const THOUGHTS_BY_DAY: Record<number, Thought> = {
+  1: { title: 'Visualízate', text: 'Imagina por un momento que ya lo lograste. Hoy dedica 2–3 minutos a cerrar los ojos y verte consiguiendo tus objetivos.' },
+  2: { title: 'Un paso más', text: 'Comprométete a un paso pequeño: 5 páginas de lectura o 10 minutos de movimiento.' },
+  3: { title: 'Eres constante', text: 'La disciplina es volver incluso cuando pesa. Elige una acción mínima para no romper la cadena.' },
+  4: { title: 'Confía en ti', text: 'Piensa en un reto que ya superaste. ¿Qué cualidades tuyas te ayudarán hoy?' },
+  5: { title: 'El presente cuenta', text: 'Guarda 1€, elige una comida sana o sal a caminar 10 min. El cambio empieza ahora.' },
+  6: { title: 'Pequeñas victorias', text: 'Envía ese mensaje pendiente, bebe agua extra o lee 2 páginas. Suma victorias.' },
+  0: { title: 'Reflexiona y agradece', text: 'Reconoce lo logrado esta semana. Respira y agradece una acción que te hizo avanzar.' },
 };
 
+const todayThought = () => THOUGHTS_BY_DAY[new Date().getDay()];
+
+/* =================== Programas (30 días dummy) =================== */
+
+type DayTasks = { tasks: string[] };
+type ProgramDef = {
+  key: string;
+  name: string;
+  image: string;          // /public
+  benefits: string[];
+  howItWorks: string[];
+  days: DayTasks[];       // 30 días
+};
+
+// 30 días de ejemplo para un programa genérico
+function make30Days(prefix: string): DayTasks[] {
+  const arr: DayTasks[] = [];
+  for (let d = 1; d <= 30; d++) {
+    // 2–3 tareas cortas para probar
+    const base = [
+      `${prefix}: tarea principal del día ${d}`,
+      `Nota/registro del día ${d}`,
+    ];
+    if (d % 3 === 0) base.push(`Extra del día ${d}`);
+    arr.push({ tasks: base });
+  }
+  return arr;
+}
+
+const PROGRAMS: Record<string, ProgramDef> = {
+  lectura: {
+    key: 'lectura',
+    name: 'Conviértete en una máquina lectora',
+    image: '/reading.jpg',
+    benefits: [
+      'Mejora concentración y claridad mental',
+      'Aumenta creatividad y vocabulario',
+      'Reduce el estrés y mejora el sueño',
+    ],
+    howItWorks: [
+      '30 días con 2–3 micro-retos diarios.',
+      'Empezar fácil; progresión suave.',
+      'Registra cada día en “Mi Zona”.',
+    ],
+    days: make30Days('Lee 1–10 páginas'),
+  },
+  ejercicio: {
+    key: 'ejercicio',
+    name: 'Entrena cada día',
+    image: '/burpees.jpg',
+    benefits: [
+      'Más energía y fuerza',
+      'Mejora del ánimo',
+      'Hábitos sostenibles',
+    ],
+    howItWorks: [
+      '30 días con 2–3 micro-retos diarios.',
+      'Cuerpo en movimiento > perfección.',
+      'Registra cada día en “Mi Zona”.',
+    ],
+    days: make30Days('Muévete 10–20 minutos'),
+  },
+  ahorro: {
+    key: 'ahorro',
+    name: 'Ahorra sin darte cuenta',
+    image: '/savings.jpg',
+    benefits: [
+      'Tranquilidad financiera',
+      'Hábito de previsión',
+      'Más control',
+    ],
+    howItWorks: [
+      '30 días con 2–3 micro-retos diarios.',
+      'Empieza por 1€ al día y crece.',
+      'Registra cada día en “Mi Zona”.',
+    ],
+    days: make30Days('Ahorra 1–3€'),
+  },
+  meditacion: {
+    key: 'meditacion',
+    name: 'Medita 5 minutos',
+    image: '/meditation.jpg',
+    benefits: [
+      'Calma mental',
+      'Mejor foco',
+      'Mejor descanso',
+    ],
+    howItWorks: [
+      '30 días con 2–3 micro-retos diarios.',
+      'Empieza con 2–5 minutos.',
+      'Registra cada día en “Mi Zona”.',
+    ],
+    days: make30Days('Medita 2–10 min'),
+  },
+};
+
+/* =================== Storage (usuarios + progreso) =================== */
+
+type DayTasksState = number[]; // índices de tareas completadas (0..n-1)
+type ProgramState = {
+  startDate: string;                          // YYYY-MM-DD
+  perDateTasks: Record<string, DayTasksState> // fecha->indices completados
+};
 type ProgramsStore = Record<string, ProgramState>;
 
-type UsersDb = Record<
-  string, // email
-  {
-    user: User;
-    store: ProgramsStore;
-  }
->;
+type UserProfile = { name: string; email?: string };
 
-const USER_KEY = 'akira_current_user_v1';
-const USERS_KEY = 'akira_users_v1';
+const STORAGE_KEY = 'akira_programs_v2';
+const USER_KEY = 'akira_user_v1';
 
-/** Helpers de fecha */
-const todayKey = () => new Date().toISOString().slice(0, 10);
+const todayKey = () => new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 
-/** Carga el diccionario de usuarios */
-function loadUsersDb(): UsersDb {
+function loadStore(): ProgramsStore {
   try {
-    const raw = localStorage.getItem(USERS_KEY);
+    const raw = localStorage.getItem(STORAGE_KEY);
     return raw ? JSON.parse(raw) : {};
   } catch {
     return {};
   }
 }
-function saveUsersDb(db: UsersDb) {
-  localStorage.setItem(USERS_KEY, JSON.stringify(db));
+function saveStore(store: ProgramsStore) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
 }
-
-/** Usuario actual */
-function getCurrentUser(): User | null {
+function loadUser(): UserProfile | null {
   try {
     const raw = localStorage.getItem(USER_KEY);
-    return raw ? JSON.parse(raw) as User : null;
+    return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
   }
 }
-function setCurrentUser(user: User) {
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
+function saveUser(u: UserProfile) {
+  localStorage.setItem(USER_KEY, JSON.stringify(u));
 }
 
-/** Upsert user (si no existe lo crea) */
-function upsertUser(user: User) {
-  const db = loadUsersDb();
-  if (!db[user.email]) {
-    db[user.email] = { user, store: {} };
-  } else {
-    db[user.email].user = user; // por si cambia el nombre
-  }
-  saveUsersDb(db);
-}
-
-/** Store por usuario (programas) */
-function loadStoreFor(email: string): ProgramsStore {
-  const db = loadUsersDb();
-  return db[email]?.store ?? {};
-}
-function saveStoreFor(email: string, store: ProgramsStore) {
-  const db = loadUsersDb();
-  if (!db[email]) return; // no debería pasar
-  db[email].store = store;
-  saveUsersDb(db);
-}
-
-/** API de programas que ahora va por usuario */
-function startProgramFor(email: string, key: string) {
-  const store = loadStoreFor(email);
+function startProgram(key: string) {
+  const store = loadStore();
   if (!store[key]) {
-    store[key] = { startDate: todayKey(), completedDates: [] };
-    saveStoreFor(email, store);
+    store[key] = { startDate: todayKey(), perDateTasks: {} };
+    saveStore(store);
   }
 }
-function toggleTodayCompleteFor(email: string, key: string) {
-  const store = loadStoreFor(email);
-  if (!store[key]) return;
-  const t = todayKey();
-  const set = new Set(store[key].completedDates);
-  if (set.has(t)) set.delete(t);
-  else set.add(t);
-  store[key].completedDates = Array.from(set).sort();
-  saveStoreFor(email, store);
-}
-function isTodayCompletedFor(email: string, key: string) {
-  const store = loadStoreFor(email);
-  const t = todayKey();
-  return !!store[key]?.completedDates.includes(t);
-}
-function getProgramDayIndexFor(email: string, key: string) {
-  const store = loadStoreFor(email);
+
+function getProgramDayIndexForDate(key: string, y: number, m: number, d: number) {
+  const store = loadStore();
   const start = store[key]?.startDate;
-  if (!start) return 1;
+  if (!start) return null;
+  const date = new Date(y, m, d);
   const startDate = new Date(start + 'T00:00:00');
-  const diffMs = new Date().getTime() - startDate.getTime();
-  const day = Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1;
-  return Math.min(Math.max(day, 1), 21); // 1..21
-}
-function getProgressPercentFor(email: string, key: string, totalDays: number) {
-  const store = loadStoreFor(email);
-  const done = store[key]?.completedDates.length ?? 0;
-  return Math.min(100, Math.round((done / totalDays) * 100));
+  const diff = Math.floor((date.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+  if (diff < 1 || diff > (PROGRAMS[key]?.days.length ?? 30)) return null;
+  return diff; // 1..30
 }
 
-/* =========================================================
-   Pensamientos (L→D)
-   ========================================================= */
-type Thought = { title: string; text: string };
-
-const THOUGHTS_BY_DAY: Record<number, Thought> = {
-  1: { title: 'Visualízate', text: 'Imagina por un momento que ya lo lograste. Si tu reto es empezar a correr, mírate dentro de unos meses cruzando la meta... Hoy dedica 2–3 minutos a cerrar los ojos y verte consiguiendo tus objetivos.' },
-  2: { title: 'Un paso más', text: 'No importa lo lejos que esté tu meta. Hoy comprométete a dar un paso pequeño: 5 páginas de lectura o 10 minutos de entreno.' },
-  3: { title: 'Eres constante', text: 'La disciplina es volver incluso en los días que pesan. Elige una acción mínima para no romper la cadena.' },
-  4: { title: 'Confía en ti', text: 'Piensa en un reto que ya superaste. Escribe tres cualidades tuyas que te ayudarán a conseguir tu meta.' },
-  5: { title: 'El presente cuenta', text: 'Empieza con algo sencillo hoy: guarda 1€ o elige una comida sana. El cambio comienza ahora.' },
-  6: { title: 'Pequeñas victorias', text: 'Camina 10 minutos, bebe un vaso de agua extra o envía ese mensaje pendiente. Suma victorias.' },
-  0: { title: 'Reflexiona y agradece', text: 'Reconoce lo logrado esta semana. Respira y agradece una acción que te hizo avanzar.' },
-};
-const todayThought = () => THOUGHTS_BY_DAY[new Date().getDay()];
-
-/* =========================================================
-   Programa de Lectura 21 días (revisado)
-   ========================================================= */
-type DayTasks = { tasks: string[] };
-type ProgramDef = {
-  key: string;
-  name: string;
-  image: string;
-  benefits: string[];
-  howItWorks: string[];
-  days: DayTasks[]; // 21 días
-};
-
-const READING_PROGRAM: ProgramDef = {
-  key: 'lectura',
-  name: 'Conviértete en una máquina lectora',
-  image: '/reading.jpg',
-  benefits: [
-    'Mejora tu concentración y claridad mental',
-    'Aumenta tu creatividad y vocabulario',
-    'Reduce el estrés y mejora el sueño',
-  ],
-  howItWorks: [
-    '21 días con 2–3 micro-retos diarios.',
-    'Semana 1: 1–5 páginas. Semana 2: 5–10. Semana 3: 10–15.',
-    'Registra cada día en “Mi Zona” marcando el check.',
-  ],
-  days: [
-    // Semana 1
-    { tasks: ['Ve a una librería y elige un libro ≤ 200–300 páginas.', 'Colócalo en un lugar visible.', 'Define hora/lugar y pon una alarma diaria.'] },
-    { tasks: ['Lee 1 página.', 'Escribe por qué elegiste ese libro.', 'Haz una foto de tu rincón de lectura.'] },
-    { tasks: ['Lee 1–5 páginas (si lees más, genial).', 'Prepara tu ritual (café, té, luz).', 'Marca una frase que te inspire.'] },
-    { tasks: ['Lee 1–5 páginas.', 'Lee en voz alta un párrafo.', 'Escribe una frase sobre lo que sentiste.'] },
-    { tasks: ['Lee 1–5 páginas en un lugar distinto.', 'Apunta una idea clave.', 'Cuéntaselo a alguien.'] },
-    { tasks: ['Lee 1–5 páginas.', 'Evalúa tu concentración (1–5).', 'Ajusta la hora si no encaja.'] },
-    { tasks: ['Lee 1–5 páginas.', 'Relee tus notas o frases marcadas.', 'Celebra la primera semana.'] },
-    // Semana 2
-    { tasks: ['Lee 5 páginas.', 'Apunta 1 frase aplicable hoy.', 'Compártela con alguien.'] },
-    { tasks: ['Lee 6 páginas.', 'Asocia lectura a otro hábito (después de desayunar).', 'Escribe lo más útil del día.'] },
-    { tasks: ['Lee 6–7 páginas.', 'Marca 2 aprendizajes clave.', 'Recompénsate con algo sencillo.'] },
-    { tasks: ['Lee 7 páginas.', 'Comparte lo más interesante con un amigo.', 'Haz check en tu racha.'] },
-    { tasks: ['Lee 8 páginas.', 'Marca una idea aplicable hoy.', 'Ponla en práctica.'] },
-    { tasks: ['Lee 8–9 páginas.', 'Escribe una reflexión de 2 frases.', 'Haz una foto del libro y compártela.'] },
-    { tasks: ['Lee 10 páginas en tu lugar favorito.', 'Balance de semana: ¿qué aprendiste?', 'Recompénsate.'] },
-    // Semana 3
-    { tasks: ['Escribe: “Soy el tipo de persona que lee cada día”.', 'Lee 10 páginas.', 'Habla con alguien de tu hábito.'] },
-    { tasks: ['Elige tu próxima lectura.', 'Lee 11 páginas.', 'Haz una story con tu frase favorita.'] },
-    { tasks: ['Lee 12 páginas.', 'Mini-resumen (3–4 frases).', 'Meta: terminar libro en X días.'] },
-    { tasks: ['Lee 12–13 páginas.', 'Marca 2 ideas prácticas.', 'Aplica 1 hoy mismo.'] },
-    { tasks: ['Lee 13 páginas.', 'Cuenta a alguien qué estás aprendiendo.', 'Refuerza tu identidad lectora.'] },
-    { tasks: ['Lee 14 páginas.', 'Repasa todas tus notas.', 'Elige la idea más transformadora.'] },
-    { tasks: ['Lee 15 páginas o termina el libro.', 'Balance final del reto.', 'Comparte tu logro y planifica el siguiente libro.'] },
-  ],
-};
-
-const PROGRAMS: Record<string, ProgramDef> = {
-  [READING_PROGRAM.key]: READING_PROGRAM,
-};
-
-/* =========================================================
-   Hábitos destacados (cards)
-   ========================================================= */
-interface HabitCardData {
-  key: string;
-  title: string;
-  subtitle: string;
-  image: string; // ruta en /public
+// Toggle de una tarea (por fecha)
+function toggleTask(key: string, dateISO: string, taskIndex: number) {
+  const store = loadStore();
+  if (!store[key]) return;
+  const set = new Set(store[key].perDateTasks[dateISO] ?? []);
+  if (set.has(taskIndex)) set.delete(taskIndex);
+  else set.add(taskIndex);
+  store[key].perDateTasks[dateISO] = Array.from(set).sort((a,b)=>a-b);
+  saveStore(store);
 }
-const FEATURED_HABITS: HabitCardData[] = [
-  { key: 'lectura',    title: 'La máquina lectora',      subtitle: 'Conviértete en un superlector',                      image: '/reading.jpg' },
-  { key: 'burpees',    title: 'Unos f*kn burpees',       subtitle: 'Comienza hoy y no pares',                            image: '/burpees.jpg' },
-  { key: 'ahorro',     title: 'Ahorra sin darte cuenta', subtitle: 'Un hábito pequeño que cambia tu futuro',            image: '/savings.jpg' },
-  { key: 'meditacion', title: 'Medita 5 minutos',        subtitle: 'Encuentra calma en tu día',                         image: '/meditation.jpg' },
-];
 
-/* =========================================================
-   Layout helpers
-   ========================================================= */
-const NAV_HEIGHT = 84; // px
+// estado de un día para un programa
+function getDayStatusForProgram(key: string, dateISO: string) {
+  const program = PROGRAMS[key];
+  if (!program) return { total: 0, done: 0 };
+  const store = loadStore();
+  const ps = store[key];
+  if (!ps) return { total: 0, done: 0 };
+
+  const [y,m,d] = dateISO.split('-').map(Number);
+  const dayIndex = getProgramDayIndexForDate(key, y, m-1, d);
+  if (!dayIndex) return { total: 0, done: 0 };
+
+  const tasks = program.days[dayIndex - 1]?.tasks ?? [];
+  const doneIndices = new Set(ps.perDateTasks[dateISO] ?? []);
+  let done = 0;
+  for (let i = 0; i < tasks.length; i++) if (doneIndices.has(i)) done++;
+  return { total: tasks.length, done };
+}
+
+/* =================== Helpers de fecha =================== */
+function daysInMonth(year: number, monthIndex0: number) {
+  return new Date(year, monthIndex0 + 1, 0).getDate();
+}
+function ymd(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+/* =================== UI: Layout helpers =================== */
+const NAV_HEIGHT = 84; // ~ +30%
 
 function SafeContainer({ children }: { children: React.ReactNode }) {
   return (
@@ -249,9 +249,6 @@ function SafeContainer({ children }: { children: React.ReactNode }) {
   );
 }
 
-/* =========================================================
-   Bottom Nav
-   ========================================================= */
 function BottomNav({
   active,
   onChange,
@@ -309,119 +306,16 @@ function BottomNav({
   );
 }
 
-/* =========================================================
-   Auth Modal (nombre + email)
-   ========================================================= */
-function AuthModal({
-  open,
-  onClose,
-  onSaved,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onSaved: (u: User) => void;
-}) {
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-
-  useEffect(() => {
-    if (!open) return;
-    const current = getCurrentUser();
-    if (current) {
-      setName(current.name);
-      setEmail(current.email);
-    }
-  }, [open]);
-
-  const handleSave = () => {
-    const trimmedEmail = email.trim().toLowerCase();
-    const trimmedName = name.trim();
-    if (!trimmedName || !trimmedEmail || !/\S+@\S+\.\S+/.test(trimmedEmail)) {
-      alert('Pon un nombre y un email válidos 🙂');
-      return;
-    }
-    const u: User = { name: trimmedName, email: trimmedEmail };
-    upsertUser(u);
-    setCurrentUser(u);
-    onSaved(u);
-    onClose();
-  };
-
-  if (!open) return null;
-  return (
-    <AnimatePresence>
-      <motion.div
-        className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-      >
-        <div className="flex h-full items-center justify-center p-6">
-          <motion.div
-            className="relative w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl"
-            initial={{ scale: 0.95, opacity: 0, y: 10 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.95, opacity: 0, y: 10 }}
-          >
-            <button
-              onClick={onClose}
-              className="absolute right-3 top-3 rounded-full p-1 text-black/70 hover:bg-black/5"
-              aria-label="Cerrar"
-            >
-              <X className="h-5 w-5" />
-            </button>
-
-            <h3 className="mb-3 text-lg font-semibold">Crea tu perfil</h3>
-            <div className="space-y-3">
-              <div>
-                <label className="text-sm text-black/60">Nombre</label>
-                <input
-                  className="mt-1 w-full rounded-xl border px-3 py-2"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Tu nombre"
-                />
-              </div>
-              <div>
-                <label className="text-sm text-black/60">Email</label>
-                <input
-                  className="mt-1 w-full rounded-xl border px-3 py-2"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="tu@email.com"
-                />
-              </div>
-              <button onClick={handleSave} className="mt-2 w-full rounded-full bg-black px-5 py-3 text-sm text-white">
-                Guardar y continuar
-              </button>
-            </div>
-          </motion.div>
-        </div>
-      </motion.div>
-    </AnimatePresence>
-  );
-}
-
-/* =========================================================
-   Modal Pensamiento
-   ========================================================= */
+/* =================== Modal pensamiendo =================== */
 function ThoughtModal({
-  open,
-  onClose,
-  thought,
-}: {
-  open: boolean;
-  onClose: () => void;
-  thought: Thought;
-}) {
+  open, onClose, thought,
+}: { open: boolean; onClose: () => void; thought: Thought }) {
   return (
     <AnimatePresence>
       {open && (
         <motion.div
           className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
         >
           <div className="flex h-full items-center justify-center p-6">
             <motion.div
@@ -430,11 +324,7 @@ function ThoughtModal({
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.95, opacity: 0, y: 10 }}
             >
-              <button
-                onClick={onClose}
-                className="absolute right-3 top-3 rounded-full p-1 text-black/70 hover:bg-black/5"
-                aria-label="Cerrar"
-              >
+              <button onClick={onClose} className="absolute right-3 top-3 rounded-full p-1 text-black/70 hover:bg-black/5" aria-label="Cerrar">
                 <X className="h-5 w-5" />
               </button>
               <h3 className="mb-2 text-xl font-semibold">{thought.title}</h3>
@@ -447,16 +337,23 @@ function ThoughtModal({
   );
 }
 
-/* =========================================================
-   Card Hábito (4:5)
-   ========================================================= */
-function HabitCard({
-  data,
-  onOpen,
-}: {
-  data: HabitCardData;
-  onOpen: (key: string) => void;
-}) {
+/* =================== Cards de hábitos (4:5) =================== */
+
+interface HabitCardData {
+  key: keyof typeof PROGRAMS;
+  title: string;
+  subtitle: string;
+  image: string;
+}
+
+const FEATURED_HABITS: HabitCardData[] = [
+  { key: 'lectura',    title: 'La máquina lectora',      subtitle: 'Conviértete en un superlector',  image: '/reading.jpg' },
+  { key: 'ejercicio',  title: 'Unos f*kn burpees',       subtitle: 'Comienza hoy y no pares',         image: '/burpees.jpg' },
+  { key: 'ahorro',     title: 'Ahorra sin darte cuenta', subtitle: 'Un hábito pequeño, gran cambio', image: '/savings.jpg' },
+  { key: 'meditacion', title: 'Medita 5 minutos',        subtitle: 'Encuentra calma en tu día',      image: '/meditation.jpg' },
+];
+
+function HabitCard({ data, onOpen }: { data: HabitCardData; onOpen: (key: string) => void }) {
   return (
     <button className="relative block overflow-hidden" onClick={() => onOpen(data.key)}>
       <div className="relative w-full" style={{ aspectRatio: '4 / 5' }}>
@@ -466,64 +363,35 @@ function HabitCard({
           fill
           sizes="(max-width: 768px) 100vw, 600px"
           className="object-cover"
+          priority={false}
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-black/0" />
       </div>
       <div className="absolute inset-0 flex flex-col justify-end p-5 text-left">
         <div className="text-white/85 text-sm">{data.subtitle}</div>
-        <div className={`${archivoBlack.className} text-white text-4xl leading-tight`}>
-          {data.title}
-        </div>
+        <div className={`${archivoBlack.className} text-white text-4xl leading-tight`}>{data.title}</div>
         <span className="mt-3 inline-flex items-center gap-2 self-start rounded-full bg-white/95 px-4 py-2 text-sm font-medium text-black">
-          ▶︎ Empezar ahora
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7L8 5z"/></svg>
+          Empezar ahora
         </span>
       </div>
     </button>
   );
 }
 
-/* =========================================================
-   Detalle de Hábito
-   ========================================================= */
+/* =================== Detalle de hábito =================== */
 function HabitDetail({
-  program,
-  onBack,
-  onStarted,
-  currentUser,
-}: {
-  program: ProgramDef;
-  onBack: () => void;
-  onStarted: () => void;
-  currentUser: User;
-}) {
+  program, onBack, onStarted,
+}: { program: ProgramDef; onBack: () => void; onStarted: () => void }) {
   const [openedHow, setOpenedHow] = useState(false);
-  const [justStarted, setJustStarted] = useState(false);
-  const totalDays = program.days.length;
 
-  const [progress, setProgress] = useState(
-    getProgressPercentFor(currentUser.email, program.key, totalDays)
-  );
-  const dayIndex = getProgramDayIndexFor(currentUser.email, program.key);
-
-  useEffect(() => {
-    const tick = () =>
-      setProgress(getProgressPercentFor(currentUser.email, program.key, totalDays));
-    const id = setInterval(tick, 800);
-    return () => clearInterval(id);
-  }, [currentUser.email, program.key, totalDays]);
-
-  const handleStart = () => {
-    startProgramFor(currentUser.email, program.key);
-    setJustStarted(true);
-    setProgress(getProgressPercentFor(currentUser.email, program.key, totalDays));
-    onStarted();
-  };
+  const store = loadStore();
+  const started = !!store[program.key];
 
   return (
     <div className="pb-6">
-      {/* Header image */}
       <div className="relative w-full rounded-b-2xl overflow-hidden" style={{ aspectRatio: '16 / 9' }}>
-        <Image src={program.image} alt={program.name} fill className="object-cover" />
+        <Image src={program.image} alt={program.name} fill className="object-cover" priority />
         <div className="absolute left-3 top-3">
           <button onClick={onBack} className="rounded-full bg-black/60 p-2 text-white">
             <ArrowLeft className="h-5 w-5" />
@@ -531,31 +399,22 @@ function HabitDetail({
         </div>
       </div>
 
-      {/* Título y beneficios */}
       <div className="mt-4">
         <h1 className={`${archivoBlack.className} text-3xl leading-tight`}>{program.name}</h1>
-        <p className="mt-2 text-sm text-black/70">Beneficios de la lectura:</p>
+        <p className="mt-2 text-sm text-black/70">Beneficios:</p>
         <ul className="mt-2 list-disc pl-5 text-sm text-black/80">
           {program.benefits.map((b, i) => (<li key={i}>{b}</li>))}
         </ul>
       </div>
 
-      {/* ¿Cómo funciona? */}
       <div className="mt-4 rounded-2xl border" style={{ borderColor: COLORS.line }}>
-        <button
-          onClick={() => setOpenedHow(!openedHow)}
-          className="flex w-full items-center justify-between px-4 py-3"
-        >
+        <button onClick={() => setOpenedHow(!openedHow)} className="flex w-full items-center justify-between px-4 py-3">
           <span className="text-base font-medium">¿Cómo funciona?</span>
           {openedHow ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
         </button>
         <AnimatePresence>
           {openedHow && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-            >
+            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}>
               <ul className="space-y-2 px-4 pb-4 text-sm text-black/70">
                 {program.howItWorks.map((it, i) => (<li key={i}>• {it}</li>))}
               </ul>
@@ -564,191 +423,268 @@ function HabitDetail({
         </AnimatePresence>
       </div>
 
-      {/* Botón Empezar + progreso */}
       <div className="mt-5 rounded-2xl border p-4" style={{ borderColor: COLORS.line }}>
-        <div className="flex items-center justify-between">
-          <button
-            onClick={handleStart}
-            className="rounded-full bg-black px-5 py-3 text-sm font-medium text-white"
-          >
-            Empezar ahora
-          </button>
-          <div className="text-sm text-black/60">Día {dayIndex} / {totalDays}</div>
-        </div>
-
-        {justStarted && (
-          <div className="mt-3 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">
-            ¡Enhorabuena por tu primer día del reto!
-          </div>
-        )}
-
-        <div className="mt-4">
-          <div className="h-3 w-full rounded-full bg-gray-200">
-            <div
-              className="h-3 rounded-full bg-black transition-all"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-          <div className="mt-1 text-right text-xs text-black/60">{progress}%</div>
-        </div>
+        <button
+          onClick={() => { startProgram(program.key); onStarted(); }}
+          className="rounded-full bg-black px-5 py-3 text-sm font-medium text-white"
+        >
+          {started ? 'Reiniciar desde hoy' : 'Empezar ahora'}
+        </button>
       </div>
     </div>
   );
 }
 
-/* =========================================================
-   Mi Zona (habit tracker) — ligado a usuario actual
-   ========================================================= */
-function MiZona({ currentUser }: { currentUser: User }) {
-  const email = currentUser.email;
+/* =================== Calendario mensual (Mi Zona) =================== */
+function CalendarMonth({
+  year, monthIndex0, // 0..11
+  onPrev, onNext,
+}: {
+  year: number; monthIndex0: number;
+  onPrev: () => void; onNext: () => void;
+}) {
+  const store = loadStore();
+  const activeKeys = Object.keys(store).filter(k => PROGRAMS[k]);
 
-  // Programas activos para este usuario
-  const store = loadStoreFor(email);
-  const activeKeys = Object.keys(store).filter((k) => PROGRAMS[k]);
+  const days = daysInMonth(year, monthIndex0);
+  const firstDow = new Date(year, monthIndex0, 1).getDay(); // 0=Dom
 
-  if (activeKeys.length === 0) {
-    return (
-      <div className="py-6">
-        <div className="mb-2 flex items-center justify-between">
-          <h2 className={`${archivoBlack.className} text-3xl leading-tight`}>Hola {currentUser.name}</h2>
-          <Link href="#" onClick={(e)=>{e.preventDefault(); window.dispatchEvent(new CustomEvent('akira_open_profile'));}} aria-label="Editar perfil" className="rounded-full p-2 text-black/70 hover:bg-black/5">
-            <Settings className="h-6 w-6" />
-          </Link>
+  // calcula color de un día según todos los programas activos
+  function colorFor(day: number) {
+    const iso = ymd(new Date(year, monthIndex0, day));
+    let totalTasks = 0;
+    let doneTasks = 0;
+    for (const k of activeKeys) {
+      const { total, done } = getDayStatusForProgram(k, iso);
+      totalTasks += total;
+      doneTasks += done;
+    }
+    if (totalTasks === 0) return 'transparent';           // sin tareas aplicables
+    if (doneTasks === 0) return COLORS.red;               // ninguna
+    if (doneTasks === totalTasks) return COLORS.green;    // todas
+    return COLORS.orange;                                 // algunas
+  }
+
+  // grid con offset por día de la semana
+  const blanks = (firstDow + 6) % 7; // queremos Lunes=0
+  const cells: React.ReactNode[] = [];
+  for (let i = 0; i < blanks; i++) cells.push(<div key={`b${i}`} />);
+  for (let d = 1; d <= days; d++) {
+    const c = colorFor(d);
+    cells.push(
+      <div key={d} className="flex items-center justify-center">
+        <div
+          className="flex h-8 w-8 items-center justify-center rounded-full text-xs"
+          style={{ background: c === 'transparent' ? '#f4f4f4' : c, color: c === 'transparent' ? '#666' : '#fff' }}
+          title={`${year}-${monthIndex0+1}-${d}`}
+        >
+          {d}
         </div>
-        <p className="mt-1 text-sm text-black/70">
-          Aún no has empezado ningún programa. Ve a “Hábitos” o “Inicio” y toca un hábito para comenzarlo.
-        </p>
       </div>
     );
   }
 
-  // Métricas simples
-  const totalDays = activeKeys.reduce((acc, k) => acc + (PROGRAMS[k]?.days.length ?? 0), 0);
-  const totalDone = activeKeys.reduce((acc, k) => acc + (store[k]?.completedDates.length ?? 0), 0);
+  const monthName = new Date(year, monthIndex0, 1).toLocaleString('es-ES', { month: 'long' });
 
   return (
-    <div className="py-6">
+    <div className="rounded-2xl border p-3" style={{ borderColor: COLORS.line }}>
       <div className="mb-2 flex items-center justify-between">
-        <h2 className={`${archivoBlack.className} text-3xl leading-tight`}>Hola {currentUser.name}</h2>
-        <Link href="#" onClick={(e)=>{e.preventDefault(); window.dispatchEvent(new CustomEvent('akira_open_profile'));}} aria-label="Editar perfil" className="rounded-full p-2 text-black/70 hover:bg-black/5">
-          <Settings className="h-6 w-6" />
-        </Link>
+        <button onClick={onPrev} className="rounded-full p-2 hover:bg-black/5"><ChevronLeft className="h-5 w-5"/></button>
+        <div className="text-sm font-medium capitalize">{monthName} {year}</div>
+        <button onClick={onNext} className="rounded-full p-2 hover:bg-black/5"><ChevronRight className="h-5 w-5"/></button>
       </div>
-
-      {/* Contador de retos + racha de días (simple) */}
-      <div className="mt-3 grid grid-cols-2 gap-3">
-        <div className="rounded-2xl border p-4" style={{ borderColor: COLORS.line }}>
-          <div className="text-sm text-black/60">Retos completados</div>
-          <div className={`${archivoBlack.className} text-4xl`}>{totalDone}</div>
-        </div>
-        <div className="rounded-2xl border p-4" style={{ borderColor: COLORS.line }}>
-          <div className="text-sm text-black/60">Días con progreso</div>
-          <div className={`${archivoBlack.className} text-4xl`}>
-            {new Set(activeKeys.flatMap(k => store[k]?.completedDates ?? [])).size || 0}
-          </div>
-        </div>
+      <div className="grid grid-cols-7 gap-2 text-center text-[11px] text-black/60 mb-1">
+        <div>Lu</div><div>Ma</div><div>Mi</div><div>Ju</div><div>Vi</div><div>Sa</div><div>Do</div>
       </div>
-
-      {/* Lista de programas activos */}
-      <div className="mt-4 space-y-3">
-        {activeKeys.map((key) => {
-          const p = PROGRAMS[key];
-          const day = getProgramDayIndexFor(email, key);
-          const todayTasks = p.days[day - 1]?.tasks || [];
-
-          // checks por tarea (demo: se marcan todas a la vez al "Marcar completado hoy")
-          const done = isTodayCompletedFor(email, key);
-
-          return (
-            <div key={key} className="overflow-hidden rounded-2xl border" style={{ borderColor: COLORS.line }}>
-              {/* Fila 1: cabecera programa */}
-              <div className="bg-white px-4 py-3">
-                <div className="text-sm text-black/60">Programa</div>
-                <div className="text-base font-semibold">{p.name}</div>
-              </div>
-
-              {/* Fila 2: tareas del día + check global del día (simple) */}
-              <div className="bg-[#f7f7f7] px-4 py-3">
-                <div className="mb-2 text-sm text-black/60">Hábito del día (Día {day}/{p.days.length})</div>
-                <ul className="mb-3 list-disc pl-5 text-sm text-black/80">
-                  {todayTasks.map((t, i) => (
-                    <li key={i}>{t}</li>
-                  ))}
-                </ul>
-
-                <button
-                  onClick={() => { toggleTodayCompleteFor(email, key); }}
-                  className="inline-flex items-center gap-3"
-                >
-                  <span
-                    className="flex h-6 w-6 items-center justify-center rounded-full border"
-                    style={{
-                      borderColor: done ? 'transparent' : '#c7c7c7',
-                      background: done ? '#22c55e' : 'transparent',
-                    }}
-                  >
-                    {done && (
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                        <path d="M20 6L9 17l-5-5" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                      </svg>
-                    )}
-                  </span>
-                  <span className="text-sm font-medium">
-                    {done ? '¡Marcado hoy!' : 'Marcar completado hoy'}
-                  </span>
-                </button>
-              </div>
-
-              {/* Pie: progreso rápido */}
-              <div className="flex items-center justify-between bg-white px-4 py-3">
-                <div className="text-xs text-black/60">Progreso</div>
-                <div className="flex-1 px-3">
-                  <div className="h-2 w-full rounded-full bg-gray-200">
-                    <div
-                      className="h-2 rounded-full bg-black"
-                      style={{ width: `${getProgressPercentFor(email, key, p.days.length)}%` }}
-                    />
-                  </div>
-                </div>
-                <div className="text-xs text-black/60">{getProgressPercentFor(email, key, p.days.length)}%</div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      <div className="grid grid-cols-7 gap-2">{cells}</div>
     </div>
   );
 }
 
-/* =========================================================
-   Página principal
-   ========================================================= */
+/* =================== Mi Zona =================== */
+function MiZona() {
+  const [, force] = useState(0);
+  const bump = () => force(v => v + 1);
+
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [askName, setAskName] = useState(false);
+
+  const [calYear, setCalYear] = useState<number>(new Date().getFullYear());
+  const [calMonth0, setCalMonth0] = useState<number>(new Date().getMonth());
+
+  useEffect(() => {
+    const u = loadUser();
+    if (u?.name) setUser(u);
+    else setAskName(true);
+  }, []);
+
+  // resumen
+  const store = loadStore();
+  const activeKeys = Object.keys(store).filter(k => PROGRAMS[k]);
+
+  // retos completados: total de checks de tareas
+  let retosCompletados = 0;
+  let diasConAlguna = 0;
+  const diaVisto = new Set<string>();
+
+  for (const k of activeKeys) {
+    const ps = store[k];
+    if (!ps) continue;
+    for (const [date, arr] of Object.entries(ps.perDateTasks)) {
+      retosCompletados += arr.length;
+      // si ese día (entre todos) ya se tuvo alguna, marcar
+      if (!diaVisto.has(date) && arr.length > 0) {
+        diaVisto.add(date);
+      }
+    }
+  }
+  diasConAlguna = diaVisto.size;
+
+  // tareas de HOY por programa (con checks independientes)
+  const todayISO = todayKey();
+  const todayByProgram = activeKeys.map((k) => {
+    const program = PROGRAMS[k];
+    const [y,m,d] = todayISO.split('-').map(Number);
+    const idx = getProgramDayIndexForDate(k, y, m-1, d);
+    const tasks = idx ? (program.days[idx-1]?.tasks ?? []) : [];
+    const done = new Set(store[k]?.perDateTasks[todayISO] ?? []);
+    return { key:k, program, tasks, done };
+  }).filter(x => x.tasks.length > 0);
+
+  return (
+    <div className="py-6 space-y-4">
+      {/* Saludo */}
+      <div>
+        <div className="text-2xl font-semibold">Hola {user?.name ?? '👋'}</div>
+        <div className="text-sm text-black/60">Tu progreso y retos del día</div>
+      </div>
+
+      {/* Resumen */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-2xl border p-4" style={{ borderColor: COLORS.line }}>
+          <div className={`${archivoBlack.className} text-4xl`}>{retosCompletados}</div>
+          <div className="text-sm text-black/60">retos completados</div>
+        </div>
+        <div className="rounded-2xl border p-4" style={{ borderColor: COLORS.line }}>
+          <div className={`${archivoBlack.className} text-4xl`}>{diasConAlguna}</div>
+          <div className="text-sm text-black/60">días cumpliendo retos</div>
+        </div>
+      </div>
+
+      {/* Calendario mensual */}
+      <CalendarMonth
+        year={calYear}
+        monthIndex0={calMonth0}
+        onPrev={() => {
+          const m = calMonth0 - 1;
+          if (m < 0) { setCalMonth0(11); setCalYear(y => y - 1); }
+          else setCalMonth0(m);
+        }}
+        onNext={() => {
+          const m = calMonth0 + 1;
+          if (m > 11) { setCalMonth0(0); setCalYear(y => y + 1); }
+          else setCalMonth0(m);
+        }}
+      />
+
+      {/* Retos de HOY por programa activo */}
+      <div className="space-y-3">
+        {todayByProgram.length === 0 && (
+          <div className="rounded-2xl border p-4 text-sm text-black/70" style={{ borderColor: COLORS.line }}>
+            Aún no hay programas activos o hoy no corresponde tarea. Ve a “Hábitos” para empezar uno.
+          </div>
+        )}
+
+        {todayByProgram.map(({ key, program, tasks, done }) => (
+          <div key={key} className="overflow-hidden rounded-2xl border" style={{ borderColor: COLORS.line }}>
+            <div className="bg-white px-4 py-3">
+              <div className="text-sm text-black/60">Programa</div>
+              <div className="text-base font-semibold">{program.name}</div>
+            </div>
+
+            <div className="bg-[#f7f7f7] px-4 py-3 space-y-2">
+              <div className="mb-1 text-sm text-black/60">Retos de hoy</div>
+              {tasks.map((t, i) => {
+                const isDone = done.has(i);
+                return (
+                  <button
+                    key={i}
+                    onClick={() => { toggleTask(key, todayISO, i); bump(); }}
+                    className="flex items-center gap-3 text-left"
+                  >
+                    <span
+                      className="flex h-6 w-6 items-center justify-center rounded-full border"
+                      style={{
+                        borderColor: isDone ? 'transparent' : COLORS.red,
+                        background: isDone ? COLORS.green : 'transparent',
+                      }}
+                    >
+                      {isDone ? (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                          <path d="M20 6L9 17l-5-5" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      ) : (
+                        <svg width="10" height="10" viewBox="0 0 10 10" fill={COLORS.red}>
+                          <circle cx="5" cy="5" r="5" />
+                        </svg>
+                      )}
+                    </span>
+                    <span className="text-sm">{t}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Modal para pedir nombre si no existe */}
+      <AnimatePresence>
+        {askName && (
+          <motion.div className="fixed inset-0 z-40 bg-black/40 flex items-center justify-center p-6"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <motion.div className="w-full max-w-sm rounded-2xl bg-white p-5"
+              initial={{ scale: 0.95, opacity: 0, y: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 10 }}>
+              <h3 className="text-lg font-semibold mb-2">¿Cómo te llamas?</h3>
+              <p className="text-sm text-black/60 mb-3">Solo para saludarte :)</p>
+              <NameForm onSave={(n) => { const u={name:n}; saveUser(u); setUser(u); setAskName(false); }} />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function NameForm({ onSave }: { onSave: (name: string) => void }) {
+  const [name, setName] = useState('');
+  return (
+    <form
+      onSubmit={(e)=>{e.preventDefault(); if(name.trim()) onSave(name.trim());}}
+      className="flex gap-2"
+    >
+      <input
+        value={name} onChange={(e)=>setName(e.target.value)}
+        placeholder="Tu nombre"
+        className="flex-1 rounded-xl border px-3 py-2 text-sm outline-none"
+        style={{ borderColor: COLORS.line }}
+      />
+      <button className="rounded-xl bg-black px-4 py-2 text-sm text-white">Guardar</button>
+    </form>
+  );
+}
+
+/* =================== Página principal =================== */
 export default function Page() {
   const [tab, setTab] = useState<TabKey>('inicio');
   const [selectedHabit, setSelectedHabit] = useState<string | null>(null);
 
-  // usuario actual
-  const [user, setUser] = useState<User | null>(null);
-  const [authOpen, setAuthOpen] = useState(false);
-
-  useEffect(() => {
-    const u = getCurrentUser();
-    if (u) {
-      upsertUser(u); // asegura que existe en DB
-      setUser(u);
-    } else {
-      setAuthOpen(true);
-    }
-    // escuchamos apertura de perfil desde Mi Zona
-    const open = () => setAuthOpen(true);
-    window.addEventListener('akira_open_profile', open as EventListener);
-    return () => window.removeEventListener('akira_open_profile', open as EventListener);
-  }, []);
-
-  // Splash 1.5s
+  // Splash
   const [showSplash, setShowSplash] = useState(true);
   useEffect(() => {
-    const t = setTimeout(() => setShowSplash(false), 1500);
+    const t = setTimeout(() => setShowSplash(false), 1200);
     return () => clearTimeout(t);
   }, []);
 
@@ -758,8 +694,7 @@ export default function Page() {
   useEffect(() => {
     if (showSplash) return;
     const key = `thought_${new Date().toDateString()}`;
-    const shown = localStorage.getItem(key);
-    if (!shown) {
+    if (!localStorage.getItem(key)) {
       setOpenThought(true);
       localStorage.setItem(key, 'shown');
     }
@@ -783,37 +718,25 @@ export default function Page() {
           <div className="py-6">
             {!selectedHabit ? (
               <>
-                {/* Cabecera */}
+                {/* Cabecera pensamiento */}
                 <div className="mb-4 flex items-center justify-between">
                   <div>
                     <h1 className="text-lg font-semibold">Pensamiento del día</h1>
                     <p className="text-xs text-black/60">{thought.title}: toca para leerlo de nuevo</p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {user && <span className="text-xs text-black/60">Hola {user.name}</span>}
-                    <button
-                      onClick={() => setAuthOpen(true)}
-                      className="rounded-full bg-black px-3 py-2 text-xs font-medium text-white"
-                    >
-                      {user ? 'Perfil' : 'Crear perfil'}
-                    </button>
-                    <button
-                      onClick={() => setOpenThought(true)}
-                      className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white"
-                    >
-                      Ver pensamiento
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => setOpenThought(true)}
+                    className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white"
+                  >
+                    Ver pensamiento
+                  </button>
                 </div>
 
                 {/* Cards a sangre */}
                 <div className="-mx-4">
                   {FEATURED_HABITS.map((h) => (
                     <div key={h.key}>
-                      <HabitCard data={h} onOpen={(key) => {
-                        if (!user) { setAuthOpen(true); return; }
-                        setSelectedHabit(key);
-                      }} />
+                      <HabitCard data={h} onOpen={(key) => setSelectedHabit(key)} />
                     </div>
                   ))}
                 </div>
@@ -834,14 +757,11 @@ export default function Page() {
                 </div>
               </>
             ) : (
-              user && (
-                <HabitDetail
-                  program={PROGRAMS[selectedHabit] ?? READING_PROGRAM}
-                  onBack={() => setSelectedHabit(null)}
-                  onStarted={() => {}}
-                  currentUser={user}
-                />
-              )
+              <HabitDetail
+                program={PROGRAMS[selectedHabit] ?? PROGRAMS.lectura}
+                onBack={() => setSelectedHabit(null)}
+                onStarted={() => { setTab('mizona'); }}
+              />
             )}
           </div>
         )}
@@ -851,51 +771,30 @@ export default function Page() {
           <div className="py-6">
             {!selectedHabit ? (
               <>
-                <div className="mb-2 flex items-center justify-between">
-                  <h2 className="text-xl font-semibold">Hábitos</h2>
-                  <button onClick={() => setAuthOpen(true)} className="rounded-full bg-black px-3 py-2 text-xs text-white">
-                    {user ? 'Perfil' : 'Crear perfil'}
-                  </button>
-                </div>
-                <p className="mt-1 text-sm text-black/70">Explora programas para instaurar o eliminar hábitos.</p>
+                <h2 className="text-xl font-semibold">Hábitos</h2>
+                <p className="mt-1 text-sm text-black/70">Explora programas y empieza hoy.</p>
                 <div className="mt-4 -mx-4">
                   {FEATURED_HABITS.map((h) => (
                     <div key={h.key}>
-                      <HabitCard data={h} onOpen={(key) => {
-                        if (!user) { setAuthOpen(true); return; }
-                        setSelectedHabit(key);
-                      }} />
+                      <HabitCard data={h} onOpen={(key) => setSelectedHabit(key)} />
                     </div>
                   ))}
                 </div>
               </>
             ) : (
-              user && (
-                <HabitDetail
-                  program={PROGRAMS[selectedHabit] ?? READING_PROGRAM}
-                  onBack={() => setSelectedHabit(null)}
-                  onStarted={() => {}}
-                  currentUser={user}
-                />
-              )
+              <HabitDetail
+                program={PROGRAMS[selectedHabit] ?? PROGRAMS.lectura}
+                onBack={() => setSelectedHabit(null)}
+                onStarted={() => { setTab('mizona'); }}
+              />
             )}
           </div>
         )}
 
         {/* MI ZONA */}
-        {tab === 'mizona' && (
-          user ? <MiZona currentUser={user} /> : (
-            <div className="py-6">
-              <h2 className="text-xl font-semibold">Mi Zona</h2>
-              <p className="mt-1 text-sm text-black/70">Crea tu perfil para empezar a registrar tu progreso.</p>
-              <button onClick={() => setAuthOpen(true)} className="mt-3 rounded-full bg-black px-4 py-2 text-sm text-white">
-                Crear perfil
-              </button>
-            </div>
-          )
-        )}
+        {tab === 'mizona' && <MiZona />}
 
-        {/* Páginas placeholder */}
+        {/* Placeholders */}
         {tab === 'formacion' && (
           <div className="py-6">
             <h2 className="text-xl font-semibold">Formación</h2>
@@ -912,11 +811,9 @@ export default function Page() {
 
       <BottomNav active={tab} onChange={setTab} />
       <ThoughtModal open={openThought} onClose={() => setOpenThought(false)} thought={thought} />
-      <AuthModal
-        open={authOpen}
-        onClose={() => setAuthOpen(false)}
-        onSaved={(u) => setUser(u)}
-      />
     </div>
+  );
+}
+
   );
 }
