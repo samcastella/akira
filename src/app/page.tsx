@@ -73,13 +73,12 @@ function ProgramCard({ program }: { program: ProgramLike }) {
   const ident = program.slug ?? program.key ?? '';
   const href = program.href ?? (ident ? `/habitos?key=${encodeURIComponent(ident)}` : '/habitos');
 
-  // La imagen final la inyectamos desde el map superior (program.image ya viene resuelta)
   const image = program.image ?? pickImage(ident, 0);
 
   return (
     <Link href={href} className="block group">
       <div className="relative w-full overflow-hidden">
-        {/* Ratio 4:5 */}
+        {/* Ratio 4:5 con imagen EDGE-TO-EDGE */}
         <div style={{ paddingTop: '125%' }} />
         <Image
           src={image}
@@ -120,7 +119,6 @@ function ProgramCard({ program }: { program: ProgramLike }) {
    Página
    ========================= */
 export default function HomePage() {
-  // No tipamos explícitamente para evitar choque ProgramMeta vs Program
   const catalog = useMemo(() => listPrograms(), []);
   const [todayThought, setTodayThought] = useState<Thought | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -129,19 +127,16 @@ export default function HomePage() {
   const orderedKeys = ['lectura', 'burpees', 'finanzas', 'meditacion'];
 
   const programsOnePerRow: ProgramLike[] = useMemo(() => {
-    // Normalizamos y reordenamos según orderedKeys
     const byIdent = new Map<string, any>();
     for (const p of catalog as any[]) {
       const ident = (p.slug ?? p.key ?? '').toString();
       if (ident) byIdent.set(ident, p);
     }
 
-    // Construimos en orden fijo e inyectamos imagen por índice
     const baseOrder = orderedKeys
       .map((k) => byIdent.get(k))
       .filter(Boolean) as ProgramLike[];
 
-    // Si faltara alguno en el catálogo, añadimos el resto al final
     const extras: ProgramLike[] = [];
     for (const p of catalog as any[]) {
       const ident = (p.slug ?? p.key ?? '').toString();
@@ -150,13 +145,9 @@ export default function HomePage() {
 
     const combined = [...baseOrder, ...extras];
 
-    // Inyectar imágenes distintas garantizadas por posición
     return combined.map((p, idx) => {
       const ident = (p.slug ?? p.key ?? '').toString();
-      return {
-        ...p,
-        image: pickImage(ident, idx),
-      };
+      return { ...p, image: pickImage(ident, idx) };
     });
   }, [catalog]);
 
@@ -181,22 +172,21 @@ export default function HomePage() {
   }, []);
 
   return (
-    <main className="px-4 sm:px-6 md:px-8 pb-16 bg-white">
-      {/* ===== Franja pequeña: Pensamiento del día (sin bordes ni espacios extra) ===== */}
+    <main className="px-0 pb-16 bg-white">
+      {/* ===== Franja compacta: título del pensamiento (negrita moderada) + intro + botón negro ===== */}
       {todayThought && (
-        <section className="px-0 py-2 m-0">
+        <section className="px-4 py-2 m-0">
           <div className="flex flex-col items-center text-center gap-1">
-            <h2 className="text-sm font-medium text-black/70">Pensamiento del día</h2>
+            <h2 className="text-lg font-semibold text-black">{todayThought.title}</h2>
             <p className="text-black/80 text-sm">{truncateWords(todayThought.body, 8)}</p>
             <button
               onClick={() => setModalOpen(true)}
-              className="mt-2 inline-flex items-center px-4 py-2 rounded-full border border-black/15 bg-white hover:bg-black hover:text-white transition-colors text-sm font-medium"
+              className="mt-2 inline-flex items-center px-4 py-2 bg-black text-white text-sm font-medium hover:opacity-90 transition-opacity"
             >
               Ver
             </button>
           </div>
 
-          {/* Modal */}
           {modalOpen && (
             <ThoughtModal
               title={todayThought.title}
@@ -207,7 +197,7 @@ export default function HomePage() {
         </section>
       )}
 
-      {/* ===== Programas: 1 por fila, 100% ancho, ratio 4:5, SIN espacios entre tarjetas ===== */}
+      {/* ===== Programas: 1 por fila, ancho completo, ratio 4:5, sin huecos ===== */}
       <section className="space-y-0">
         {programsOnePerRow.map((p, i) => {
           const reactKey = (p.slug ?? p.key ?? `p-${i}`).toString();
@@ -215,14 +205,14 @@ export default function HomePage() {
         })}
       </section>
 
-      {/* ===== CTA final (espacio mínimo) ===== */}
-      <section className="mt-4 mb-2 text-center">
+      {/* ===== CTA final ===== */}
+      <section className="mt-6 mb-2 px-4 text-center">
         <h3 className="text-2xl sm:text-3xl font-semibold mb-3">
           ¿Te gustaría ver nuestros programas de hábitos?
         </h3>
         <Link
           href="/habitos"
-          className="inline-flex items-center px-5 py-2.5 rounded-full bg-black text-white text-sm font-medium hover:opacity-90 transition-opacity"
+          className="inline-flex items-center px-5 py-2.5 rounded-full bg.black text-white text-sm font-medium hover:opacity-90 transition-opacity"
         >
           Ver programas ahora
         </Link>
