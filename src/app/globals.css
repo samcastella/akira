@@ -7,6 +7,14 @@
   --background: #ffffff;
   --foreground: #171717;
 
+  /* UI tokens adicionales */
+  --muted: #6b7280; /* gris texto secundario */
+  --line: #e6e6e6;  /* bordes sutiles */
+  --accent: #000000;
+
+  --radius-card: 24px;
+  --radius-input: 16px;
+
   /* Pistas para el UA: permitimos claro/oscuro según media query */
   color-scheme: light dark;
 }
@@ -19,11 +27,14 @@
   --font-mono: var(--font-geist-mono);
 }
 
-/* Modo oscuro con media query: solo cambiamos tokens, no estilos directos */
+/* Modo oscuro: solo tokens */
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+    --muted: #9aa0a6;
+    --line: #262626;
+    --accent: #ffffff;
   }
 }
 
@@ -58,7 +69,7 @@ body {
   color: #111111;
 }
 
-/* Imágenes fluidas por defecto (útil cuando no usamos <Image> de Next) */
+/* Medios fluidos por defecto */
 img, video, canvas, svg {
   display: block;
   max-width: 100%;
@@ -69,3 +80,184 @@ img, video, canvas, svg {
 input, textarea, button, select, a {
   -webkit-tap-highlight-color: transparent;
 }
+
+/* =========
+   Utilidades UI de la app
+   ========= */
+
+/* Contenedor editorial (lo seguimos usando en varias páginas) */
+.container {
+  max-width: 940px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+/* Tarjetas */
+.card {
+  background: var(--background);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 18px;
+}
+
+/* Grid simple 2 col */
+.grid { display: grid; gap: 16px; }
+.grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 640px) { .grid-2 { grid-template-columns: 1fr; } }
+
+/* Tabs tipo píldora (con icono) */
+.tabbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 14px 0 18px;
+}
+.tabbar button {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: var(--background);
+  padding: 10px 16px;
+  border-radius: 9999px;
+  cursor: pointer;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--foreground);
+  display: inline-flex;
+  align-items: center;
+}
+.tabbar button[aria-selected="true"] {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.tabbar .icon { margin-right: 8px; display: inline-flex; }
+
+/* Inputs */
+.input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid #ddd;
+  border-radius: var(--radius-input);
+  background: var(--background);
+  color: var(--foreground);
+}
+.textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid #ddd;
+  border-radius: var(--radius-input);
+  background: var(--background);
+  color: var(--foreground);
+  min-height: 70px;
+  resize: vertical;
+}
+
+/* Botón cápsula compacto */
+.btn {
+  appearance: none;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  padding: 10px 18px;
+  border-radius: 9999px;
+  cursor: pointer;
+  font-weight: 600;
+  line-height: 1;
+}
+.btn.secondary {
+  background: var(--background);
+  color: var(--foreground);
+  border: 1px solid #e0e0e0;
+}
+.btn.red {
+  background: #d92c2c;
+  border-color: #d92c2c;
+  color: #fff;
+}
+.btn.ghost {
+  background: var(--background);
+  color: var(--foreground);
+  border: 1px solid var(--accent);
+}
+
+/* Badges y texto atenuado */
+.badge {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid #eaeaea;
+  background: var(--background);
+  color: var(--foreground);
+}
+.muted { color: var(--muted); }
+
+/* Filas separadas (Gratitud / Objetivos) */
+.rows { display: grid; gap: 12px; }
+.row {
+  background: var(--background);
+  border: 1px solid #efefef;
+  border-radius: 16px;
+  padding: 12px;
+}
+
+/* Listas con separadores finos */
+.list { list-style: none; padding: 0; margin: 0; }
+.list > li + li { border-top: 1px solid var(--line); }
+
+/* Cabecera de tarjeta con dos columnas (fecha + instrucción) */
+.card-header {
+  display: grid;
+  grid-template-columns: 1fr 1.15fr;
+  gap: 16px;
+  align-items: start;
+  margin-bottom: 12px;
+}
+@media (max-width: 600px) { .card-header { grid-template-columns: 1fr; } }
+
+/* Acordeón simple para “Entradas anteriores” */
+details.accordion {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 12px 14px;
+  background: var(--background);
+}
+details.accordion summary {
+  cursor: pointer;
+  list-style: none;
+}
+details.accordion summary::-webkit-details-marker { display: none; }
+
+/* Modal (para compartir libro) */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+}
+.modal {
+  background: var(--background);
+  color: var(--foreground);
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  width: min(520px, 92vw);
+  padding: 16px;
+}
+.modal .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.modal .actions a,
+.modal .actions button {
+  padding: 10px 14px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: var(--background);
+  color: var(--foreground);
+  cursor: pointer;
+}
+

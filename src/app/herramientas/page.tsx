@@ -1,73 +1,86 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Camera, Image as ImageIcon, Share2, Trash2, Download, X, Copy, Check } from 'lucide-react';
+import { Notebook, Heart, Target, BookOpen, Check, Trash2, Copy, X } from 'lucide-react';
 
 /* ===========================
    Helpers de almacenamiento
    =========================== */
 const LS_NOTES = 'akira_notes_v1';
-const LS_GRATITUDE = 'akira_gratitude_v1';
-const LS_IMAGES = 'akira_images_v1';
+const LS_GRATITUDE = 'akira_gratitude_v2';     // v2: ahora son filas por día
+const LS_GOALS = 'akira_goals_today_v1';
+const LS_BOOKS = 'akira_books_v1';
 
 function loadLS<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback;
-  try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) as T : fallback; } catch { return fallback; }
+  try { const raw = localStorage.getItem(key); return raw ? (JSON.parse(raw) as T) : fallback; } catch { return fallback; }
 }
 function saveLS<T>(key: string, value: T) {
   if (typeof window === 'undefined') return;
   localStorage.setItem(key, JSON.stringify(value));
 }
-const fmt = (d: string | number) =>
+const fmtDateTime = (d: string | number) =>
   new Date(d).toLocaleString(undefined, { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+const fmtDate = (d: string | number) =>
+  new Date(d).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
+const todayKey = () => new Date().toISOString().slice(0, 10);
 
 /* ===========================
    Tipos
    =========================== */
 type Note = { id: string; text: string; createdAt: number };
-type GratitudeEntry = { id: string; text: string; date: string; createdAt: number }; // date = YYYY-MM-DD
-type Photo = { id: string; dataUrl: string; caption?: string; createdAt: number };
+
+type GratitudeRow = { id: string; text: string };
+type GratitudeEntry = { date: string; rows: GratitudeRow[]; savedAt: number }; // por día (YYYY-MM-DD)
+
+type Goal = { id: string; text: string; done: boolean; createdAt: number };
+type GoalsByDay = Record<string, Goal[]>;
+
+type BookBase = { id: string; title: string; author?: string; notes?: string; createdAt: number };
+type BookReading = BookBase & { startedAt: number };
+type BookFinished = BookBase & { finishedAt: number };
+type BooksStore = { reading: BookReading[]; wishlist: BookBase[]; finished: BookFinished[] };
 
 /* ===========================
    Herramientas
    =========================== */
 export default function Herramientas() {
-  const [tab, setTab] = useState<'notas' | 'gratitud' | 'imagenes'>('notas');
+  type TabKey = 'notas' | 'gratitud' | 'objetivos' | 'libros';
+  const TABS: { key: TabKey; label: string; Icon: React.ComponentType<any> }[] = [
+    { key: 'notas', label: 'Mis notas', Icon: Notebook },
+    { key: 'gratitud', label: 'Diario de gratitud', Icon: Heart },
+    { key: 'objetivos', label: 'Objetivos para hoy', Icon: Target },
+    { key: 'libros', label: 'Mis libros', Icon: BookOpen },
+  ];
+
+  const [tab, setTab] = useState<TabKey>('notas');
 
   return (
-    <div className="py-6">
-      <h2 className="text-xl font-semibold">Herramientas</h2>
-      <p className="mt-1 text-sm text-black/70">
-        Apoya tus hábitos con notas rápidas, gratitud diaria e imágenes tipo Instagram.
-      </p>
+    <div className="py-6 container">
+      <h2 style={{ margin: '8px 0 4px' }}>Herramientas</h2>
+      <p style={{ margin: '0 0 16px', color: '#666' }}>Tu espacio para escribir y agradecer cada día.</p>
 
-      {/* Tabs */}
-      <div className="mt-4 grid grid-cols-3 gap-2">
-        <button
-          onClick={() => setTab('notas')}
-          className={`rounded-full px-4 py-2 text-sm font-medium ${tab === 'notas' ? 'bg-black text-white' : 'bg-black/5'}`}
-        >
-          Mis notas
-        </button>
-        <button
-          onClick={() => setTab('gratitud')}
-          className={`rounded-full px-4 py-2 text-sm font-medium ${tab === 'gratitud' ? 'bg-black text-white' : 'bg-black/5'}`}
-        >
-          Diario de gratitud
-        </button>
-        <button
-          onClick={() => setTab('imagenes')}
-          className={`rounded-full px-4 py-2 text-sm font-medium ${tab === 'imagenes' ? 'bg-black text-white' : 'bg-black/5'}`}
-        >
-          Imágenes
-        </button>
+      {/* Tabs tipo píldora con iconos (estilos en globals.css .tabbar) */}
+      <div role="tablist" className="tabbar">
+        {TABS.map(({ key, label, Icon }) => (
+          <button
+            key={key}
+            role="tab"
+            aria-selected={tab === key}
+            aria-controls={`panel-${key}`}
+            onClick={() => setTab(key)}
+          >
+            <span className="icon"><Icon size={20} /></span>{label}
+          </button>
+        ))}
       </div>
 
-      <div className="mt-5">
+      <section className="card" id={`panel-${tab}`} role="tabpanel" aria-labelledby={`tab-${tab}`}>
         {tab === 'notas' && <NotasTool />}
         {tab === 'gratitud' && <GratitudTool />}
-        {tab === 'imagenes' && <ImagenesTool />}
-      </div>
+        {tab === 'objetivos' && <GoalsTool />}
+        {tab === 'libros' && <BooksTool />}
+      </section>
     </div>
   );
 }
@@ -100,35 +113,35 @@ function NotasTool() {
   };
 
   return (
-    <div className="rounded-2xl border p-4">
-      <h3 className="text-base font-semibold">Mis notas</h3>
-      <div className="mt-3 space-y-3">
+    <div>
+      <h3 style={{ marginTop: 0 }}>Mis notas</h3>
+      <p className="muted">Escribe frases que te inspiran, ideas o reflexiones. Se guardan en tu dispositivo.</p>
+
+      <div className="rows" style={{ marginTop: 12 }}>
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="Escribe una nota rápida…"
-          className="w-full resize-none rounded-xl border p-3 text-sm focus:outline-none focus:ring-2 focus:ring-black/20"
+          className="textarea"
           rows={3}
         />
-        <div className="flex justify-end">
-          <button onClick={addNote} className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white">
-            Guardar nota
-          </button>
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button onClick={addNote} className="btn">Guardar nota</button>
         </div>
       </div>
 
-      <div className="mt-5 space-y-3">
-        {notes.length === 0 && <div className="text-sm text-black/60">Aún no tienes notas.</div>}
+      <div style={{ marginTop: 16 }} className="rows">
+        {notes.length === 0 && <div className="muted">Aún no tienes notas.</div>}
         {notes.map(n => (
-          <div key={n.id} className="rounded-xl border p-3">
-            <div className="mb-1 text-[11px] text-black/50">{fmt(n.createdAt)}</div>
-            <p className="whitespace-pre-wrap text-sm text-black/80">{n.text}</p>
-            <div className="mt-2 flex gap-2">
-              <button onClick={() => copyNote(n)} className="inline-flex items-center gap-1 rounded-full bg-black/5 px-3 py-1.5 text-xs">
-                {copiedId === n.id ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />} {copiedId === n.id ? 'Copiado' : 'Copiar'}
+          <div key={n.id} className="row">
+            <div className="mb-1" style={{ fontSize: 11, color: '#777' }}>{fmtDateTime(n.createdAt)}</div>
+            <p className="whitespace-pre-wrap" style={{ margin: 0 }}>{n.text}</p>
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              <button onClick={() => copyNote(n)} className="btn ghost" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                {copiedId === n.id ? <Check size={14} /> : <Copy size={14} />} {copiedId === n.id ? 'Copiado' : 'Copiar'}
               </button>
-              <button onClick={() => delNote(n.id)} className="inline-flex items-center gap-1 rounded-full bg-red-50 px-3 py-1.5 text-xs text-red-600">
-                <Trash2 className="h-3.5 w-3.5" /> Borrar
+              <button onClick={() => delNote(n.id)} className="btn red" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <Trash2 size={14} /> Borrar
               </button>
             </div>
           </div>
@@ -139,215 +152,320 @@ function NotasTool() {
 }
 
 /* ===========================
-   Gratitud
+   Gratitud (v2: filas)
    =========================== */
 function GratitudTool() {
-  const todayKey = useMemo(() => new Date().toISOString().slice(0, 10), []);
-  const [list, setList] = useState<GratitudeEntry[]>(() => loadLS<GratitudeEntry[]>(LS_GRATITUDE, []));
-  const [text, setText] = useState(() => list.find(e => e.date === todayKey)?.text || '');
+  type Entries = Record<string, GratitudeEntry>;
+  const [entries, setEntries] = useState<Entries>(() => loadLS<Entries>(LS_GRATITUDE, {}));
+  const [initialised, setInitialised] = useState(false);
+  const today = todayKey();
 
-  useEffect(() => { saveLS(LS_GRATITUDE, list); }, [list]);
+  useEffect(() => { setInitialised(true); }, []);
+  useEffect(() => { if (initialised) saveLS(LS_GRATITUDE, entries); }, [entries, initialised]);
 
-  const saveToday = () => {
-    const t = text.trim();
-    if (!t) return;
-    const existing = list.find(e => e.date === todayKey);
-    if (existing) {
-      existing.text = t;
-      existing.createdAt = Date.now();
-      setList([...list]);
-    } else {
-      setList([{ id: crypto.randomUUID(), text: t, date: todayKey, createdAt: Date.now() }, ...list]);
-    }
-  };
+  const current: GratitudeEntry = useMemo(() => {
+    const ex = entries[today];
+    if (ex) return ex;
+    return { date: today, rows: [0,1,2].map(() => ({ id: crypto.randomUUID(), text: '' })), savedAt: 0 };
+  }, [entries, today]);
 
-  const past = list
-    .filter(e => e.date !== todayKey)
-    .sort((a, b) => b.createdAt - a.createdAt)
-    .slice(0, 20);
+  const setCurrent = (e: GratitudeEntry) => setEntries(prev => ({ ...prev, [today]: e }));
+  const onChangeRow = (id: string, text: string) =>
+    setCurrent({ ...current, rows: current.rows.map(r => (r.id === id ? { ...r, text } : r)) });
+  const addRow = () => setCurrent({ ...current, rows: [...current.rows, { id: crypto.randomUUID(), text: '' }] });
+  const hasAnyText = current.rows.some(r => r.text.trim());
+  const saveOrUpdate = () => setCurrent({ ...current, savedAt: Date.now() });
+
+  const days = Object.keys(entries).filter(d => d !== today).sort((a, b) => b.localeCompare(a));
 
   return (
-    <div className="rounded-2xl border p-4">
-      <h3 className="text-base font-semibold">Diario de gratitud</h3>
-      <p className="mt-1 text-sm text-black/70">
-        Escribe 1–3 cosas por las que te sientas agradecido hoy.
+    <div>
+      <h3 style={{ marginTop: 0 }}>Diario de gratitud</h3>
+      <p className="muted" style={{ marginTop: 4 }}>
+        Anota durante el día las cosas por las que te sientes agradecido, desde las más pequeñas a las más grandes.
       </p>
 
-      <div className="mt-3 space-y-3">
-        <textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Hoy agradezco…"
-          className="w-full resize-none rounded-xl border p-3 text-sm focus:outline-none focus:ring-2 focus:ring-black/20"
-          rows={3}
-        />
-        <div className="flex justify-end">
-          <button onClick={saveToday} className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white">
-            Guardar entrada de hoy
-          </button>
+      <div className="card" style={{ marginTop: 12 }}>
+        <div className="card-header">
+          <div><div style={{ fontWeight: 600 }}>Hoy · {fmtDate(Date.now())}</div></div>
+          <div className="muted">Escribe 3 cosas por las que dar las gracias</div>
+        </div>
+
+        <div className="rows">
+          {current.rows.map((r, idx) => (
+            <div key={r.id} className="row">
+              <input className="input" placeholder={`Gracias por… (${idx + 1})`} value={r.text} onChange={e => onChangeRow(r.id, e.target.value)} />
+            </div>
+          ))}
+          {current.rows.length >= 3 && (
+            <button className="btn secondary" onClick={addRow}>Añadir otra</button>
+          )}
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button className="btn" onClick={saveOrUpdate}>{hasAnyText && current.savedAt ? 'Actualizar' : 'Guardar'}</button>
+          </div>
         </div>
       </div>
 
-      <div className="mt-5">
-        <div className="mb-2 text-sm font-medium">Entradas anteriores</div>
-        {past.length === 0 && <div className="text-sm text-black/60">No hay entradas aún.</div>}
-        <div className="space-y-3">
-          {past.map(e => (
-            <div key={e.id} className="rounded-xl border p-3">
-              <div className="mb-1 text-[11px] text-black/50">{fmt(e.createdAt)}</div>
-              <p className="whitespace-pre-wrap text-sm text-black/80">{e.text}</p>
-            </div>
-          ))}
+      <section style={{ marginTop: 16 }}>
+        <details className="accordion">
+          <summary><strong>Entradas anteriores</strong></summary>
+          <div style={{ marginTop: 8 }}>
+            <ul className="list">
+              {current.savedAt ? (
+                <li className="card">
+                  <strong>Hoy · {fmtDate(Date.now())}</strong>
+                  <ul className="list" style={{ marginTop: 8 }}>
+                    {current.rows.filter(r => r.text.trim()).map(r => (
+                      <li key={r.id} style={{ padding: '8px 0' }}>{r.text}</li>
+                    ))}
+                  </ul>
+                </li>
+              ) : null}
+              {days.map(d => (
+                <li key={d} className="card">
+                  <strong>{fmtDate(d)}</strong>
+                  <ul className="list" style={{ marginTop: 8 }}>
+                    {entries[d].rows.filter(r => r.text.trim()).map(r => (
+                      <li key={r.id} style={{ padding: '8px 0' }}>{r.text}</li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </details>
+      </section>
+    </div>
+  );
+}
+
+/* ===========================
+   Objetivos para hoy
+   =========================== */
+function GoalsTool() {
+  const [byDay, setByDay] = useState<GoalsByDay>(() => loadLS<GoalsByDay>(LS_GOALS, {}));
+  const [text, setText] = useState('');
+  const today = todayKey();
+  const list = byDay[today] || [];
+
+  useEffect(() => { saveLS(LS_GOALS, byDay); }, [byDay]);
+
+  const add = () => {
+    const t = text.trim();
+    if (!t) return;
+    const g: Goal = { id: crypto.randomUUID(), text: t, done: false, createdAt: Date.now() };
+    setByDay({ ...byDay, [today]: [g, ...list] });
+    setText('');
+  };
+  const toggle = (id: string) => setByDay({ ...byDay, [today]: list.map(g => g.id === id ? { ...g, done: !g.done } : g) });
+  const del = (id: string) => setByDay({ ...byDay, [today]: list.filter(g => g.id !== id) });
+
+  return (
+    <div>
+      <h3 style={{ marginTop: 0 }}>Objetivos para hoy</h3>
+      <p className="muted">Pequeñas acciones que suman: «Contactar con un amigo», «Decir te quiero a un familiar»…</p>
+
+      <div className="rows" style={{ marginTop: 12 }}>
+        <div className="row" style={{ display: 'flex', gap: 8 }}>
+          <input className="input" placeholder="Escribe un objetivo…" value={text} onChange={e => setText(e.target.value)} />
+          <button className="btn" onClick={add}>Añadir</button>
         </div>
+
+        <ul className="list card">
+          {list.length === 0 && <li style={{ padding: '8px 0' }} className="muted">Sin objetivos hoy. ¡Añade el primero!</li>}
+          {list.map(g => (
+            <li key={g.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input type="checkbox" checked={g.done} onChange={() => toggle(g.id)} />
+                <span style={{ textDecoration: g.done ? 'line-through' : 'none' }}>{g.text}</span>
+              </label>
+              <button className="btn red" onClick={() => del(g.id)}>Borrar</button>
+            </li>
+          ))}
+        </ul>
       </div>
     </div>
   );
 }
 
 /* ===========================
-   Imágenes (estilo Instagram)
+   Mis libros
    =========================== */
-function ImagenesTool() {
-  const [photos, setPhotos] = useState<Photo[]>(() => loadLS<Photo[]>(LS_IMAGES, []));
-  const [lightbox, setLightbox] = useState<Photo | null>(null);
-  const [busy, setBusy] = useState(false);
-  const ordered = useMemo(() => [...photos].sort((a, b) => b.createdAt - a.createdAt), [photos]);
+function BooksTool() {
+  const [store, setStore] = useState<BooksStore>(() => loadLS<BooksStore>(LS_BOOKS, { reading: [], wishlist: [], finished: [] }));
+  useEffect(() => { saveLS(LS_BOOKS, store); }, [store]);
 
-  useEffect(() => { saveLS(LS_IMAGES, photos); }, [photos]);
+  const [formR, setFormR] = useState({ title: '', author: '', notes: '' });
+  const [formW, setFormW] = useState({ title: '', author: '', notes: '' });
 
-  const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || !files.length) return;
-    setBusy(true);
-    const newItems: Photo[] = [];
-    for (const file of Array.from(files)) {
-      const dataUrl = await fileToDataURL(file);
-      newItems.push({ id: crypto.randomUUID(), dataUrl, createdAt: Date.now() });
+  const addReading = () => {
+    if (!formR.title.trim()) return alert('El nombre del libro es obligatorio');
+    const now = Date.now();
+    const book: BookReading = {
+      id: crypto.randomUUID(),
+      title: formR.title.trim(),
+      author: formR.author.trim() || undefined,
+      notes: formR.notes.trim() || undefined,
+      createdAt: now,
+      startedAt: now,
+    };
+    setStore({ ...store, reading: [book, ...store.reading] });
+    setFormR({ title: '', author: '', notes: '' });
+  };
+
+  const finishReading = (id: string) => {
+    const b = store.reading.find(x => x.id === id); if (!b) return;
+    const finished: BookFinished = { ...b, finishedAt: Date.now() };
+    setStore({ ...store, reading: store.reading.filter(x => x.id !== id), finished: [finished, ...store.finished] });
+  };
+
+  const addWishlist = () => {
+    if (!formW.title.trim()) return alert('El nombre del libro es obligatorio');
+    const now = Date.now();
+    const b: BookBase = {
+      id: crypto.randomUUID(),
+      title: formW.title.trim(),
+      author: formW.author.trim() || undefined,
+      notes: formW.notes.trim() || undefined,
+      createdAt: now,
+    };
+    setStore({ ...store, wishlist: [b, ...store.wishlist] });
+    setFormW({ title: '', author: '', notes: '' });
+  };
+
+  // Modal compartir / confirmar "Empezar a leer"
+  const [showModal, setShowModal] = useState<{ open: boolean; text: string; onConfirm: () => void }>({ open: false, text: '', onConfirm: () => {} });
+  const closeModal = () => setShowModal({ open: false, text: '', onConfirm: () => {} });
+
+  const startFromWishlist = async (id: string) => {
+    const b = store.wishlist.find(x => x.id === id); if (!b) return;
+    const now = Date.now();
+    const r: BookReading = { ...b, startedAt: now } as BookReading;
+
+    const shareText = `Voy a empezar un nuevo libro: "${b.title}"${b.author ? ` de ${b.author}` : ''}. ¡Es una excelente noticia! Me estoy convirtiendo en un gran lector.`;
+    const shareData = { title: 'Nuevo libro', text: shareText, url: location.href };
+
+    let shared = false;
+    if (navigator.share) {
+      try { await navigator.share(shareData); shared = true; } catch {}
     }
-    setPhotos(prev => [...newItems, ...prev]);
-    e.target.value = '';
-    setBusy(false);
+
+    const confirm = () => {
+      setStore({
+        ...store,
+        wishlist: store.wishlist.filter(x => x.id !== id),
+        reading: [r, ...store.reading],
+      });
+    };
+
+    if (!shared) setShowModal({ open: true, text: shareText, onConfirm: () => { confirm(); closeModal(); } });
+    else confirm();
   };
 
-  const removePhoto = (id: string) => {
-    setPhotos(photos.filter(p => p.id !== id));
-    setLightbox(null);
-  };
-
-  const sharePhoto = async (p: Photo) => {
-    // Intento Web Share con archivos (mejor experiencia móvil)
-    try {
-      const file = dataURLtoFile(p.dataUrl, `akira-${p.id}.png`);
-      if ((navigator as any).canShare?.({ files: [file] }) && (navigator as any).share) {
-        await (navigator as any).share({
-          files: [file],
-          title: 'Mi progreso',
-          text: 'Compartiendo un momento de mi proceso con Akira 💛',
-        });
-        return;
-      }
-    } catch {}
-    // Fallback: copiar texto + abrir imagen en pestaña (descarga manual)
-    try {
-      await navigator.clipboard.writeText('Compartiendo mi progreso con Akira 💛');
-    } catch {}
-    const a = document.createElement('a');
-    a.href = p.dataUrl;
-    a.download = 'akira.png';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    alert('Imagen descargada. ¡Lista para subirla a Instagram!');
-  };
+  const shareLinks = useMemo(() => {
+    const t = encodeURIComponent(showModal.text);
+    return {
+      whatsapp: `https://wa.me/?text=${t}`,
+      twitter: `https://twitter.com/intent/tweet?text=${t}`,
+      facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(location.href)}&quote=${t}`,
+      instagram: `https://www.instagram.com/`,
+      tiktok: `https://www.tiktok.com/`,
+    };
+  }, [showModal.text]);
 
   return (
-    <div className="rounded-2xl border p-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-base font-semibold">Imágenes</h3>
-        <label className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-black px-4 py-2 text-sm font-medium text-white">
-          <Camera className="h-4 w-4" />
-          Subir
-          <input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={onPick} />
-        </label>
-      </div>
-      <p className="mt-1 text-sm text-black/70">
-        Sube fotos de cosas que te hacen sentir bien, tus progresos o logros. Podrás verlas en tu galería y compartirlas en redes.
-      </p>
+    <div>
+      <h3 style={{ marginTop: 0 }}>Mis libros</h3>
 
-      {/* Grid 3x3 tipo Instagram */}
-      <div className="mt-4 grid grid-cols-3 gap-1">
-        {ordered.map((p) => (
-          <button key={p.id} onClick={() => setLightbox(p)} className="relative block w-full overflow-hidden bg-black/5" style={{ aspectRatio: '1 / 1' }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={p.dataUrl} alt="foto" className="h-full w-full object-cover" />
-          </button>
-        ))}
-        {ordered.length === 0 && (
-          <div className="col-span-3 flex flex-col items-center justify-center rounded-xl border border-dashed p-8 text-center text-sm text-black/60">
-            <ImageIcon className="mb-2 h-6 w-6" />
-            Aún no hay imágenes.
-            <div className="mt-1">Toca <b>Subir</b> para añadir la primera.</div>
+      {/* Leyendo */}
+      <section className="card" style={{ marginTop: 8 }}>
+        <h4 style={{ margin: '0 0 8px' }}>Libros que me estoy leyendo</h4>
+        <div className="rows">
+          <input className="input" placeholder="Nombre del libro *" value={formR.title} onChange={e => setFormR({ ...formR, title: e.target.value })} />
+          <input className="input" placeholder="Autor (opcional)" value={formR.author} onChange={e => setFormR({ ...formR, author: e.target.value })} />
+          <textarea className="textarea" placeholder="¿Qué estás aprendiendo de este libro? (opcional)" value={formR.notes} onChange={e => setFormR({ ...formR, notes: e.target.value })} />
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button className="btn" onClick={addReading}>{store.reading.length ? 'Actualizar' : 'Guardar'}</button>
           </div>
-        )}
-      </div>
+        </div>
 
-      {/* Busy */}
-      {busy && <div className="mt-3 text-xs text-black/60">Procesando…</div>}
+        <ul className="list" style={{ marginTop: 12 }}>
+          {store.reading.map(b => (
+            <li key={b.id} style={{ padding: '10px 0' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                <div>
+                  <strong>{b.title}</strong>{b.author ? ` · ${b.author}` : ''}
+                  {b.notes && <div className="muted" style={{ marginTop: 4 }}>{b.notes}</div>}
+                </div>
+                <button className="btn red" onClick={() => finishReading(b.id)}>Terminar</button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
 
-      {/* Lightbox */}
-      {lightbox && (
-        <div className="fixed inset-0 z-40 bg-black/80">
-          <button onClick={() => setLightbox(null)} className="absolute right-4 top-4 rounded-full bg-white/10 p-2 text-white backdrop-blur">
-            <X className="h-5 w-5" />
-          </button>
-          <div className="flex h-full flex-col items-center justify-center p-4">
-            <div className="max-h-[70vh] w-full max-w-md overflow-hidden rounded-xl bg-black">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={lightbox.dataUrl} alt="foto" className="h-full w-full object-contain" />
+      {/* Quiero leer */}
+      <section className="card" style={{ marginTop: 12 }}>
+        <h4 style={{ margin: '0 0 8px' }}>Libros que quiero leer</h4>
+        <div className="rows">
+          <input className="input" placeholder="Nombre del libro *" value={formW.title} onChange={e => setFormW({ ...formW, title: e.target.value })} />
+          <input className="input" placeholder="Autor (opcional)" value={formW.author} onChange={e => setFormW({ ...formW, author: e.target.value })} />
+          <textarea className="textarea" placeholder="Notas (opcional)" value={formW.notes} onChange={e => setFormW({ ...formW, notes: e.target.value })} />
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button className="btn" onClick={addWishlist}>{store.wishlist.length ? 'Actualizar' : 'Guardar'}</button>
+          </div>
+        </div>
+        <ul className="list" style={{ marginTop: 12 }}>
+          {store.wishlist.map(b => (
+            <li key={b.id} style={{ padding: '10px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <strong>{b.title}</strong>{b.author ? ` · ${b.author}` : ''}
+                {b.notes && <div className="muted" style={{ marginTop: 4 }}>{b.notes}</div>}
+              </div>
+              <button className="btn" onClick={() => startFromWishlist(b.id)}>Empezar a leer</button>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      {/* Terminados */}
+      <section className="card" style={{ marginTop: 12 }}>
+        <h4 style={{ margin: '0 0 8px' }}>Libros terminados</h4>
+        <ul className="list">
+          {store.finished.length === 0 && <li style={{ padding: '8px 0' }} className="muted">Aún no hay libros terminados.</li>}
+          {store.finished.map(b => (
+            <li key={b.id} style={{ padding: '10px 0' }}>
+              <div><strong>{b.title}</strong>{b.author ? ` · ${b.author}` : ''}</div>
+              <small className="muted">Terminado el {fmtDate(b.finishedAt)}</small>
+              {b.notes && <div className="muted" style={{ marginTop: 4 }}>{b.notes}</div>}
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      {/* Modal compartir */}
+      {showModal.open && (
+        <div className="modal-backdrop" onClick={closeModal}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h4 style={{ margin: 0 }}>Vas a empezar un nuevo libro 📚</h4>
+              <button onClick={closeModal} className="btn ghost" aria-label="Cerrar"><X size={16} /></button>
             </div>
-            <div className="mt-4 flex gap-2">
-              <button onClick={() => sharePhoto(lightbox)} className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium">
-                <Share2 className="h-4 w-4" /> Compartir
-              </button>
-              <button onClick={() => downloadDataURL(lightbox.dataUrl)} className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium">
-                <Download className="h-4 w-4" /> Descargar
-              </button>
-              <button onClick={() => removePhoto(lightbox.id)} className="inline-flex items-center gap-2 rounded-full bg-red-600 px-4 py-2 text-sm font-medium text-white">
-                <Trash2 className="h-4 w-4" /> Borrar
-              </button>
+            <p style={{ marginTop: 8 }}>
+              ¡Es una excelente noticia! Te estás convirtiendo en un gran lector. ¿Te gustaría anunciar al mundo el libro que vas a comenzar?
+              Eso reforzará tu deseo de hacerlo y puede motivar a los demás a seguir tu camino.
+            </p>
+            <div className="actions">
+              <a href={shareLinks.whatsapp} target="_blank" rel="noreferrer">WhatsApp</a>
+              <a href={shareLinks.twitter} target="_blank" rel="noreferrer">Twitter/X</a>
+              <a href={shareLinks.facebook} target="_blank" rel="noreferrer">Facebook</a>
+              <a href={shareLinks.instagram} target="_blank" rel="noreferrer">Instagram</a>
+              <a href={shareLinks.tiktok} target="_blank" rel="noreferrer">TikTok</a>
+              <button className="btn" onClick={showModal.onConfirm}>Vamos a por ello</button>
             </div>
-            <div className="mt-2 text-xs text-white/70">Sugerencia: después de compartir, añade una descripción y etiquetas 💪</div>
           </div>
         </div>
       )}
     </div>
   );
-}
-
-/* ===========================
-   Utils imágenes (dataURL)
-   =========================== */
-function fileToDataURL(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-function dataURLtoFile(dataUrl: string, filename: string): File {
-  const [header, b64] = dataUrl.split(',');
-  const mime = /data:(.*?);base64/.exec(header)?.[1] || 'image/png';
-  const bin = atob(b64);
-  const arr = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-  return new File([arr], filename, { type: mime });
-}
-function downloadDataURL(dataUrl: string, filename = 'akira.png') {
-  const a = document.createElement('a');
-  a.href = dataUrl;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
 }
