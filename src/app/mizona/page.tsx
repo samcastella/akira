@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Check, RotateCcw, Trash2 } from 'lucide-react';
+import { Check, RotateCcw, Trash2, ExternalLink } from 'lucide-react';
+import Link from 'next/link';
 
 /* ====== storage + tipos ====== */
 const LS_RETOS = 'akira_mizona_retos_v1';
@@ -29,6 +30,7 @@ const fmtDate = (d: string | number) =>
 
 /* ====== integración con motor legacy ====== */
 import { PROGRAMS, loadStore, saveStore, getRelativeDayIndexForDate } from '@/lib/programs';
+import { LEGACY_TO_SLUG } from '@/lib/programs_map';
 
 /** Marca TODAS las tareas del día (para una fecha concreta) como hechas en el motor legacy */
 function markLegacyDayDone(legacyKey: string, dateStr: string) {
@@ -42,7 +44,6 @@ function markLegacyDayDone(legacyKey: string, dateStr: string) {
   const tasksCount = prog.days[dayIdx - 1]?.tasks.length ?? 0;
   if (!store[legacyKey].completedByDate) store[legacyKey].completedByDate = {};
   const already = new Set(store[legacyKey].completedByDate[dateStr] ?? []);
-  // añade los que falten (idempotente)
   for (let i = 0; i < tasksCount; i++) already.add(i);
   store[legacyKey].completedByDate[dateStr] = Array.from(already).sort((a, b) => a - b);
   saveStore(store);
@@ -56,6 +57,14 @@ function unmarkLegacyDay(legacyKey: string, dateStr: string) {
     store[legacyKey].completedByDate[dateStr] = [];
     saveStore(store);
   }
+}
+
+/** Extrae el slug del programa a partir del id del reto si es de programa */
+function slugFromRetoId(id: string): string | null {
+  const m = /^prog:([^:]+):(\d{4}-\d{2}-\d{2})$/.exec(id);
+  if (!m) return null;
+  const legacyKey = m[1];
+  return LEGACY_TO_SLUG[legacyKey] ?? null;
 }
 
 /* ====== página ====== */
@@ -98,15 +107,13 @@ export default function MiZonaPage() {
     [retos]
   );
 
-  /* === lógica clave: completar y recrear si es permanente
-         + sincronización con motor legacy si es un reto de programa === */
+  /* === completar / deshacer + sincronización con motor legacy si es reto de programa === */
   function completeReto(id: string) {
     setRetos(prev => {
       const idx = prev.findIndex(r => r.id === id);
       if (idx === -1) return prev;
       const r = prev[idx];
 
-      // Si es un reto generado por un programa: id = prog:<legacyKey>:YYYY-MM-DD
       const m = /^prog:([^:]+):(\d{4}-\d{2}-\d{2})$/.exec(r.id);
       if (m) {
         const legacyKey = m[1];
@@ -250,6 +257,8 @@ function RetoItem({
   onUndo: () => void;
   onDelete: () => void;
 }) {
+  const programSlug = slugFromRetoId(reto.id);
+
   return (
     <li
       style={{
@@ -269,6 +278,12 @@ function RetoItem({
         <small className="muted">Para: {fmtDate(reto.due)}</small>
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        {/* Acceso directo al programa si aplica */}
+        {programSlug && (
+          <Link href={`/habitos/${programSlug}`} className="btn" title="Ir al programa">
+            <ExternalLink size={16} />
+          </Link>
+        )}
         {!done ? (
           <button className="btn" onClick={onDone} title="Marcar como hecho"><Check size={16} /></button>
         ) : (
