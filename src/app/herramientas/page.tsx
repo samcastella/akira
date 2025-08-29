@@ -3,8 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Notebook, Heart, Target, BookOpen,
-  Check, Trash2, Copy, X,
-  Pencil, Save, Eye, Repeat as RepeatIcon
+  Trash2, X, Pencil, Save, Eye
 } from 'lucide-react';
 
 /* ===========================
@@ -35,9 +34,9 @@ const todayKey = () => new Date().toISOString().slice(0, 10);
    Fechas legibles (Hoy/Ayer)
    ========= */
 function sameDay(a: Date, b: Date) {
-  return a.getFullYear() === b.getFullYear() &&
-         a.getMonth() === b.getMonth() &&
-         a.getDate() === b.getDate();
+  return a.getFullYear() === b.getFullYear()
+    && a.getMonth() === b.getMonth()
+    && a.getDate() === b.getDate();
 }
 function formatDateLabel(iso: string) {
   const d = new Date(iso + 'T00:00:00');
@@ -55,16 +54,11 @@ function formatDateLabel(iso: string) {
 function migrateNotesIfNeeded() {
   if (typeof window === 'undefined') return;
   try {
-    // Si ya existe v2, no migramos.
     if (localStorage.getItem(LS_NOTES)) return;
-
     const raw = localStorage.getItem(OLD_LS_NOTES);
     if (!raw) return;
-
     const v1 = JSON.parse(raw);
     if (!Array.isArray(v1)) return;
-
-    // Acepta formatos antiguos: string o {id,text,createdAt}
     const migrated = v1.map((n: any) => {
       if (typeof n === 'string') {
         return { id: crypto.randomUUID(), title: '', text: n, createdAt: Date.now() };
@@ -76,12 +70,9 @@ function migrateNotesIfNeeded() {
         createdAt: Number(n?.createdAt) || Date.now(),
       };
     });
-
     localStorage.setItem(LS_NOTES, JSON.stringify(migrated));
     localStorage.removeItem(OLD_LS_NOTES);
-  } catch {
-    // noop
-  }
+  } catch { /* noop */ }
 }
 
 /* ===========================
@@ -92,7 +83,7 @@ type Note = { id: string; title: string; text: string; createdAt: number };
 type GratitudeRow = { id: string; text: string };
 type GratitudeEntry = { date: string; rows: GratitudeRow[]; savedAt: number }; // por día (YYYY-MM-DD)
 
-type Goal = { id: string; text: string; done: boolean; createdAt: number; repeat?: '3'|'7'|'21'|'30'|'perm' };
+type Goal = { id: string; text: string; done: boolean; createdAt: number };
 type GoalsByDay = Record<string, Goal[]>;
 
 type BookBase = { id: string; title: string; author?: string; notes?: string; createdAt: number };
@@ -100,7 +91,7 @@ type BookReading = BookBase & { startedAt: number };
 type BookFinished = BookBase & { finishedAt: number };
 type BooksStore = { reading: BookReading[]; wishlist: BookBase[]; finished: BookFinished[] };
 
-/** ⬇️ ahora soporta retos permanentes */
+/** ⬇️ retos (Mi zona) */
 type Reto = { id: string; text: string; createdAt: number; due: string; done: boolean; permanent?: boolean };
 
 /* ===========================
@@ -122,7 +113,7 @@ export default function Herramientas() {
       <h2 className="page-title">Herramientas</h2>
       <p className="muted" style={{ margin: '0 0 16px' }}>Tu espacio para escribir y agradecer cada día.</p>
 
-      {/* Tabs tipo píldora con iconos (estilos en globals.css .tabbar) */}
+      {/* Tabs */}
       <div role="tablist" className="tabbar">
         {TABS.map(({ key, label, Icon }) => (
           <button
@@ -148,16 +139,14 @@ export default function Herramientas() {
 }
 
 /* ===========================
-   Notas (con Título) — incluye migración v1->v2 + Editar/Guardar
+   Notas — borde sutil, sin desbordes, sin “Copiar”
    =========================== */
 function NotasTool() {
-  // Ejecuta migración ANTES de leer estado inicial
   migrateNotesIfNeeded();
 
   const [notes, setNotes] = useState<Note[]>(() => loadLS<Note[]>(LS_NOTES, []));
   const [title, setTitle] = useState('');
   const [text, setText] = useState('');
-  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   useEffect(() => { saveLS(LS_NOTES, notes); }, [notes]);
 
@@ -171,14 +160,6 @@ function NotasTool() {
   const onUpdate = (upd: Note) => setNotes(notes.map(n => n.id === upd.id ? upd : n));
   const onDelete = (id: string) => setNotes(notes.filter(n => n.id !== id));
 
-  const copyNote = async (n: Note) => {
-    try {
-      await navigator.clipboard.writeText(`${n.title ? n.title + '\n' : ''}${n.text}`);
-      setCopiedId(n.id);
-      setTimeout(() => setCopiedId(null), 1200);
-    } catch {}
-  };
-
   return (
     <div>
       <h3 style={{ marginTop: 0 }}>Mis notas</h3>
@@ -190,40 +171,43 @@ function NotasTool() {
         </div>
       </div>
 
+      {/* Listado SIN .row para evitar doble borde/desborde */}
       <div className="rows" style={{ marginTop: 16 }}>
         {notes.length === 0 && <div className="muted">Aún no tienes notas.</div>}
         {notes.map(n => (
-          <div key={n.id} className="row">
-            <NoteItem
-              note={n}
-              onUpdate={onUpdate}
-              onDelete={() => onDelete(n.id)}
-              onCopy={() => copyNote(n)}
-              copied={copiedId === n.id}
-            />
-          </div>
+          <NoteItem
+            key={n.id}
+            note={n}
+            onUpdate={onUpdate}
+            onDelete={() => onDelete(n.id)}
+          />
         ))}
       </div>
     </div>
   );
 }
 
-/* Subcomponente de nota con Editar/Guardar */
+/* Nota individual */
 function NoteItem({
-  note, onUpdate, onDelete, onCopy, copied
+  note, onUpdate, onDelete
 }: {
   note: Note;
   onUpdate: (n: Note) => void;
   onDelete: () => void;
-  onCopy: () => void;
-  copied: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(note.title);
   const [text, setText] = useState(note.text);
 
   return (
-    <article className="border rounded-xl p-4">
+    <article
+      style={{
+        border: '1px solid var(--line)',
+        borderRadius: 16,
+        padding: 12,
+        overflow: 'hidden'
+      }}
+    >
       {!editing ? (
         <>
           <div className="flex items-start justify-between gap-2">
@@ -240,13 +224,6 @@ function NoteItem({
                 <Pencil className="w-4 h-4" /> Editar
               </button>
               <button
-                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border hover:bg-neutral-50"
-                onClick={onCopy}
-                title="Copiar"
-              >
-                {copied ? <Check size={14}/> : <Copy size={14}/>} {copied ? 'Copiado' : 'Copiar'}
-              </button>
-              <button
                 className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border hover:bg-red-50 text-red-600"
                 onClick={onDelete}
                 title="Eliminar"
@@ -255,7 +232,7 @@ function NoteItem({
               </button>
             </div>
           </div>
-          {note.text && <p className="mt-2 whitespace-pre-wrap">{note.text}</p>}
+          {note.text && <p className="mt-2 whitespace-pre-wrap" style={{ margin: 0 }}>{note.text}</p>}
         </>
       ) : (
         <>
@@ -293,7 +270,7 @@ function NoteItem({
 }
 
 /* ===========================
-   Gratitud (v2: filas) — Hoy visible y resto colapsado con "Ver"
+   Gratitud — Guardar -> item del día colapsado (Ver/Editar/Guardar)
    =========================== */
 function GratitudTool() {
   type Entries = Record<string, GratitudeEntry>;
@@ -323,10 +300,10 @@ function GratitudTool() {
     <div>
       <h3 style={{ marginTop: 0 }}>Diario de gratitud</h3>
       <p className="muted" style={{ marginTop: 4 }}>
-        Anota durante el día las cosas por las que te sientes agradecido, desde las más pequeñas a las más grandes.
+        Anota durante el día las cosas por las que te sientes agradecido.
       </p>
 
-      {/* Hoy (siempre visible) */}
+      {/* Formulario HOY */}
       <div className="card" style={{ marginTop: 12 }}>
         <div className="card-header">
           <div><div style={{ fontWeight: 600 }}>{formatDateLabel(today)}</div></div>
@@ -343,108 +320,113 @@ function GratitudTool() {
             <button className="btn secondary" onClick={addRow}>Añadir otra</button>
           )}
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <button className="btn" onClick={saveOrUpdate}>{hasAnyText && current.savedAt ? 'Actualizar' : 'Guardar'}</button>
+            <button className="btn" onClick={saveOrUpdate}>{current.savedAt ? 'Actualizar' : 'Guardar'}</button>
           </div>
         </div>
       </div>
 
-      {/* Anteriores: solo fecha + botón Ver que despliega */}
+      {/* Items colapsados: HOY (si hay contenido/guardado) + anteriores */}
       <section style={{ marginTop: 16 }}>
-        {prevDays.length === 0 && <p className="text-sm text-neutral-500 mt-3">No hay registros anteriores.</p>}
+        {(current.savedAt || hasAnyText) && (
+          <GratitudeDay
+            key={today}
+            date={today}
+            rows={current.rows}
+            onUpdate={(rows) => setCurrent({ ...current, rows, savedAt: Date.now() })}
+            editable
+          />
+        )}
         {prevDays.map(d => (
-          <CollapsedGratitudeDay key={d} date={d} rows={entries[d].rows} />
+          <GratitudeDay
+            key={d}
+            date={d}
+            rows={entries[d].rows}
+            onUpdate={(rows) => setEntries(prev => ({ ...prev, [d]: { ...prev[d], rows, savedAt: Date.now() } }))}
+            editable
+          />
         ))}
+        {prevDays.length === 0 && !current.savedAt && (
+          <p className="text-sm text-neutral-500 mt-3">No hay registros anteriores.</p>
+        )}
       </section>
     </div>
   );
 }
 
-function CollapsedGratitudeDay({ date, rows }: { date: string; rows: GratitudeRow[] }) {
+function GratitudeDay({
+  date, rows, onUpdate, editable = true
+}: {
+  date: string;
+  rows: GratitudeRow[];
+  onUpdate: (rows: GratitudeRow[]) => void;
+  editable?: boolean;
+}) {
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [localRows, setLocalRows] = useState(rows);
+
+  useEffect(() => { setLocalRows(rows); }, [rows]);
+
+  const addRow = () => setLocalRows([...localRows, { id: crypto.randomUUID(), text: '' }]);
+
   return (
     <div className="border rounded-xl p-4 mb-3">
       <div className="flex items-center justify-between">
         <strong>{formatDateLabel(date)}</strong>
-        <button
-          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border hover:bg-neutral-50 text-sm"
-          onClick={() => setOpen(!open)}
-        >
-          {!open ? <><Eye className="w-4 h-4" /> Ver</> : <>Ocultar</>}
-        </button>
+        {!open ? (
+          <button className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border hover:bg-neutral-50 text-sm" onClick={() => setOpen(true)}>
+            <Eye className="w-4 h-4" /> Ver
+          </button>
+        ) : (
+          <button className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border hover:bg-neutral-50 text-sm" onClick={() => { setOpen(false); setEditing(false); }}>
+            Ocultar
+          </button>
+        )}
       </div>
-      {open && (
-        <ul className="mt-3 list-disc pl-5">
-          {rows?.filter(r => r.text.trim()).length
-            ? rows.filter(r => r.text.trim()).map(r => <li key={r.id}>{r.text}</li>)
-            : <li className="text-neutral-500">Sin entradas</li>}
-        </ul>
+
+      {open && !editing && (
+        <>
+          <ul className="mt-3 list-disc pl-5">
+            {rows.filter(r => r.text.trim()).length
+              ? rows.filter(r => r.text.trim()).map(r => <li key={r.id}>{r.text}</li>)
+              : <li className="text-neutral-500">Sin entradas</li>}
+          </ul>
+          {editable && (
+            <div className="flex gap-2 mt-3">
+              <button className="btn secondary" onClick={() => setEditing(true)}>Editar</button>
+            </div>
+          )}
+        </>
+      )}
+
+      {open && editing && (
+        <div className="rows mt-3">
+          {localRows.map((r, idx) => (
+            <input
+              key={r.id}
+              className="input"
+              placeholder={`Gracias por… (${idx + 1})`}
+              value={r.text}
+              onChange={(e) => setLocalRows(localRows.map(x => x.id === r.id ? { ...x, text: e.target.value } : x))}
+            />
+          ))}
+          <button className="btn secondary" onClick={addRow}>Añadir otra</button>
+          <div className="flex gap-2 justify-end">
+            <button className="btn" onClick={() => { onUpdate(localRows); setEditing(false); }}>Guardar</button>
+            <button className="btn ghost" onClick={() => { setLocalRows(rows); setEditing(false); }}>Cancelar</button>
+          </div>
+        </div>
       )}
     </div>
   );
 }
 
 /* ===========================
-   Objetivos para hoy → Mi zona (sin check) + selector Repetir (iOS-like)
+   Objetivos para hoy — sin Repetir, layout contenido
    =========================== */
-const REPEAT_OPTIONS: Array<{ val: Goal['repeat']; label: string; hint?: string }> = [
-  { val: undefined, label: 'Sin repetir' },
-  { val: '3',   label: 'Cada 3 días' },
-  { val: '7',   label: 'Cada 7 días (semanal)' },
-  { val: '21',  label: 'Cada 21 días' },
-  { val: '30',  label: 'Cada 30 días (mensual aprox.)' },
-  { val: 'perm',label: 'Permanente', hint: 'Se recrea al completarlo' },
-];
-function repeatLabel(v: Goal['repeat']) {
-  return REPEAT_OPTIONS.find(o => o.val === v)?.label ?? 'Sin repetir';
-}
-
-function RepeatPicker({
-  value,
-  onChange,
-}: {
-  value: Goal['repeat'];
-  onChange: (v: Goal['repeat']) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border hover:bg-neutral-50"
-        onClick={() => setOpen(o => !o)}
-      >
-        <RepeatIcon className="w-4 h-4" />
-        <span className="text-sm">{repeatLabel(value)}</span>
-      </button>
-
-      {open && (
-        <div className="absolute z-20 mt-2 w-64 bg-white border rounded-xl shadow-lg overflow-hidden">
-          <ul className="max-h-72 overflow-auto">
-            {REPEAT_OPTIONS.map(opt => (
-              <li key={String(opt.val)}>
-                <button
-                  className="w-full px-3 py-2 flex items-center justify-between hover:bg-neutral-50 text-left"
-                  onClick={() => { onChange(opt.val ?? undefined); setOpen(false); }}
-                >
-                  <div className="flex flex-col">
-                    <span>{opt.label}</span>
-                    {opt.hint && <span className="text-xs text-neutral-500">{opt.hint}</span>}
-                  </div>
-                  {value === opt.val && <Check className="w-4 h-4" />}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
-  );
-}
-
 function GoalsTool() {
   const [byDay, setByDay] = useState<GoalsByDay>(() => loadLS<GoalsByDay>(LS_GOALS, {}));
   const [text, setText] = useState('');
-  const [newRepeat, setNewRepeat] = useState<Goal['repeat']>(undefined);
   const today = todayKey();
   const list = byDay[today] || [];
 
@@ -454,48 +436,16 @@ function GoalsTool() {
   const loadRetos = (): Reto[] => loadLS<Reto[]>(LS_RETOS, []);
   const saveRetos = (retos: Reto[]) => saveLS(LS_RETOS, retos);
 
-  function pushRetosForRepeat(baseText: string, repeat: Goal['repeat']) {
-    const retos = loadRetos();
-    if (repeat === 'perm') {
-      retos.unshift({ id: crypto.randomUUID(), text: baseText, createdAt: Date.now(), due: today, done: false, permanent: true });
-      saveRetos(retos);
-      return;
-    }
-    const n = repeat ? parseInt(repeat, 10) : 0;
-    const now = Date.now();
-    if (n > 0) {
-      for (let i = 0; i < n; i++) {
-        const d = new Date(now); d.setDate(d.getDate() + i);
-        retos.push({
-          id: crypto.randomUUID(),
-          text: baseText,
-          createdAt: now,
-          due: d.toISOString().slice(0, 10),
-          done: false,
-          permanent: false
-        });
-      }
-      saveRetos(retos);
-    } else {
-      // Sin repetir: solo hoy
-      retos.unshift({ id: crypto.randomUUID(), text: baseText, createdAt: Date.now(), due: today, done: false, permanent: false });
-      saveRetos(retos);
-    }
-  }
-
   const add = () => {
     const t = text.trim();
     if (!t) return;
+    // Solo hoy (sin repetir)
+    const reto: Reto = { id: crypto.randomUUID(), text: t, createdAt: Date.now(), due: today, done: false };
+    saveRetos([reto, ...loadRetos()]);
 
-    // 1) Enviar a Mi zona según repeat
-    pushRetosForRepeat(t, newRepeat);
-
-    // 2) Guardar histórico local sin check
-    const g: Goal = { id: crypto.randomUUID(), text: t, createdAt: Date.now(), done: false, repeat: newRepeat };
+    const g: Goal = { id: reto.id, text: reto.text, createdAt: reto.createdAt, done: false };
     setByDay({ ...byDay, [today]: [g, ...list] });
     setText('');
-    setNewRepeat(undefined);
-    alert('¡Fenomenal! Objetivo enviado a “Mi zona”.');
   };
 
   const edit = (id: string) => {
@@ -503,15 +453,15 @@ function GoalsTool() {
     if (nuevo == null) return;
     const updated = list.map(x => x.id === id ? { ...x, text: nuevo } : x);
     setByDay({ ...byDay, [today]: updated });
-
-    // Actualizar futuros retos con mismo id no es trivial; dejamos tal cual y añadimos uno nuevo para hoy
-    // opción simple: añadir reto hoy con el nuevo texto
-    pushRetosForRepeat(nuevo, updated.find(x => x.id === id)?.repeat);
+    // actualizar en Mi zona si sigue pendiente
+    const retos = loadRetos();
+    saveRetos(retos.map(r => r.id === id ? { ...r, text: nuevo } : r));
   };
 
   const del = (id: string) => {
     setByDay({ ...byDay, [today]: list.filter(g => g.id !== id) });
-    // No tocamos Mi zona histórica para no borrar si ya está en curso.
+    // quitar también de Mi zona si aún está pendiente
+    saveRetos(loadRetos().filter(r => r.id !== id));
   };
 
   return (
@@ -519,50 +469,43 @@ function GoalsTool() {
       <h3 style={{ marginTop: 0 }}>Objetivos para hoy</h3>
       <p className="muted">Se enviarán a <b>Mi zona</b> como retos del día.</p>
 
-      {/* Crear objetivo */}
-      <div className="rows" style={{ marginTop: 12 }}>
-        <div className="row" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input className="input" placeholder="Escribe un objetivo…" value={text} onChange={e => setText(e.target.value)} />
-          <RepeatPicker value={newRepeat} onChange={setNewRepeat} />
+      {/* Crear objetivo (contenido, sin overflow) */}
+      <div style={{ marginTop: 12 }}>
+        <div
+          style={{
+            display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap'
+          }}
+        >
+          <input
+            className="input"
+            placeholder="Escribe un objetivo…"
+            value={text}
+            onChange={e => setText(e.target.value)}
+            style={{ flex: '1 1 220px', minWidth: 0 }}
+          />
           <button className="btn" onClick={add}>Añadir</button>
         </div>
-
-        {/* Histórico simple sin checkbox */}
-        <ul className="list card">
-          {list.length === 0 && <li style={{ padding: '8px 0' }} className="muted">Aún no hay objetivos guardados hoy.</li>}
-          {list.map(g => (
-            <li key={g.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', gap: 12 }}>
-              <div>
-                <span>{g.text}</span>
-                {g.repeat && (
-                  <span className="text-xs text-neutral-500 inline-block ml-2">
-                    {repeatLabel(g.repeat)}
-                  </span>
-                )}
-              </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <RepeatPicker
-                  value={g.repeat}
-                  onChange={(v) => {
-                    const updated = list.map(x => x.id === g.id ? { ...x, repeat: v } : x);
-                    setByDay({ ...byDay, [today]: updated });
-                    // al cambiar repetición, registrar en Mi zona a partir de hoy
-                    pushRetosForRepeat(g.text, v);
-                  }}
-                />
-                <button className="btn secondary" onClick={() => edit(g.id)}>Editar</button>
-                <button className="btn red" onClick={() => del(g.id)}>Borrar</button>
-              </div>
-            </li>
-          ))}
-        </ul>
       </div>
+
+      {/* Histórico simple sin checkbox */}
+      <ul className="list card" style={{ marginTop: 12 }}>
+        {list.length === 0 && <li style={{ padding: '8px 0' }} className="muted">Aún no hay objetivos guardados hoy.</li>}
+        {list.map(g => (
+          <li key={g.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', gap: 12 }}>
+            <span>{g.text}</span>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn secondary" onClick={() => edit(g.id)}>Editar</button>
+              <button className="btn red" onClick={() => del(g.id)}>Borrar</button>
+            </div>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
 
 /* ===========================
-   Mis libros (pop-up directo, botón verde, editar/volver a leer)
+   Mis libros (igual que antes)
    =========================== */
 function BooksTool() {
   const [store, setStore] = useState<BooksStore>(() => loadLS<BooksStore>(LS_BOOKS, { reading: [], wishlist: [], finished: [] }));
