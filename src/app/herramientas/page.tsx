@@ -364,8 +364,6 @@ function GratitudeDay({ date, rows, onUpdate, editable = true }: {
 /* ===========================
    Objetivos para hoy
    =========================== */
-type Goal = { id: string; text: string; done: boolean; createdAt: number };
-type GoalsByDay = Record<string, Goal[]>;
 
 function GoalsTool() {
   const [byDay, setByDay] = useState<GoalsByDay>(() => loadLS<GoalsByDay>(LS_GOALS, {}));
