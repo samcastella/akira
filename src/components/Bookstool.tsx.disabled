@@ -1,0 +1,196 @@
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
+
+const LS_BOOKS = 'akira_books_v1';
+
+type BookBase = { id: string; title: string; author?: string; notes?: string; createdAt: number };
+type BookReading = BookBase & { startedAt: number };
+type BookFinished = BookBase & { finishedAt: number };
+type BooksStore = { reading: BookReading[]; wishlist: BookBase[]; finished: BookFinished[] };
+
+function loadLS<T>(k: string, f: T): T {
+  if (typeof window === 'undefined') return f;
+  try { const raw = localStorage.getItem(k); return raw ? JSON.parse(raw) as T : f; } catch { return f; }
+}
+function saveLS<T>(k: string, v: T) { if (typeof window !== 'undefined') localStorage.setItem(k, JSON.stringify(v)); }
+const fmtDate = (d: string | number) => new Date(d).toLocaleDateString();
+
+export default function BooksTool() {
+  const [store, setStore] = useState<BooksStore>(() => loadLS<BooksStore>(LS_BOOKS, { reading: [], wishlist: [], finished: [] }));
+  useEffect(() => { saveLS(LS_BOOKS, store); }, [store]);
+
+  const [formR, setFormR] = useState({ title: '', author: '', notes: '' });
+  const [formW, setFormW] = useState({ title: '', author: '', notes: '' });
+
+  const addReading = () => {
+    if (!formR.title.trim()) return alert('El nombre del libro es obligatorio');
+    const now = Date.now();
+    const book: BookReading = {
+      id: crypto.randomUUID(),
+      title: formR.title.trim(),
+      author: formR.author.trim() || undefined,
+      notes: formR.notes.trim() || undefined,
+      createdAt: now,
+      startedAt: now,
+    };
+    setStore(s => ({ ...s, reading: [book, ...s.reading] }));
+    setFormR({ title: '', author: '', notes: '' });
+  };
+
+  const finishReading = (id: string) => {
+    setStore(s => {
+      const b = s.reading.find(x => x.id === id);
+      if (!b) return s;
+      const finished: BookFinished = { ...b, finishedAt: Date.now() };
+      return { ...s, reading: s.reading.filter(x => x.id !== id), finished: [finished, ...s.finished] };
+    });
+  };
+
+  const addWishlist = () => {
+    if (!formW.title.trim()) return alert('El nombre del libro es obligatorio');
+    const now = Date.now();
+    const b: BookBase = {
+      id: crypto.randomUUID(),
+      title: formW.title.trim(),
+      author: formW.author.trim() || undefined,
+      notes: formW.notes.trim() || undefined,
+      createdAt: now,
+    };
+    setStore(s => ({ ...s, wishlist: [b, ...s.wishlist] }));
+    setFormW({ title: '', author: '', notes: '' });
+  };
+
+  // Popup simple para compartir + confirmar
+  const [show, setShow] = useState<{open:boolean; text:string; onConfirm:()=>void}>({open:false, text:'', onConfirm:()=>{}});
+  const close = () => setShow({open:false, text:'', onConfirm:()=>{}});
+  const shareLinks = useMemo(() => {
+    const t = encodeURIComponent(show.text);
+    return {
+      whatsapp: `https://wa.me/?text=${t}`,
+      twitter: `https://twitter.com/intent/tweet?text=${t}`,
+      facebook: `https://www.facebook.com/sharer/sharer.php?quote=${t}`,
+      instagram: `https://www.instagram.com/`,
+      tiktok: `https://www.tiktok.com/`,
+    };
+  }, [show.text]);
+
+  const startFromWishlist = async (id: string) => {
+    setStore(s => {
+      const b = s.wishlist.find(x => x.id === id);
+      if (!b) return s;
+      const r: BookReading = { ...b, startedAt: Date.now() } as BookReading;
+
+      const confirm = () => {
+        setStore(s2 => ({
+          ...s2,
+          wishlist: s2.wishlist.filter(x => x.id !== id),
+          reading: [r, ...s2.reading],
+        }));
+      };
+
+      const text = `Voy a empezar un nuevo libro: "${b.title}"${b.author ? ` de ${b.author}` : ''}. ¡A por ello!`;
+      if (navigator.share) {
+        navigator.share({ title: 'Nuevo libro', text, url: location.href }).then(confirm).catch(() => {
+          setShow({ open: true, text, onConfirm: () => { confirm(); close(); } });
+        });
+      } else {
+        setShow({ open: true, text, onConfirm: () => { confirm(); close(); } });
+      }
+
+      return s;
+    });
+  };
+
+  return (
+    <div>
+      <h3 style={{marginTop:0}}>Mis libros</h3>
+
+      {/* Leyendo */}
+      <section className="card" style={{marginTop:8}}>
+        <h4 style={{margin:'0 0 8px'}}>Libros que me estoy leyendo</h4>
+        <div className="rows">
+          <input className="input" placeholder="Nombre del libro *" value={formR.title} onChange={e=>setFormR({...formR, title:e.target.value})} />
+          <input className="input" placeholder="Autor (opcional)" value={formR.author} onChange={e=>setFormR({...formR, author:e.target.value})} />
+          <textarea className="textarea" placeholder="¿Qué estás aprendiendo de este libro? (opcional)" value={formR.notes} onChange={e=>setFormR({...formR, notes:e.target.value})} />
+          <div style={{display:'flex', justifyContent:'flex-end', gap:8}}>
+            <button className="btn" onClick={addReading}>Guardar</button>
+          </div>
+        </div>
+
+        <ul className="list" style={{marginTop:12}}>
+          {store.reading.map(b=>(
+            <li key={b.id} style={{padding:'10px 0', display:'flex', justifyContent:'space-between', alignItems:'center', gap:8}}>
+              <div>
+                <strong>{b.title}</strong>{b.author?` · ${b.author}`:''}
+                {b.notes && <div className="muted" style={{marginTop:4}}>{b.notes}</div>}
+              </div>
+              <button className="btn red" onClick={()=>finishReading(b.id)}>Terminar</button>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      {/* Próximos */}
+      <section className="card" style={{marginTop:12}}>
+        <h4 style={{margin:'0 0 8px'}}>Libros que quiero leer</h4>
+        <div className="rows">
+          <input className="input" placeholder="Nombre del libro *" value={formW.title} onChange={e=>setFormW({...formW, title:e.target.value})} />
+          <input className="input" placeholder="Autor (opcional)" value={formW.author} onChange={e=>setFormW({...formW, author:e.target.value})} />
+          <textarea className="textarea" placeholder="Notas (opcional)" value={formW.notes} onChange={e=>setFormW({...formW, notes:e.target.value})} />
+          <div style={{display:'flex', justifyContent:'flex-end', gap:8}}>
+            <button className="btn" onClick={addWishlist}>Guardar</button>
+          </div>
+        </div>
+
+        <ul className="list" style={{marginTop:12}}>
+          {store.wishlist.map(b=>(
+            <li key={b.id} style={{padding:'10px 0', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+              <div>
+                <strong>{b.title}</strong>{b.author?` · ${b.author}`:''}
+                {b.notes && <div className="muted" style={{marginTop:4}}>{b.notes}</div>}
+              </div>
+              <button className="btn" onClick={()=>startFromWishlist(b.id)}>Empezar a leer</button>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      {/* Terminados */}
+      <section className="card" style={{marginTop:12}}>
+        <h4 style={{margin:'0 0 8px'}}>Libros terminados</h4>
+        <ul className="list">
+          {store.finished.length===0 && <li style={{padding:'8px 0'}} className="muted">Aún no hay libros terminados.</li>}
+          {store.finished.map(b=>(
+            <li key={b.id} style={{padding:'10px 0'}}>
+              <div><strong>{b.title}</strong>{b.author?` · ${b.author}`:''}</div>
+              <small className="muted">Terminado el {fmtDate(b.finishedAt)}</small>
+              {b.notes && <div className="muted" style={{marginTop:4}}>{b.notes}</div>}
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      {/* Modal compartir */}
+      {show.open && (
+        <div className="modal-backdrop" onClick={close}>
+          <div className="modal" onClick={e=>e.stopPropagation()}>
+            <h4 style={{margin:0}}>Vas a empezar un nuevo libro 📚</h4>
+            <p style={{marginTop:8}}>
+              ¡Es una excelente noticia! ¿Te gustaría anunciar al mundo el libro que vas a comenzar?
+              Eso refuerza tu compromiso y motiva a otros.
+            </p>
+            <div className="actions">
+              <a href={shareLinks.whatsapp} target="_blank" rel="noreferrer">WhatsApp</a>
+              <a href={shareLinks.twitter} target="_blank" rel="noreferrer">Twitter/X</a>
+              <a href={shareLinks.facebook} target="_blank" rel="noreferrer">Facebook</a>
+              <a href={shareLinks.instagram} target="_blank" rel="noreferrer">Instagram</a>
+              <a href={shareLinks.tiktok} target="_blank" rel="noreferrer">TikTok</a>
+              <button className="btn" onClick={show.onConfirm}>Vamos a por ello</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
