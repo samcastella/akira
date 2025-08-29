@@ -54,13 +54,8 @@ type ProgramLike = {
   href?: string;
 };
 
-function ProgramCard({ program }: { program: ProgramLike }) {
-  const ident = program.slug ?? program.key ?? '';
-  const href = program.href ?? (ident ? `/habitos?key=${encodeURIComponent(ident)}` : '/habitos');
-  const { title, subtitle } = program;
-
-  // Forzar imágenes por clave solicitadas
-  const imgByKey: Record<string, string> = {
+function pickImage(ident: string | undefined, index: number) {
+  const mapByKey: Record<string, string> = {
     lectura: '/reading.jpg',
     reading: '/reading.jpg',
     burpees: '/burpees.jpg',
@@ -69,15 +64,21 @@ function ProgramCard({ program }: { program: ProgramLike }) {
     meditacion: '/meditation.jpg',
     meditation: '/meditation.jpg',
   };
-  const fallback = '/reading.jpg';
-  const image =
-    (ident && imgByKey[ident]) ||
-    program.image ||
-    fallback;
+  const byIndex = ['/reading.jpg', '/burpees.jpg', '/savings.jpg', '/meditation.jpg'];
+  return (ident && mapByKey[ident]) || byIndex[index] || '/reading.jpg';
+}
+
+function ProgramCard({ program }: { program: ProgramLike }) {
+  const { title, subtitle } = program;
+  const ident = program.slug ?? program.key ?? '';
+  const href = program.href ?? (ident ? `/habitos?key=${encodeURIComponent(ident)}` : '/habitos');
+
+  // La imagen final la inyectamos desde el map superior (program.image ya viene resuelta)
+  const image = program.image ?? pickImage(ident, 0);
 
   return (
     <Link href={href} className="block group">
-      <div className="relative w-full rounded-2xl overflow-hidden">
+      <div className="relative w-full overflow-hidden">
         {/* Ratio 4:5 */}
         <div style={{ paddingTop: '125%' }} />
         <Image
@@ -103,7 +104,7 @@ function ProgramCard({ program }: { program: ProgramLike }) {
 
           <div className="mt-3">
             <span
-              className="inline-flex items-center px-4 py-2 rounded-full bg-white text-black text-sm font-medium
+              className="inline-flex items-center px-4 py-2 bg-white text-black text-sm font-medium
                          group-hover:translate-y-[-1px] transition-transform"
             >
               Ver programa
@@ -135,22 +136,28 @@ export default function HomePage() {
       if (ident) byIdent.set(ident, p);
     }
 
-    const result: ProgramLike[] = [];
-    for (const k of orderedKeys) {
-      const p = byIdent.get(k);
-      if (p) {
-        result.push({
-          ...p,
-          // subtítulo y título ya vienen del catálogo; si faltan, mantenemos lo que haya
-        });
-      }
-    }
+    // Construimos en orden fijo e inyectamos imagen por índice
+    const baseOrder = orderedKeys
+      .map((k) => byIdent.get(k))
+      .filter(Boolean) as ProgramLike[];
+
     // Si faltara alguno en el catálogo, añadimos el resto al final
+    const extras: ProgramLike[] = [];
     for (const p of catalog as any[]) {
       const ident = (p.slug ?? p.key ?? '').toString();
-      if (!orderedKeys.includes(ident)) result.push(p);
+      if (!orderedKeys.includes(ident)) extras.push(p);
     }
-    return result;
+
+    const combined = [...baseOrder, ...extras];
+
+    // Inyectar imágenes distintas garantizadas por posición
+    return combined.map((p, idx) => {
+      const ident = (p.slug ?? p.key ?? '').toString();
+      return {
+        ...p,
+        image: pickImage(ident, idx),
+      };
+    });
   }, [catalog]);
 
   useEffect(() => {
@@ -174,16 +181,13 @@ export default function HomePage() {
   }, []);
 
   return (
-    <main className="px-4 sm:px-6 md:px-8 pb-20">
-
-      {/* ===== Franja pequeña: Pensamiento del día ===== */}
+    <main className="px-4 sm:px-6 md:px-8 pb-16 bg-white">
+      {/* ===== Franja pequeña: Pensamiento del día (sin bordes ni espacios extra) ===== */}
       {todayThought && (
-        <section className="mb-6 rounded-2xl border border-black/10 bg-white px-4 py-3">
+        <section className="px-0 py-2 m-0">
           <div className="flex flex-col items-center text-center gap-1">
             <h2 className="text-sm font-medium text-black/70">Pensamiento del día</h2>
-            <p className="text-black/80 text-sm">
-              {truncateWords(todayThought.body, 8)}
-            </p>
+            <p className="text-black/80 text-sm">{truncateWords(todayThought.body, 8)}</p>
             <button
               onClick={() => setModalOpen(true)}
               className="mt-2 inline-flex items-center px-4 py-2 rounded-full border border-black/15 bg-white hover:bg-black hover:text-white transition-colors text-sm font-medium"
@@ -192,7 +196,7 @@ export default function HomePage() {
             </button>
           </div>
 
-          {/* Modal: props correctas y render condicional */}
+          {/* Modal */}
           {modalOpen && (
             <ThoughtModal
               title={todayThought.title}
@@ -203,17 +207,17 @@ export default function HomePage() {
         </section>
       )}
 
-      {/* ===== Programas: 1 por fila, 100% ancho, ratio 4:5 ===== */}
-      <section className="space-y-5">
+      {/* ===== Programas: 1 por fila, 100% ancho, ratio 4:5, SIN espacios entre tarjetas ===== */}
+      <section className="space-y-0">
         {programsOnePerRow.map((p, i) => {
           const reactKey = (p.slug ?? p.key ?? `p-${i}`).toString();
           return <ProgramCard key={reactKey} program={p} />;
         })}
       </section>
 
-      {/* ===== CTA final ===== */}
-      <section className="mt-8 mb-2 text-center">
-        <h3 className="text-2xl sm:text-3xl font-semibold mb-4">
+      {/* ===== CTA final (espacio mínimo) ===== */}
+      <section className="mt-4 mb-2 text-center">
+        <h3 className="text-2xl sm:text-3xl font-semibold mb-3">
           ¿Te gustaría ver nuestros programas de hábitos?
         </h3>
         <Link
