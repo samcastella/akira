@@ -109,7 +109,7 @@ export default function Herramientas() {
   const [tab, setTab] = useState<TabKey>('notas');
 
   return (
-    <div className="py-6 container">
+    <div className="py-6 container" style={{ background: '#fff' }}>
       <h2 className="page-title">Herramientas</h2>
       <p className="muted" style={{ margin: '0 0 16px' }}>Tu espacio para escribir y agradecer cada día.</p>
 
@@ -369,6 +369,8 @@ function GratitudeDay({
 
   const addRow = () => setLocalRows([...localRows, { id: crypto.randomUUID(), text: '' }]);
 
+  const visibleRows = rows.filter(r => r.text.trim());
+
   return (
     <div className="border rounded-xl p-4 mb-3">
       <div className="flex items-center justify-between">
@@ -386,9 +388,10 @@ function GratitudeDay({
 
       {open && !editing && (
         <>
-          <ul className="mt-3 list-disc pl-5">
-            {rows.filter(r => r.text.trim()).length
-              ? rows.filter(r => r.text.trim()).map(r => <li key={r.id}>{r.text}</li>)
+          <div className="mt-3 muted">Diste las gracias por:</div>
+          <ul className="mt-2" style={{ listStyle: 'none', paddingLeft: 0, margin: 0 }}>
+            {visibleRows.length
+              ? visibleRows.map(r => <li key={r.id}>· {r.text}</li>)
               : <li className="text-neutral-500">Sin entradas</li>}
           </ul>
           {editable && (
@@ -422,7 +425,7 @@ function GratitudeDay({
 }
 
 /* ===========================
-   Objetivos para hoy — sin Repetir, layout contenido
+   Objetivos para hoy — más “aire”, sin Repetir
    =========================== */
 function GoalsTool() {
   const [byDay, setByDay] = useState<GoalsByDay>(() => loadLS<GoalsByDay>(LS_GOALS, {}));
@@ -469,37 +472,33 @@ function GoalsTool() {
       <h3 style={{ marginTop: 0 }}>Objetivos para hoy</h3>
       <p className="muted">Se enviarán a <b>Mi zona</b> como retos del día.</p>
 
-      {/* Crear objetivo (contenido, sin overflow) */}
-      <div style={{ marginTop: 12 }}>
-        <div
-          style={{
-            display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap'
-          }}
-        >
+      {/* Crear objetivo con más “respiración” */}
+      <div className="rows" style={{ marginTop: 12 }}>
+        <div className="row" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <input
             className="input"
             placeholder="Escribe un objetivo…"
             value={text}
             onChange={e => setText(e.target.value)}
-            style={{ flex: '1 1 220px', minWidth: 0 }}
+            style={{ flex: '1 1 240px', minWidth: 0 }}
           />
           <button className="btn" onClick={add}>Añadir</button>
         </div>
-      </div>
 
-      {/* Histórico simple sin checkbox */}
-      <ul className="list card" style={{ marginTop: 12 }}>
-        {list.length === 0 && <li style={{ padding: '8px 0' }} className="muted">Aún no hay objetivos guardados hoy.</li>}
-        {list.map(g => (
-          <li key={g.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', gap: 12 }}>
-            <span>{g.text}</span>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn secondary" onClick={() => edit(g.id)}>Editar</button>
-              <button className="btn red" onClick={() => del(g.id)}>Borrar</button>
+        {/* Histórico: cada objetivo en su propia .row (más padding) */}
+        <div className="rows">
+          {list.length === 0 && <div className="muted">Aún no hay objetivos guardados hoy.</div>}
+          {list.map(g => (
+            <div key={g.id} className="row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <span>{g.text}</span>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn secondary" onClick={() => edit(g.id)}>Editar</button>
+                <button className="btn red" onClick={() => del(g.id)}>Borrar</button>
+              </div>
             </div>
-          </li>
-        ))}
-      </ul>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
