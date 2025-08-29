@@ -312,3 +312,44 @@ details.accordion summary::-webkit-details-marker { display: none; }
 .bn-item[aria-current="page"] .bn-pill{
   box-shadow: 0 2px 6px rgba(0,0,0,.06);
 }
+
+/* ====== AKIRA · Tweaks mínimos para Herramientas ====== */
+
+/* Tabbar: scroll suave en móvil y cápsula seleccionada */
+.tabbar {
+  overflow: auto;               /* por si hay muchas pestañas */
+  -webkit-overflow-scrolling: touch;
+  gap: 12px;                    /* un pelín más compacto */
+}
+.tabbar button {
+  transition: background .15s ease, color .15s ease, border-color .15s ease, transform .05s ease;
+}
+.tabbar button:hover { transform: translateY(-1px); }
+.tabbar button[aria-selected="true"] {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+/* Botones: micro-animación y estados */
+.btn {
+  transition: transform .05s ease, filter .15s ease, background .15s ease, color .15s ease, border-color .15s ease;
+}
+.btn:hover { transform: translateY(-1px); }
+.btn:active { transform: translateY(0); }
+.btn.secondary:hover { filter: brightness(.98); }
+.btn.red:hover { filter: brightness(.98); }
+
+/* Modal: hover en enlaces de compartir */
+.modal .actions a:hover {
+  background: rgba(0,0,0,.03);
+}
+
+/* Listas finas dentro de .card (por si se anidan) */
+.card .list > li + li { border-top: 1px solid var(--line); }
+
+/* Inputs: focus más visible (sobrescribe el genérico de arriba para inputs/textarea) */
+.input:focus, .textarea:focus {
+  outline: 2px solid color-mix(in oklab, var(--accent) 10%, transparent);
+  outline-offset: 2px;
+}

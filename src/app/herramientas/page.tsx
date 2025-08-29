@@ -1,7 +1,11 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Notebook, Heart, Target, BookOpen, Check, Trash2, Copy, X } from 'lucide-react';
+import {
+  Notebook, Heart, Target, BookOpen,
+  Check, Trash2, Copy, X,
+  Pencil, Save, Eye, Repeat as RepeatIcon
+} from 'lucide-react';
 
 /* ===========================
    Helpers de almacenamiento
@@ -22,10 +26,28 @@ function saveLS<T>(key: string, value: T) {
   localStorage.setItem(key, JSON.stringify(value));
 }
 const fmtDateTime = (d: string | number) =>
-  new Date(d).toLocaleString(undefined, { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  new Date(d).toLocaleString('es-ES', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).replace('.', '');
 const fmtDate = (d: string | number) =>
-  new Date(d).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
+  new Date(d).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }).replace('.', '');
 const todayKey = () => new Date().toISOString().slice(0, 10);
+
+/* =========
+   Fechas legibles (Hoy/Ayer)
+   ========= */
+function sameDay(a: Date, b: Date) {
+  return a.getFullYear() === b.getFullYear() &&
+         a.getMonth() === b.getMonth() &&
+         a.getDate() === b.getDate();
+}
+function formatDateLabel(iso: string) {
+  const d = new Date(iso + 'T00:00:00');
+  const now = new Date();
+  const yesterday = new Date(); yesterday.setDate(now.getDate() - 1);
+  const dateStr = d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }).replace('.', '');
+  if (sameDay(d, now)) return `Hoy · ${dateStr}`;
+  if (sameDay(d, yesterday)) return `Ayer · ${dateStr}`;
+  return dateStr;
+}
 
 /* =========
    Migración v1 -> v2 de notas
@@ -70,7 +92,7 @@ type Note = { id: string; title: string; text: string; createdAt: number };
 type GratitudeRow = { id: string; text: string };
 type GratitudeEntry = { date: string; rows: GratitudeRow[]; savedAt: number }; // por día (YYYY-MM-DD)
 
-type Goal = { id: string; text: string; done: boolean; createdAt: number };
+type Goal = { id: string; text: string; done: boolean; createdAt: number; repeat?: '3'|'7'|'21'|'30'|'perm' };
 type GoalsByDay = Record<string, Goal[]>;
 
 type BookBase = { id: string; title: string; author?: string; notes?: string; createdAt: number };
@@ -126,7 +148,7 @@ export default function Herramientas() {
 }
 
 /* ===========================
-   Notas (con Título) — incluye migración v1->v2
+   Notas (con Título) — incluye migración v1->v2 + Editar/Guardar
    =========================== */
 function NotasTool() {
   // Ejecuta migración ANTES de leer estado inicial
@@ -146,7 +168,8 @@ function NotasTool() {
     setTitle(''); setText('');
   };
 
-  const delNote = (id: string) => setNotes(notes.filter(n => n.id !== id));
+  const onUpdate = (upd: Note) => setNotes(notes.map(n => n.id === upd.id ? upd : n));
+  const onDelete = (id: string) => setNotes(notes.filter(n => n.id !== id));
 
   const copyNote = async (n: Note) => {
     try {
@@ -171,17 +194,13 @@ function NotasTool() {
         {notes.length === 0 && <div className="muted">Aún no tienes notas.</div>}
         {notes.map(n => (
           <div key={n.id} className="row">
-            <div className="mb-1" style={{ fontSize: 11, color: '#777' }}>{fmtDateTime(n.createdAt)}</div>
-            {n.title && <div style={{ fontWeight: 700, marginBottom: 4 }}>{n.title}</div>}
-            {n.text && <p className="whitespace-pre-wrap" style={{ margin: 0 }}>{n.text}</p>}
-            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-              <button onClick={() => copyNote(n)} className="btn ghost" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                {copiedId === n.id ? <Check size={14} /> : <Copy size={14} />} {copiedId === n.id ? 'Copiado' : 'Copiar'}
-              </button>
-              <button onClick={() => delNote(n.id)} className="btn red" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <Trash2 className="h-3.5 w-3.5" /> Borrar
-              </button>
-            </div>
+            <NoteItem
+              note={n}
+              onUpdate={onUpdate}
+              onDelete={() => onDelete(n.id)}
+              onCopy={() => copyNote(n)}
+              copied={copiedId === n.id}
+            />
           </div>
         ))}
       </div>
@@ -189,8 +208,92 @@ function NotasTool() {
   );
 }
 
+/* Subcomponente de nota con Editar/Guardar */
+function NoteItem({
+  note, onUpdate, onDelete, onCopy, copied
+}: {
+  note: Note;
+  onUpdate: (n: Note) => void;
+  onDelete: () => void;
+  onCopy: () => void;
+  copied: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState(note.title);
+  const [text, setText] = useState(note.text);
+
+  return (
+    <article className="border rounded-xl p-4">
+      {!editing ? (
+        <>
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <div className="mb-1" style={{ fontSize: 11, color: '#777' }}>{fmtDateTime(note.createdAt)}</div>
+              {note.title && <div style={{ fontWeight: 700, marginBottom: 4 }}>{note.title}</div>}
+            </div>
+            <div className="flex gap-2">
+              <button
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border hover:bg-neutral-50"
+                onClick={() => setEditing(true)}
+                title="Editar nota"
+              >
+                <Pencil className="w-4 h-4" /> Editar
+              </button>
+              <button
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border hover:bg-neutral-50"
+                onClick={onCopy}
+                title="Copiar"
+              >
+                {copied ? <Check size={14}/> : <Copy size={14}/>} {copied ? 'Copiado' : 'Copiar'}
+              </button>
+              <button
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border hover:bg-red-50 text-red-600"
+                onClick={onDelete}
+                title="Eliminar"
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Borrar
+              </button>
+            </div>
+          </div>
+          {note.text && <p className="mt-2 whitespace-pre-wrap">{note.text}</p>}
+        </>
+      ) : (
+        <>
+          <input
+            className="input w-full"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Título"
+          />
+          <textarea
+            className="textarea w-full mt-2"
+            rows={4}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Contenido"
+          />
+          <div className="flex gap-2 mt-3 justify-end">
+            <button
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-black text-white"
+              onClick={() => { onUpdate({ ...note, title: title.trim(), text: text.trim() }); setEditing(false); }}
+            >
+              <Save className="w-4 h-4" /> Guardar
+            </button>
+            <button
+              className="px-3 py-1.5 rounded-lg border hover:bg-neutral-50"
+              onClick={() => { setTitle(note.title); setText(note.text); setEditing(false); }}
+            >
+              Cancelar
+            </button>
+          </div>
+        </>
+      )}
+    </article>
+  );
+}
+
 /* ===========================
-   Gratitud (v2: filas) — abre "Entradas anteriores" al guardar
+   Gratitud (v2: filas) — Hoy visible y resto colapsado con "Ver"
    =========================== */
 function GratitudTool() {
   type Entries = Record<string, GratitudeEntry>;
@@ -214,7 +317,7 @@ function GratitudTool() {
   const hasAnyText = current.rows.some(r => r.text.trim());
   const saveOrUpdate = () => setCurrent({ ...current, savedAt: Date.now() });
 
-  const days = Object.keys(entries).filter(d => d !== today).sort((a, b) => b.localeCompare(a));
+  const prevDays = useMemo(() => Object.keys(entries).filter(d => d !== today).sort((a, b) => b.localeCompare(a)), [entries, today]);
 
   return (
     <div>
@@ -223,9 +326,10 @@ function GratitudTool() {
         Anota durante el día las cosas por las que te sientes agradecido, desde las más pequeñas a las más grandes.
       </p>
 
+      {/* Hoy (siempre visible) */}
       <div className="card" style={{ marginTop: 12 }}>
         <div className="card-header">
-          <div><div style={{ fontWeight: 600 }}>Hoy · {fmtDate(Date.now())}</div></div>
+          <div><div style={{ fontWeight: 600 }}>{formatDateLabel(today)}</div></div>
           <div className="muted">Escribe 3 cosas por las que dar las gracias</div>
         </div>
 
@@ -244,45 +348,103 @@ function GratitudTool() {
         </div>
       </div>
 
+      {/* Anteriores: solo fecha + botón Ver que despliega */}
       <section style={{ marginTop: 16 }}>
-        <details className="accordion" open={!!current.savedAt}>
-          <summary><strong>Entradas anteriores</strong></summary>
-          <div style={{ marginTop: 8 }}>
-            <ul className="list">
-              {current.savedAt ? (
-                <li className="card">
-                  <strong>Hoy · {fmtDate(Date.now())}</strong>
-                  <ul className="list" style={{ marginTop: 8 }}>
-                    {current.rows.filter(r => r.text.trim()).map(r => (
-                      <li key={r.id} style={{ padding: '8px 0' }}>{r.text}</li>
-                    ))}
-                  </ul>
-                </li>
-              ) : null}
-              {days.map(d => (
-                <li key={d} className="card">
-                  <strong>{fmtDate(d)}</strong>
-                  <ul className="list" style={{ marginTop: 8 }}>
-                    {entries[d].rows.filter(r => r.text.trim()).map(r => (
-                      <li key={r.id} style={{ padding: '8px 0' }}>{r.text}</li>
-                    ))}
-                  </ul>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </details>
+        {prevDays.length === 0 && <p className="text-sm text-neutral-500 mt-3">No hay registros anteriores.</p>}
+        {prevDays.map(d => (
+          <CollapsedGratitudeDay key={d} date={d} rows={entries[d].rows} />
+        ))}
       </section>
     </div>
   );
 }
 
+function CollapsedGratitudeDay({ date, rows }: { date: string; rows: GratitudeRow[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="border rounded-xl p-4 mb-3">
+      <div className="flex items-center justify-between">
+        <strong>{formatDateLabel(date)}</strong>
+        <button
+          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border hover:bg-neutral-50 text-sm"
+          onClick={() => setOpen(!open)}
+        >
+          {!open ? <><Eye className="w-4 h-4" /> Ver</> : <>Ocultar</>}
+        </button>
+      </div>
+      {open && (
+        <ul className="mt-3 list-disc pl-5">
+          {rows?.filter(r => r.text.trim()).length
+            ? rows.filter(r => r.text.trim()).map(r => <li key={r.id}>{r.text}</li>)
+            : <li className="text-neutral-500">Sin entradas</li>}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 /* ===========================
-   Objetivos para hoy → Mi zona (sin check, con Editar/Repetir/Borrar)
+   Objetivos para hoy → Mi zona (sin check) + selector Repetir (iOS-like)
    =========================== */
+const REPEAT_OPTIONS: Array<{ val: Goal['repeat']; label: string; hint?: string }> = [
+  { val: undefined, label: 'Sin repetir' },
+  { val: '3',   label: 'Cada 3 días' },
+  { val: '7',   label: 'Cada 7 días (semanal)' },
+  { val: '21',  label: 'Cada 21 días' },
+  { val: '30',  label: 'Cada 30 días (mensual aprox.)' },
+  { val: 'perm',label: 'Permanente', hint: 'Se recrea al completarlo' },
+];
+function repeatLabel(v: Goal['repeat']) {
+  return REPEAT_OPTIONS.find(o => o.val === v)?.label ?? 'Sin repetir';
+}
+
+function RepeatPicker({
+  value,
+  onChange,
+}: {
+  value: Goal['repeat'];
+  onChange: (v: Goal['repeat']) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border hover:bg-neutral-50"
+        onClick={() => setOpen(o => !o)}
+      >
+        <RepeatIcon className="w-4 h-4" />
+        <span className="text-sm">{repeatLabel(value)}</span>
+      </button>
+
+      {open && (
+        <div className="absolute z-20 mt-2 w-64 bg-white border rounded-xl shadow-lg overflow-hidden">
+          <ul className="max-h-72 overflow-auto">
+            {REPEAT_OPTIONS.map(opt => (
+              <li key={String(opt.val)}>
+                <button
+                  className="w-full px-3 py-2 flex items-center justify-between hover:bg-neutral-50 text-left"
+                  onClick={() => { onChange(opt.val ?? undefined); setOpen(false); }}
+                >
+                  <div className="flex flex-col">
+                    <span>{opt.label}</span>
+                    {opt.hint && <span className="text-xs text-neutral-500">{opt.hint}</span>}
+                  </div>
+                  {value === opt.val && <Check className="w-4 h-4" />}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function GoalsTool() {
   const [byDay, setByDay] = useState<GoalsByDay>(() => loadLS<GoalsByDay>(LS_GOALS, {}));
   const [text, setText] = useState('');
+  const [newRepeat, setNewRepeat] = useState<Goal['repeat']>(undefined);
   const today = todayKey();
   const list = byDay[today] || [];
 
@@ -292,18 +454,48 @@ function GoalsTool() {
   const loadRetos = (): Reto[] => loadLS<Reto[]>(LS_RETOS, []);
   const saveRetos = (retos: Reto[]) => saveLS(LS_RETOS, retos);
 
+  function pushRetosForRepeat(baseText: string, repeat: Goal['repeat']) {
+    const retos = loadRetos();
+    if (repeat === 'perm') {
+      retos.unshift({ id: crypto.randomUUID(), text: baseText, createdAt: Date.now(), due: today, done: false, permanent: true });
+      saveRetos(retos);
+      return;
+    }
+    const n = repeat ? parseInt(repeat, 10) : 0;
+    const now = Date.now();
+    if (n > 0) {
+      for (let i = 0; i < n; i++) {
+        const d = new Date(now); d.setDate(d.getDate() + i);
+        retos.push({
+          id: crypto.randomUUID(),
+          text: baseText,
+          createdAt: now,
+          due: d.toISOString().slice(0, 10),
+          done: false,
+          permanent: false
+        });
+      }
+      saveRetos(retos);
+    } else {
+      // Sin repetir: solo hoy
+      retos.unshift({ id: crypto.randomUUID(), text: baseText, createdAt: Date.now(), due: today, done: false, permanent: false });
+      saveRetos(retos);
+    }
+  }
+
   const add = () => {
     const t = text.trim();
     if (!t) return;
-    // 1) Enviar a Mi zona (no permanente por defecto)
-    const reto: Reto = { id: crypto.randomUUID(), text: t, createdAt: Date.now(), due: today, done: false, permanent: false };
-    saveRetos([reto, ...loadRetos()]);
-    alert('¡Fenomenal! Has añadido un reto nuevo. Puedes verlo en “Mi zona”. Este reto se eliminará cuando lo hayas cumplido o si lo borras.');
+
+    // 1) Enviar a Mi zona según repeat
+    pushRetosForRepeat(t, newRepeat);
 
     // 2) Guardar histórico local sin check
-    const simple = { id: reto.id, text: reto.text, createdAt: reto.createdAt, done: false };
-    setByDay({ ...byDay, [today]: [simple, ...list] });
+    const g: Goal = { id: crypto.randomUUID(), text: t, createdAt: Date.now(), done: false, repeat: newRepeat };
+    setByDay({ ...byDay, [today]: [g, ...list] });
     setText('');
+    setNewRepeat(undefined);
+    alert('¡Fenomenal! Objetivo enviado a “Mi zona”.');
   };
 
   const edit = (id: string) => {
@@ -311,48 +503,15 @@ function GoalsTool() {
     if (nuevo == null) return;
     const updated = list.map(x => x.id === id ? { ...x, text: nuevo } : x);
     setByDay({ ...byDay, [today]: updated });
-    const retos = loadRetos();
-    saveRetos(retos.map(r => r.id === id ? { ...r, text: nuevo } : r));
+
+    // Actualizar futuros retos con mismo id no es trivial; dejamos tal cual y añadimos uno nuevo para hoy
+    // opción simple: añadir reto hoy con el nuevo texto
+    pushRetosForRepeat(nuevo, updated.find(x => x.id === id)?.repeat);
   };
 
   const del = (id: string) => {
     setByDay({ ...byDay, [today]: list.filter(g => g.id !== id) });
-    saveRetos(loadRetos().filter(r => r.id !== id));
-  };
-
-  const repetir = (id: string) => {
-    const opciones = ['3', '7', '21', '30', 'permanente'];
-    const sel = prompt('Repetir durante (3, 7, 21, 30 días o permanente):', '7');
-    if (!sel || !opciones.includes(sel)) return;
-
-    const base = list.find(x => x.id === id);
-    if (!base) return;
-
-    // ✅ Permanente: crear reto para HOY con permanent:true (Mi zona lo recreará al completarlo)
-    if (sel === 'permanente') {
-      const retos = loadRetos();
-      retos.unshift({
-        id: crypto.randomUUID(),
-        text: base.text,
-        createdAt: Date.now(),
-        due: today,
-        done: false,
-        permanent: true,
-      });
-      saveRetos(retos);
-      alert('He marcado este reto como permanente. Al completarlo en “Mi zona” se recreará automáticamente para mañana.');
-      return;
-    }
-
-    // 3/7/21/30 días: crear uno por día empezando hoy
-    const n = parseInt(sel, 10);
-    const retos = loadRetos();
-    for (let i = 0; i < n; i++) {
-      const due = new Date(); due.setDate(due.getDate() + i);
-      retos.push({ id: crypto.randomUUID(), text: base.text, createdAt: Date.now(), due: due.toISOString().slice(0, 10), done: false, permanent: false });
-    }
-    saveRetos(retos);
-    alert(`¡Listo! Repetiré este reto durante ${n} días en “Mi zona”.`);
+    // No tocamos Mi zona histórica para no borrar si ya está en curso.
   };
 
   return (
@@ -360,9 +519,11 @@ function GoalsTool() {
       <h3 style={{ marginTop: 0 }}>Objetivos para hoy</h3>
       <p className="muted">Se enviarán a <b>Mi zona</b> como retos del día.</p>
 
+      {/* Crear objetivo */}
       <div className="rows" style={{ marginTop: 12 }}>
-        <div className="row" style={{ display: 'flex', gap: 8 }}>
+        <div className="row" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <input className="input" placeholder="Escribe un objetivo…" value={text} onChange={e => setText(e.target.value)} />
+          <RepeatPicker value={newRepeat} onChange={setNewRepeat} />
           <button className="btn" onClick={add}>Añadir</button>
         </div>
 
@@ -370,11 +531,26 @@ function GoalsTool() {
         <ul className="list card">
           {list.length === 0 && <li style={{ padding: '8px 0' }} className="muted">Aún no hay objetivos guardados hoy.</li>}
           {list.map(g => (
-            <li key={g.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0' }}>
-              <span>{g.text}</span>
-              <div style={{ display: 'flex', gap: 8 }}>
+            <li key={g.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', gap: 12 }}>
+              <div>
+                <span>{g.text}</span>
+                {g.repeat && (
+                  <span className="text-xs text-neutral-500 inline-block ml-2">
+                    {repeatLabel(g.repeat)}
+                  </span>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <RepeatPicker
+                  value={g.repeat}
+                  onChange={(v) => {
+                    const updated = list.map(x => x.id === g.id ? { ...x, repeat: v } : x);
+                    setByDay({ ...byDay, [today]: updated });
+                    // al cambiar repetición, registrar en Mi zona a partir de hoy
+                    pushRetosForRepeat(g.text, v);
+                  }}
+                />
                 <button className="btn secondary" onClick={() => edit(g.id)}>Editar</button>
-                <button className="btn" onClick={() => repetir(g.id)}>Repetir</button>
                 <button className="btn red" onClick={() => del(g.id)}>Borrar</button>
               </div>
             </li>
