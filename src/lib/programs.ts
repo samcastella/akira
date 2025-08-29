@@ -1,3 +1,4 @@
+// src/lib/programs.ts
 import { addDays, dateKey, diffDays, todayKey } from './date';
 
 /* ============================= */
@@ -10,8 +11,38 @@ export type ProgramDef = {
   image: string;
   benefits: string[];
   howItWorks: string[];
-  days: DayTasks[]; // 21
+  days: DayTasks[]; // longitud del plan (21, 30, etc.)
 };
+
+/* ============================= */
+/* Generadores de planes (helpers) */
+/* ============================= */
+function makeDaysFromTemplate(len: number, builder: (day: number) => DayTasks): DayTasks[] {
+  return Array.from({ length: len }, (_, i) => builder(i + 1));
+}
+
+/* Burpees: 10/15/20/25 reps por bloques semanales */
+function burpeesRepsForDay(d: number): number {
+  if (d <= 7) return 10;
+  if (d <= 14) return 15;
+  if (d <= 21) return 20;
+  return 25; // 22–30
+}
+
+/* Finanzas: 10/15/20/25 min por bloques semanales */
+function finanzasMinutesForDay(d: number): number {
+  if (d <= 7) return 10;
+  if (d <= 14) return 15;
+  if (d <= 21) return 20;
+  return 25; // 22–30
+}
+
+/* Meditación: 5/10/15 min por bloques semanales */
+function meditacionMinutesForDay(d: number): number {
+  if (d <= 7) return 5;
+  if (d <= 14) return 10;
+  return 15; // 15–21
+}
 
 /* ============================= */
 /* Programa Lectura (21 días)    */
@@ -55,8 +86,101 @@ export const READING_PROGRAM: ProgramDef = {
   ],
 };
 
+/* ============================= */
+/* Programa Burpees (30 días)    */
+/* ============================= */
+export const BURPEES_PROGRAM: ProgramDef = {
+  key: 'burpees',
+  name: 'Unos f*kn burpees',
+  image: '/burpees.jpg',
+  benefits: [
+    'Mejora tu resistencia y potencia',
+    'Sube el pulso y activa todo el cuerpo',
+    'Construye disciplina diaria',
+  ],
+  howItWorks: [
+    '30 días con progresión suave (10→25 reps).',
+    'Calienta 3–5 min antes, estira 2–3 min después.',
+    'Marca cada día en “Mi Zona”.',
+  ],
+  days: makeDaysFromTemplate(30, (d) => {
+    const reps = burpeesRepsForDay(d);
+    return {
+      tasks: [
+        `Burpees: ${reps} repeticiones`,
+        'Calienta 3–5 min (movilidad, jumping jacks)',
+        'Estira 2–3 min (piernas, hombros)',
+      ],
+    };
+  }),
+};
+
+/* ============================= */
+/* Programa Finanzas (30 días)   */
+/* ============================= */
+export const FINANZAS_PROGRAM: ProgramDef = {
+  key: 'finanzas',
+  name: 'Finanzas en orden',
+  image: '/finanzas.jpg',
+  benefits: [
+    'Gasta con intención y sin culpa',
+    'Construye colchón y controla deudas',
+    'Rutina diaria de 10–25 min',
+  ],
+  howItWorks: [
+    '30 días de higiene financiera diaria.',
+    'Registra 1 decisión o gasto clave al día.',
+    'Revisión semanal rápida.',
+  ],
+  days: makeDaysFromTemplate(30, (d) => {
+    const mins = finanzasMinutesForDay(d);
+    return {
+      tasks: [
+        `Sesión financiera: ${mins} min`,
+        'Apunta 1 gasto/decisión clave de hoy',
+        d % 7 === 0 ? 'Revisión semanal (saldo y categorías)' : 'Revisa saldo rápido',
+      ],
+    };
+  }),
+};
+
+/* ============================= */
+/* Programa Meditación (21 días) */
+/* ============================= */
+export const MEDITACION_PROGRAM: ProgramDef = {
+  key: 'meditacion',
+  name: 'Meditación esencial',
+  image: '/meditacion.jpg',
+  benefits: [
+    'Reduce estrés y rumiación',
+    'Mejora foco y claridad',
+    'Crea un ancla diaria',
+  ],
+  howItWorks: [
+    '21 días de práctica guiada.',
+    'Respiración y atención a sensaciones.',
+    'Registro breve al terminar.',
+  ],
+  days: makeDaysFromTemplate(21, (d) => {
+    const mins = meditacionMinutesForDay(d);
+    return {
+      tasks: [
+        `Medita ${mins} min (guía o silencio)`,
+        '1–2 min de respiración consciente',
+        'Escribe 1 frase sobre cómo te sientes',
+      ],
+    };
+  }),
+};
+
+/* ============================= */
+/* Registro de programas         */
+/* ============================= */
 export const PROGRAMS: Record<string, ProgramDef> = {
   [READING_PROGRAM.key]: READING_PROGRAM,
+  [BURPEES_PROGRAM.key]: BURPEES_PROGRAM,
+  [FINANZAS_PROGRAM.key]: FINANZAS_PROGRAM,
+  [MEDITACION_PROGRAM.key]: MEDITACION_PROGRAM,
 };
 
 /* ============================= */
@@ -134,13 +258,14 @@ export function isTaskTodayCompleted(key: string, taskIndex: number) {
   return !!store[key]?.completedByDate?.[todayKey()]?.includes(taskIndex);
 }
 
-/** Día relativo de un programa para una fecha concreta (1..21) o 0 si no aplica */
+/** Día relativo de un programa para una fecha concreta (1..N) o 0 si no aplica */
 export function getRelativeDayIndexForDate(key: string, dateStr: string): number {
   const store = loadStore();
   const start = store[key]?.startDate;
   if (!start) return 0;
   const idx = diffDays(new Date(dateStr + 'T00:00:00'), new Date(start + 'T00:00:00')) + 1;
-  return idx >= 1 && idx <= (PROGRAMS[key]?.days.length ?? 21) ? idx : 0;
+  const total = PROGRAMS[key]?.days.length ?? 21;
+  return idx >= 1 && idx <= total ? idx : 0;
 }
 
 /** Progreso: días con TODAS las tareas del día completadas */
