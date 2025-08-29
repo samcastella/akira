@@ -80,9 +80,6 @@ function migrateNotesIfNeeded() {
    =========================== */
 type Note = { id: string; title: string; text: string; createdAt: number };
 
-type GratitudeRow = { id: string; text: string };
-type GratitudeEntry = { date: string; rows: GratitudeRow[]; savedAt: number };
-
 type BookBase = { id: string; title: string; author?: string; notes?: string; pages?: number; createdAt: number };
 type BookReading = BookBase & { startedAt: number };
 type BookFinished = BookBase & { finishedAt: number };
