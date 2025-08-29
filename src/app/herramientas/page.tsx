@@ -76,20 +76,20 @@ function migrateNotesIfNeeded() {
 }
 
 /* ===========================
-   Tipos
+   Tipos (añadimos pages?: number)
    =========================== */
 type Note = { id: string; title: string; text: string; createdAt: number };
 
 type GratitudeRow = { id: string; text: string };
 type GratitudeEntry = { date: string; rows: GratitudeRow[]; savedAt: number };
 
-type Goal = { id: string; text: string; done: boolean; createdAt: number };
-type GoalsByDay = Record<string, Goal[]>;
-
-type BookBase = { id: string; title: string; author?: string; notes?: string; createdAt: number };
+type BookBase = { id: string; title: string; author?: string; notes?: string; pages?: number; createdAt: number };
 type BookReading = BookBase & { startedAt: number };
 type BookFinished = BookBase & { finishedAt: number };
 type BooksStore = { reading: BookReading[]; wishlist: BookBase[]; finished: BookFinished[] };
+
+type Goal = { id: string; text: string; done: boolean; createdAt: number };
+type GoalsByDay = Record<string, Goal[]>;
 
 type Reto = { id: string; text: string; createdAt: number; due: string; done: boolean; permanent?: boolean };
 
@@ -137,7 +137,7 @@ export default function Herramientas() {
 }
 
 /* ===========================
-   Notas — borde sutil, sin desbordes
+   Notas
    =========================== */
 function NotasTool() {
   migrateNotesIfNeeded();
@@ -196,14 +196,7 @@ function NoteItem({
   const [text, setText] = useState(note.text);
 
   return (
-    <article
-      style={{
-        border: '1px solid var(--line)',
-        borderRadius: 16,
-        padding: 12,
-        overflow: 'hidden'
-      }}
-    >
+    <article style={{ border: '1px solid var(--line)', borderRadius: 16, padding: 12, overflow: 'hidden' }}>
       {!editing ? (
         <>
           <div className="flex items-start justify-between gap-2">
@@ -212,18 +205,10 @@ function NoteItem({
               {note.title && <div style={{ fontWeight: 700, marginBottom: 4 }}>{note.title}</div>}
             </div>
             <div className="flex gap-2">
-              <button
-                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border hover:bg-neutral-50"
-                onClick={() => setEditing(true)}
-                title="Editar nota"
-              >
+              <button className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border hover:bg-neutral-50" onClick={() => setEditing(true)} title="Editar nota">
                 <Pencil className="w-4 h-4" /> Editar
               </button>
-              <button
-                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border hover:bg-red-50 text-red-600"
-                onClick={onDelete}
-                title="Eliminar"
-              >
+              <button className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border hover:bg-red-50 text-red-600" onClick={onDelete} title="Eliminar">
                 <Trash2 className="h-3.5 w-3.5" /> Borrar
               </button>
             </div>
@@ -239,8 +224,7 @@ function NoteItem({
               onClick={() => { onUpdate({ ...note, title: title.trim(), text: text.trim() }); setEditing(false); }}>
               <Save className="w-4 h-4" /> Guardar
             </button>
-            <button className="px-3 py-1.5 rounded-lg border hover:bg-neutral-50"
-              onClick={() => { setTitle(note.title); setText(note.text); setEditing(false); }}>
+            <button className="px-3 py-1.5 rounded-lg border hover:bg-neutral-50" onClick={() => { setTitle(note.title); setText(note.text); setEditing(false); }}>
               Cancelar
             </button>
           </div>
@@ -253,6 +237,9 @@ function NoteItem({
 /* ===========================
    Gratitud
    =========================== */
+type GratitudeRow = { id: string; text: string };
+type GratitudeEntry = { date: string; rows: GratitudeRow[]; savedAt: number };
+
 function GratitudTool() {
   type Entries = Record<string, GratitudeEntry>;
   const [entries, setEntries] = useState<Entries>(() => loadLS<Entries>(LS_GRATITUDE, {}));
@@ -280,25 +267,20 @@ function GratitudTool() {
   return (
     <div>
       <h3 style={{ marginTop: 0 }}>Diario de gratitud</h3>
-      <p className="muted" style={{ marginTop: 4 }}>
-        Anota durante el día las cosas por las que te sientes agradecido.
-      </p>
+      <p className="muted" style={{ marginTop: 4 }}>Anota durante el día las cosas por las que te sientes agradecido.</p>
 
       <div className="card" style={{ marginTop: 12 }}>
         <div className="card-header">
           <div><div style={{ fontWeight: 600 }}>{formatDateLabel(today)}</div></div>
           <div className="muted">Escribe 3 cosas por las que dar las gracias</div>
         </div>
-
         <div className="rows">
           {current.rows.map((r, idx) => (
             <div key={r.id} className="row">
               <input className="input" placeholder={`Gracias por… (${idx + 1})`} value={r.text} onChange={e => onChangeRow(r.id, e.target.value)} />
             </div>
           ))}
-          {current.rows.length >= 3 && (
-            <button className="btn secondary" onClick={addRow}>Añadir otra</button>
-          )}
+          {current.rows.length >= 3 && <button className="btn secondary" onClick={addRow}>Añadir otra</button>}
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <button className="btn" onClick={saveOrUpdate}>{current.savedAt ? 'Actualizar' : 'Guardar'}</button>
           </div>
@@ -324,30 +306,20 @@ function GratitudTool() {
             editable
           />
         ))}
-        {prevDays.length === 0 && !current.savedAt && (
-          <p className="text-sm text-neutral-500 mt-3">No hay registros anteriores.</p>
-        )}
+        {prevDays.length === 0 && !current.savedAt && <p className="text-sm text-neutral-500 mt-3">No hay registros anteriores.</p>}
       </section>
     </div>
   );
 }
 
-function GratitudeDay({
-  date, rows, onUpdate, editable = true
-}: {
-  date: string;
-  rows: GratitudeRow[];
-  onUpdate: (rows: GratitudeRow[]) => void;
-  editable?: boolean;
+function GratitudeDay({ date, rows, onUpdate, editable = true }: {
+  date: string; rows: GratitudeRow[]; onUpdate: (rows: GratitudeRow[]) => void; editable?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [localRows, setLocalRows] = useState(rows);
-
   useEffect(() => { setLocalRows(rows); }, [rows]);
-
   const addRow = () => setLocalRows([...localRows, { id: crypto.randomUUID(), text: '' }]);
-
   const visibleRows = rows.filter(r => r.text.trim());
 
   return (
@@ -369,28 +341,17 @@ function GratitudeDay({
         <>
           <div className="mt-3 muted">Diste las gracias por:</div>
           <ul className="mt-2" style={{ listStyle: 'none', paddingLeft: 0, margin: 0 }}>
-            {visibleRows.length
-              ? visibleRows.map(r => <li key={r.id}>· {r.text}</li>)
-              : <li className="text-neutral-500">Sin entradas</li>}
+            {visibleRows.length ? visibleRows.map(r => <li key={r.id}>· {r.text}</li>) : <li className="text-neutral-500">Sin entradas</li>}
           </ul>
-          {editable && (
-            <div className="flex gap-2 mt-3">
-              <button className="btn secondary" onClick={() => setEditing(true)}>Editar</button>
-            </div>
-          )}
+          {editable && <div className="flex gap-2 mt-3"><button className="btn secondary" onClick={() => setEditing(true)}>Editar</button></div>}
         </>
       )}
 
       {open && editing && (
         <div className="rows mt-3">
           {localRows.map((r, idx) => (
-            <input
-              key={r.id}
-              className="input"
-              placeholder={`Gracias por… (${idx + 1})`}
-              value={r.text}
-              onChange={(e) => setLocalRows(localRows.map(x => x.id === r.id ? { ...x, text: e.target.value } : x))}
-            />
+            <input key={r.id} className="input" placeholder={`Gracias por… (${idx + 1})`}
+                   value={r.text} onChange={(e) => setLocalRows(localRows.map(x => x.id === r.id ? { ...x, text: e.target.value } : x))} />
           ))}
           <button className="btn secondary" onClick={addRow}>Añadir otra</button>
           <div className="flex gap-2 justify-end">
@@ -404,26 +365,25 @@ function GratitudeDay({
 }
 
 /* ===========================
-   Objetivos para hoy — más “aire”
+   Objetivos para hoy
    =========================== */
+type Goal = { id: string; text: string; done: boolean; createdAt: number };
+type GoalsByDay = Record<string, Goal[]>;
+
 function GoalsTool() {
   const [byDay, setByDay] = useState<GoalsByDay>(() => loadLS<GoalsByDay>(LS_GOALS, {}));
   const [text, setText] = useState('');
   const today = todayKey();
   const list = byDay[today] || [];
-
   useEffect(() => { saveLS(LS_GOALS, byDay); }, [byDay]);
 
-  // Helpers retos (Mi zona)
   const loadRetos = (): Reto[] => loadLS<Reto[]>(LS_RETOS, []);
   const saveRetos = (retos: Reto[]) => saveLS(LS_RETOS, retos);
 
   const add = () => {
-    const t = text.trim();
-    if (!t) return;
+    const t = text.trim(); if (!t) return;
     const reto: Reto = { id: crypto.randomUUID(), text: t, createdAt: Date.now(), due: today, done: false };
     saveRetos([reto, ...loadRetos()]);
-
     const g: Goal = { id: reto.id, text: reto.text, createdAt: reto.createdAt, done: false };
     setByDay({ ...byDay, [today]: [g, ...list] });
     setText('');
@@ -449,13 +409,8 @@ function GoalsTool() {
 
       <div className="rows" style={{ marginTop: 12 }}>
         <div className="row" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <input
-            className="input"
-            placeholder="Escribe un objetivo…"
-            value={text}
-            onChange={e => setText(e.target.value)}
-            style={{ flex: '1 1 240px', minWidth: 0 }}
-          />
+          <input className="input" placeholder="Escribe un objetivo…" value={text} onChange={e => setText(e.target.value)}
+                 style={{ flex: '1 1 240px', minWidth: 0 }} />
           <button className="btn" onClick={add}>Añadir</button>
         </div>
 
@@ -477,14 +432,20 @@ function GoalsTool() {
 }
 
 /* ===========================
-   Mis libros — pop-ups para Ver/Editar
+   Mis libros — con páginas + pop-ups + estadísticas
    =========================== */
 function BooksTool() {
   const [store, setStore] = useState<BooksStore>(() => loadLS<BooksStore>(LS_BOOKS, { reading: [], wishlist: [], finished: [] }));
   useEffect(() => { saveLS(LS_BOOKS, store); }, [store]);
 
-  const [formR, setFormR] = useState({ title: '', author: '', notes: '' });
-  const [formW, setFormW] = useState({ title: '', author: '', notes: '' });
+  // Formularios (añadimos pages)
+  const [formR, setFormR] = useState({ title: '', author: '', notes: '', pages: '' });
+  const [formW, setFormW] = useState({ title: '', author: '', notes: '', pages: '' });
+
+  // Stats modal
+  const [statsOpen, setStatsOpen] = useState(false);
+  const finishedCount = store.finished.length;
+  const pagesRead = store.finished.reduce((acc, b) => acc + (b.pages || 0), 0);
 
   // --- MODAL estado general
   type ModalKind = 'reading' | 'wishlist' | 'finished';
@@ -493,47 +454,72 @@ function BooksTool() {
     kind: ModalKind | null;
     editing: boolean;
     data: (BookReading | BookBase | BookFinished) | null;
-    init: { title: string; author: string; notes: string }; // para detectar cambios
-    form: { title: string; author: string; notes: string };
+    init: { title: string; author: string; notes: string; pages: string }; // para detectar cambios
+    form: { title: string; author: string; notes: string; pages: string };
   }>({
     open: false, kind: null, editing: false, data: null,
-    init: { title: '', author: '', notes: '' },
-    form: { title: '', author: '', notes: '' },
+    init: { title: '', author: '', notes: '', pages: '' },
+    form: { title: '', author: '', notes: '', pages: '' },
   });
 
   const openModal = (kind: ModalKind, book: any, editing = false) => {
-    const init = { title: book.title || '', author: book.author || '', notes: book.notes || '' };
+    const init = {
+      title: book.title || '',
+      author: book.author || '',
+      notes: book.notes || '',
+      pages: book.pages ? String(book.pages) : '',
+    };
     setModal({ open: true, kind, editing, data: book, init, form: { ...init } });
   };
   const closeModal = () => setModal(m => ({ ...m, open: false }));
 
   const hasChanges = modal.form.title !== modal.init.title
     || modal.form.author !== modal.init.author
-    || modal.form.notes !== modal.init.notes;
+    || modal.form.notes !== modal.init.notes
+    || modal.form.pages !== modal.init.pages;
 
   // --- Acciones modal
   const saveModal = () => {
     if (!modal.data || !modal.kind) return;
+    const np = modal.form.pages.trim() ? Math.max(0, Number(modal.form.pages.trim())) : undefined;
+
     if (modal.kind === 'reading') {
       const b = modal.data as BookReading;
-      const nb: BookReading = { ...b, title: modal.form.title.trim() || b.title, author: modal.form.author.trim() || undefined, notes: modal.form.notes.trim() || undefined };
+      const nb: BookReading = {
+        ...b,
+        title: modal.form.title.trim() || b.title,
+        author: modal.form.author.trim() || undefined,
+        notes: modal.form.notes.trim() || undefined,
+        pages: np,
+      };
       setStore(s => ({ ...s, reading: s.reading.map(x => x.id === b.id ? nb : x) }));
     }
     if (modal.kind === 'wishlist') {
       const b = modal.data as BookBase;
-      const nb: BookBase = { ...b, title: modal.form.title.trim() || b.title, author: modal.form.author.trim() || undefined, notes: modal.form.notes.trim() || undefined };
+      const nb: BookBase = {
+        ...b,
+        title: modal.form.title.trim() || b.title,
+        author: modal.form.author.trim() || undefined,
+        notes: modal.form.notes.trim() || undefined,
+        pages: np,
+      };
       setStore(s => ({ ...s, wishlist: s.wishlist.map(x => x.id === b.id ? nb : x) }));
     }
     if (modal.kind === 'finished') {
       const b = modal.data as BookFinished;
-      const nb: BookFinished = { ...b, title: modal.form.title.trim() || b.title, author: modal.form.author.trim() || undefined, notes: modal.form.notes.trim() || undefined };
+      const nb: BookFinished = {
+        ...b,
+        title: modal.form.title.trim() || b.title,
+        author: modal.form.author.trim() || undefined,
+        notes: modal.form.notes.trim() || undefined,
+        pages: np,
+      };
       setStore(s => ({ ...s, finished: s.finished.map(x => x.id === b.id ? nb : x) }));
     }
-    // refrescamos init para que el botón vuelva a "Editar"
     setModal(m => ({ ...m, init: { ...m.form }, editing: false }));
   };
 
-  const startFromWishlist = (id: string, payload?: { title?: string; author?: string; notes?: string }) => {
+  const startFromWishlist = (id: string, payload?: { title?: string; author?: string; notes?: string; pages?: number }) => {
     setStore(s => {
       const b = s.wishlist.find(x => x.id === id);
       if (!b) return s;
@@ -543,14 +529,11 @@ function BooksTool() {
         title: payload?.title ?? b.title,
         author: payload?.author ?? b.author,
         notes: payload?.notes ?? b.notes,
+        pages: payload?.pages ?? b.pages,
         createdAt: b.createdAt,
         startedAt: now,
       };
-      return {
-        ...s,
-        wishlist: s.wishlist.filter(x => x.id !== id),
-        reading: [reading, ...s.reading],
-      };
+      return { ...s, wishlist: s.wishlist.filter(x => x.id !== id), reading: [reading, ...s.reading] };
     });
     closeModal();
   };
@@ -560,13 +543,10 @@ function BooksTool() {
       const b = s.reading.find(x => x.id === id);
       if (!b) return s;
       const finished: BookFinished = { ...b, finishedAt: Date.now() };
-      return {
-        ...s,
-        reading: s.reading.filter(x => x.id !== id),
-        finished: [finished, ...s.finished],
-      };
+      // @ts-ignore remove startedAt for finished shape
+      delete (finished as any).startedAt;
+      return { ...s, reading: s.reading.filter(x => x.id !== id), finished: [finished, ...s.finished] };
     });
-    closeModal();
   };
 
   const rereadFinished = (id: string) => {
@@ -574,13 +554,9 @@ function BooksTool() {
       const b = s.finished.find(x => x.id === id);
       if (!b) return s;
       const reading: BookReading = { ...b, startedAt: Date.now(), createdAt: Date.now() };
-      // @ts-ignore finished has finishedAt, reading ignores it
+      // @ts-ignore finished -> reading
       delete (reading as any).finishedAt;
-      return {
-        ...s,
-        finished: s.finished.filter(x => x.id !== id),
-        reading: [reading, ...s.reading],
-      };
+      return { ...s, finished: s.finished.filter(x => x.id !== id), reading: [reading, ...s.reading] };
     });
     closeModal();
   };
@@ -593,11 +569,12 @@ function BooksTool() {
       title: formR.title.trim(),
       author: formR.author.trim() || undefined,
       notes: formR.notes.trim() || undefined,
+      pages: formR.pages.trim() ? Math.max(0, Number(formR.pages.trim())) : undefined,
       createdAt: now,
       startedAt: now,
     };
     setStore({ ...store, reading: [book, ...store.reading] });
-    setFormR({ title: '', author: '', notes: '' });
+    setFormR({ title: '', author: '', notes: '', pages: '' });
   };
 
   const addWishlist = () => {
@@ -608,10 +585,11 @@ function BooksTool() {
       title: formW.title.trim(),
       author: formW.author.trim() || undefined,
       notes: formW.notes.trim() || undefined,
+      pages: formW.pages.trim() ? Math.max(0, Number(formW.pages.trim())) : undefined,
       createdAt: now,
     };
     setStore({ ...store, wishlist: [b, ...store.wishlist] });
-    setFormW({ title: '', author: '', notes: '' });
+    setFormW({ title: '', author: '', notes: '', pages: '' });
   };
 
   // --- UI
@@ -625,8 +603,11 @@ function BooksTool() {
         <div className="rows">
           <input className="input" placeholder="Nombre del libro *" value={formR.title} onChange={e => setFormR({ ...formR, title: e.target.value })} />
           <input className="input" placeholder="Autor (opcional)" value={formR.author} onChange={e => setFormR({ ...formR, author: e.target.value })} />
-          <textarea className="textarea" placeholder="¿Qué estás aprendiendo de este libro? (opcional)" value={formR.notes} onChange={e => setFormR({ ...formR, notes: e.target.value })} />
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <input className="input" placeholder="Número de páginas (opcional)" inputMode="numeric"
+                 value={formR.pages} onChange={e => setFormR({ ...formR, pages: e.target.value })} />
+          <textarea className="textarea" placeholder="¿Qué estás aprendiendo de este libro? (opcional)"
+                    value={formR.notes} onChange={e => setFormR({ ...formR, notes: e.target.value })} />
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
             <button className="btn" onClick={addReading}>{store.reading.length ? 'Actualizar' : 'Guardar'}</button>
           </div>
         </div>
@@ -634,13 +615,14 @@ function BooksTool() {
         <ul className="list" style={{ marginTop: 12 }}>
           {store.reading.map(b => (
             <li key={b.id} style={{ padding: '10px 0' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                <div style={{ overflow: 'hidden' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 220px', minWidth: 0, overflow: 'hidden' }}>
                   <strong>{b.title}</strong>{b.author ? ` · ${b.author}` : ''}
                 </div>
-                <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                   <button className="btn secondary" onClick={() => openModal('reading', b, false)}>Ver</button>
                   <button className="btn" onClick={() => openModal('reading', b, true)}>Editar</button>
+                  <button className="btn red" onClick={() => finishReading(b.id)}>Libro terminado</button>
                 </div>
               </div>
             </li>
@@ -654,21 +636,26 @@ function BooksTool() {
         <div className="rows">
           <input className="input" placeholder="Nombre del libro *" value={formW.title} onChange={e => setFormW({ ...formW, title: e.target.value })} />
           <input className="input" placeholder="Autor (opcional)" value={formW.author} onChange={e => setFormW({ ...formW, author: e.target.value })} />
+          <input className="input" placeholder="Número de páginas (opcional)" inputMode="numeric"
+                 value={formW.pages} onChange={e => setFormW({ ...formW, pages: e.target.value })} />
           <textarea className="textarea" placeholder="Notas (opcional)" value={formW.notes} onChange={e => setFormW({ ...formW, notes: e.target.value })} />
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
             <button className="btn" onClick={addWishlist}>{store.wishlist.length ? 'Actualizar' : 'Guardar'}</button>
           </div>
         </div>
         <ul className="list" style={{ marginTop: 12 }}>
           {store.wishlist.map(b => (
-            <li key={b.id} style={{ padding: '10px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ overflow: 'hidden' }}>
-                <strong>{b.title}</strong>{b.author ? ` · ${b.author}` : ''}
-                {b.notes && <div className="muted" style={{ marginTop: 4, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{b.notes}</div>}
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn secondary" onClick={() => openModal('wishlist', b, true)}>Editar</button>
-                <button className="btn" onClick={() => startFromWishlist(b.id)}>Empezar a leer</button>
+            <li key={b.id} style={{ padding: '10px 0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 220px', minWidth: 0, overflow: 'hidden' }}>
+                  <strong>{b.title}</strong>{b.author ? ` · ${b.author}` : ''}
+                  {b.pages ? <div className="muted">Páginas: {b.pages}</div> : null}
+                  {b.notes && <div className="muted" style={{ marginTop: 4, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{b.notes}</div>}
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  <button className="btn secondary" onClick={() => openModal('wishlist', b, true)}>Editar</button>
+                  <button className="btn" onClick={() => startFromWishlist(b.id)}>Empezar a leer</button>
+                </div>
               </div>
             </li>
           ))}
@@ -677,19 +664,26 @@ function BooksTool() {
 
       {/* Terminados */}
       <section className="card" style={{ marginTop: 12 }}>
-        <h4 style={{ margin: '0 0 8px' }}>Libros terminados</h4>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+          <h4 style={{ margin: '0 0 8px' }}>Libros terminados</h4>
+          <button className="btn" onClick={() => setStatsOpen(true)}>Estadísticas</button>
+        </div>
         <ul className="list">
           {store.finished.length === 0 && <li style={{ padding: '8px 0' }} className="muted">Aún no hay libros terminados.</li>}
           {store.finished.map(b => (
-            <li key={b.id} style={{ padding: '10px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <strong>{b.title}</strong>{b.author ? ` · ${b.author}` : ''}
-                <div className="muted" style={{ marginTop: 4 }}>Terminado el {fmtDate(b.finishedAt)}</div>
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn secondary" onClick={() => openModal('finished', b, false)}>Ver</button>
-                <button className="btn" onClick={() => openModal('finished', b, true)}>Editar</button>
-                <button className="btn" onClick={() => rereadFinished(b.id)}>Volver a leer</button>
+            <li key={b.id} style={{ padding: '10px 0' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+                  <strong>{b.title}</strong>{b.author ? ` · ${b.author}` : ''}
+                  <div className="muted" style={{ marginTop: 4 }}>
+                    Terminado el {fmtDate(b.finishedAt)}{b.pages ? ` · ${b.pages} páginas` : ''}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  <button className="btn secondary" onClick={() => openModal('finished', b, false)}>Ver</button>
+                  <button className="btn" onClick={() => openModal('finished', b, true)}>Editar</button>
+                  <button className="btn" onClick={() => rereadFinished(b.id)}>Volver a leer</button>
+                </div>
               </div>
             </li>
           ))}
@@ -700,7 +694,7 @@ function BooksTool() {
       {modal.open && modal.kind && modal.data && (
         <div className="modal-backdrop" onClick={closeModal}>
           <div className="modal" onClick={e => e.stopPropagation()} style={{ width: 'min(640px, 94vw)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <h4 style={{ margin: 0 }}>
                 {modal.kind === 'reading' && 'Libro en lectura'}
                 {modal.kind === 'wishlist' && 'Libro que quiero leer'}
@@ -711,11 +705,11 @@ function BooksTool() {
 
             {/* Contenido */}
             <div className="rows" style={{ marginTop: 12 }}>
-              {/* Título y autor siempre editables si modal.editing */}
               {!modal.editing ? (
                 <>
                   <div style={{ fontSize: 18, fontWeight: 700 }}>{modal.form.title || 'Sin título'}</div>
                   {modal.form.author && <div className="muted">de {modal.form.author}</div>}
+                  {modal.form.pages && <div className="muted">Páginas: {modal.form.pages}</div>}
                 </>
               ) : (
                 <>
@@ -723,10 +717,11 @@ function BooksTool() {
                          onChange={e => setModal(m => ({ ...m, form: { ...m.form, title: e.target.value } }))} />
                   <input className="input" placeholder="Autor" value={modal.form.author}
                          onChange={e => setModal(m => ({ ...m, form: { ...m.form, author: e.target.value } }))} />
+                  <input className="input" placeholder="Número de páginas (opcional)" inputMode="numeric" value={modal.form.pages}
+                         onChange={e => setModal(m => ({ ...m, form: { ...m.form, pages: e.target.value } }))} />
                 </>
               )}
 
-              {/* Notas */}
               {!modal.editing ? (
                 <div className="row" style={{ whiteSpace: 'pre-wrap', minHeight: 80 }}>
                   {modal.form.notes ? modal.form.notes : <span className="muted">Sin notas</span>}
@@ -739,24 +734,30 @@ function BooksTool() {
             </div>
 
             {/* Botonera */}
-            <div className="actions">
-              {/* Editar / Actualizar */}
+            <div className="actions" style={{ flexWrap: 'wrap' }}>
               {!modal.editing ? (
                 <button className="btn secondary" onClick={() => setModal(m => ({ ...m, editing: true }))}>Editar</button>
               ) : (
-                <button className="btn" disabled={!hasChanges} onClick={saveModal}>
-                  {hasChanges ? 'Actualizar' : 'Actualizar'}
-                </button>
+                <button className="btn" disabled={!hasChanges} onClick={saveModal}>Actualizar</button>
               )}
 
-              {/* Acciones según tipo */}
               {modal.kind === 'reading' && (
-                <button className="btn red" onClick={() => finishReading((modal.data as BookReading).id)}>Terminar</button>
+                <button className="btn red" onClick={() => finishReading((modal.data as BookReading).id)}>Terminar libro</button>
               )}
 
               {modal.kind === 'wishlist' && (
                 <button className="btn green"
-                        onClick={() => startFromWishlist((modal.data as BookBase).id, modal.editing ? modal.form : undefined)}>
+                        onClick={() => startFromWishlist(
+                          (modal.data as BookBase).id,
+                          modal.editing
+                            ? {
+                                title: modal.form.title || undefined,
+                                author: modal.form.author || undefined,
+                                notes: modal.form.notes || undefined,
+                                pages: modal.form.pages.trim() ? Number(modal.form.pages.trim()) : undefined,
+                              }
+                            : undefined
+                        )}>
                   Empezar a leer
                 </button>
               )}
@@ -764,6 +765,28 @@ function BooksTool() {
               {modal.kind === 'finished' && (
                 <button className="btn" onClick={() => rereadFinished((modal.data as BookFinished).id)}>Volver a leer</button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======== MODAL ESTADÍSTICAS ======== */}
+      {statsOpen && (
+        <div className="modal-backdrop" onClick={() => setStatsOpen(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ width: 'min(520px, 92vw)', textAlign: 'center' }}>
+            <h4 style={{ marginTop: 0 }}>Estadísticas de lectura</h4>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 12 }}>
+              <div className="card" style={{ padding: 16 }}>
+                <div className="muted">Libros que me he leído</div>
+                <div style={{ fontSize: 42, fontWeight: 800, lineHeight: 1, marginTop: 6 }}>{finishedCount}</div>
+              </div>
+              <div className="card" style={{ padding: 16 }}>
+                <div className="muted">Páginas leídas</div>
+                <div style={{ fontSize: 42, fontWeight: 800, lineHeight: 1, marginTop: 6 }}>{pagesRead}</div>
+              </div>
+            </div>
+            <div className="actions" style={{ marginTop: 16 }}>
+              <button className="btn red" onClick={() => setStatsOpen(false)}>Cerrar</button>
             </div>
           </div>
         </div>
