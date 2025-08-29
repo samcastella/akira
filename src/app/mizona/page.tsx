@@ -5,7 +5,14 @@ import { Check, RotateCcw, Trash2 } from 'lucide-react';
 
 /* ====== storage + tipos ====== */
 const LS_RETOS = 'akira_mizona_retos_v1';
-type Reto = { id: string; text: string; createdAt: number; due: string; done: boolean; permanent?: boolean };
+type Reto = {
+  id: string;
+  text: string;
+  createdAt: number;
+  due: string;
+  done: boolean;
+  permanent?: boolean;
+};
 
 function loadLS<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback;
@@ -20,9 +27,56 @@ const todayKey = () => new Date().toISOString().slice(0,10);
 const fmtDate = (d: string | number) =>
   new Date(d).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }).replace('.', '');
 
+/* ====== integración con motor legacy ====== */
+import { PROGRAMS, loadStore, saveStore, getRelativeDayIndexForDate } from '@/lib/programs';
+
+/** Marca TODAS las tareas del día (para una fecha concreta) como hechas en el motor legacy */
+function markLegacyDayDone(legacyKey: string, dateStr: string) {
+  const store = loadStore();
+  const prog = PROGRAMS[legacyKey];
+  if (!store[legacyKey] || !prog) return;
+
+  const dayIdx = getRelativeDayIndexForDate(legacyKey, dateStr);
+  if (dayIdx < 1) return;
+
+  const tasksCount = prog.days[dayIdx - 1]?.tasks.length ?? 0;
+  if (!store[legacyKey].completedByDate) store[legacyKey].completedByDate = {};
+  const already = new Set(store[legacyKey].completedByDate[dateStr] ?? []);
+  // añade los que falten (idempotente)
+  for (let i = 0; i < tasksCount; i++) already.add(i);
+  store[legacyKey].completedByDate[dateStr] = Array.from(already).sort((a, b) => a - b);
+  saveStore(store);
+}
+
+/** Desmarca todas las tareas del día en el motor legacy (para una fecha concreta) */
+function unmarkLegacyDay(legacyKey: string, dateStr: string) {
+  const store = loadStore();
+  if (!store[legacyKey]) return;
+  if (store[legacyKey].completedByDate) {
+    store[legacyKey].completedByDate[dateStr] = [];
+    saveStore(store);
+  }
+}
+
 /* ====== página ====== */
 export default function MiZonaPage() {
-  const [retos, setRetos] = useState<Reto[]>(() => loadLS<Reto[]>(LS_RETOS, []));
+  // Normaliza retos del orquestador (pueden venir sin due/done)
+  const [retos, setRetos] = useState<Reto[]>(() => {
+    const raw = loadLS<any[]>(LS_RETOS, []);
+    const today = todayKey();
+    const normalized: Reto[] = raw.map((r) => ({
+      id: r.id,
+      text: r.text,
+      createdAt: r.createdAt ?? Date.now(),
+      due: r.due ?? today,
+      done: r.done ?? false,
+      permanent: r.permanent ?? false,
+    }));
+    // guarda normalizados para futuras lecturas
+    saveLS(LS_RETOS, normalized);
+    return normalized;
+  });
+
   useEffect(() => { saveLS(LS_RETOS, retos); }, [retos]);
 
   const today = todayKey();
@@ -44,12 +98,21 @@ export default function MiZonaPage() {
     [retos]
   );
 
-  /* === lógica clave: completar y recrear si es permanente === */
+  /* === lógica clave: completar y recrear si es permanente
+         + sincronización con motor legacy si es un reto de programa === */
   function completeReto(id: string) {
     setRetos(prev => {
       const idx = prev.findIndex(r => r.id === id);
       if (idx === -1) return prev;
       const r = prev[idx];
+
+      // Si es un reto generado por un programa: id = prog:<legacyKey>:YYYY-MM-DD
+      const m = /^prog:([^:]+):(\d{4}-\d{2}-\d{2})$/.exec(r.id);
+      if (m) {
+        const legacyKey = m[1];
+        const dateStr = m[2] || r.due;
+        markLegacyDayDone(legacyKey, dateStr);
+      }
 
       const updated = [...prev];
       updated[idx] = { ...r, done: true };
@@ -65,7 +128,6 @@ export default function MiZonaPage() {
           done: false,
           permanent: true,
         };
-        // Lo ponemos arriba para que aparezca primero en listas
         updated.unshift(clone);
       }
       return updated;
@@ -73,7 +135,22 @@ export default function MiZonaPage() {
   }
 
   function undoReto(id: string) {
-    setRetos(prev => prev.map(r => r.id === id ? { ...r, done: false } : r));
+    setRetos(prev => {
+      const idx = prev.findIndex(r => r.id === id);
+      if (idx === -1) return prev;
+      const r = prev[idx];
+
+      const m = /^prog:([^:]+):(\d{4}-\d{2}-\d{2})$/.exec(r.id);
+      if (m) {
+        const legacyKey = m[1];
+        const dateStr = m[2] || r.due;
+        unmarkLegacyDay(legacyKey, dateStr);
+      }
+
+      const updated = [...prev];
+      updated[idx] = { ...r, done: false };
+      return updated;
+    });
   }
 
   function deleteReto(id: string) {
