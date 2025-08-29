@@ -353,3 +353,5 @@ details.accordion summary::-webkit-details-marker { display: none; }
   outline: 2px solid color-mix(in oklab, var(--accent) 10%, transparent);
   outline-offset: 2px;
 }
+/* Reset de estilos antiguos del bottomnav (por si quedan restos) */
+.bottomnav .bn-item { text-decoration: none; }

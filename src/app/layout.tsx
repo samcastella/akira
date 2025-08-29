@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import BottomNav from "@/components/BottomNav";
 import { NAV_HEIGHT } from "@/lib/constants"; // usa el mismo alto que la BottomNav
+import DailySyncClient from "@/components/DailySyncClient"; // ⬅️ nuevo: orquestador diario
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
@@ -53,6 +54,9 @@ export default function RootLayout({
           {/* Contenedor centrado tipo móvil */}
           <div className="mx-auto w-full max-w-md">{children}</div>
         </div>
+
+        {/* Orquestador diario: genera retos del día en Mi zona */}
+        <DailySyncClient />
 
         {/* Barra inferior fija en todas las páginas */}
         <BottomNav />
