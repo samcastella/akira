@@ -1,9 +1,41 @@
 'use client';
-import { useEffect, useState } from 'react';
+
+import { useEffect, useMemo, useState } from 'react';
 import { COLORS } from '@/lib/constants';
-import { PROGRAMS, isTaskTodayCompleted, toggleTaskToday, getRelativeDayIndexForDate, loadStore } from '@/lib/programs';
+import {
+  PROGRAMS,
+  isTaskTodayCompleted,
+  toggleTaskToday,
+  getRelativeDayIndexForDate,
+  loadStore,
+} from '@/lib/programs';
 import { todayKey, daysInMonth } from '@/lib/date';
 
+/* =========
+   Retos desde Herramientas (Mi zona)
+   ========= */
+type Reto = {
+  id: string;
+  text: string;
+  createdAt: number;
+  due: string;           // YYYY-MM-DD
+  done: boolean;
+  permanent?: boolean;   // si es permanente, al completar se recrea para mañana
+};
+
+const LS_RETOS = 'akira_mizona_retos_v1';
+function loadLS<T>(k: string, fb: T): T {
+  if (typeof window === 'undefined') return fb;
+  try { const raw = localStorage.getItem(k); return raw ? (JSON.parse(raw) as T) : fb; } catch { return fb; }
+}
+function saveLS<T>(k: string, v: T) {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(k, JSON.stringify(v));
+}
+
+/* =========
+   Lógica existente (programas)
+   ========= */
 type DayColor = 'empty' | 'none' | 'some' | 'all';
 
 function totalsForDate(dateStr: string) {
@@ -32,6 +64,9 @@ function dayColorStatus(dateStr: string): DayColor {
   return 'all';
 }
 
+/* =========
+   Componente
+   ========= */
 export default function MiZona() {
   const [name, setName] = useState<string>('Amigo/a');
   const [, setTick] = useState(0);
@@ -39,6 +74,7 @@ export default function MiZona() {
 
   useEffect(() => { setName(localStorage.getItem('akira_name') || 'Amigo/a'); }, []);
 
+  /* ---- Programas (tal cual tenías) ---- */
   const store = loadStore();
   const active = Object.keys(store).filter(k => PROGRAMS[k]);
 
@@ -58,9 +94,46 @@ export default function MiZona() {
   const nDays = daysInMonth(y, m);
   const monthPrefix = `${y}-${String(m + 1).padStart(2, '0')}-`;
 
+  /* ---- Retos enviados desde Herramientas ---- */
+  const [retos, setRetos] = useState<Reto[]>(() => loadLS<Reto[]>(LS_RETOS, []));
+  useEffect(() => { saveLS(LS_RETOS, retos); }, [retos]);
+
+  const hoy = todayKey();
+  const retosHoy = useMemo(() => retos.filter(r => r.due === hoy && !r.done), [retos, hoy]);
+
+  const completarReto = (id: string) => {
+    const r = retos.find(x => x.id === id); if (!r) return;
+    const upd = retos.map(x => x.id === id ? { ...x, done: true } : x);
+
+    // Si era permanente, crea uno nuevo para mañana
+    if (r.permanent) {
+      const tmr = new Date(); tmr.setDate(tmr.getDate() + 1);
+      upd.unshift({
+        id: crypto.randomUUID(),
+        text: r.text,
+        createdAt: Date.now(),
+        due: tmr.toISOString().slice(0, 10),
+        done: false,
+        permanent: true,
+      });
+    }
+    setRetos(upd);
+  };
+
+  const borrarReto = (id: string) => setRetos(retos.filter(r => r.id !== id));
+  const editarReto = (id: string) => {
+    const r = retos.find(x => x.id === id); if (!r) return;
+    const nuevo = prompt('Editar reto:', r.text);
+    if (nuevo == null) return;
+    setRetos(retos.map(x => x.id === id ? { ...x, text: nuevo } : x));
+  };
+
   return (
     <div className="py-6">
-      <div className="mb-4"><h2 className="text-3xl font-black leading-tight">Hola {name}</h2></div>
+      {/* Saludo y métricas */}
+      <div className="mb-4">
+        <h2 className="text-3xl font-black leading-tight">Hola {name}</h2>
+      </div>
 
       <div className="mb-5 grid grid-cols-2 gap-3">
         <div className="rounded-2xl border p-4" style={{ borderColor: COLORS.line }}>
@@ -73,6 +146,7 @@ export default function MiZona() {
         </div>
       </div>
 
+      {/* Calendario mensual */}
       <div className="rounded-2xl border p-4" style={{ borderColor: COLORS.line }}>
         <div className="mb-2 text-sm font-medium">Este mes</div>
         <div className="grid grid-cols-7 gap-2">
@@ -85,8 +159,16 @@ export default function MiZona() {
             if (status === 'some') { bg = COLORS.orange; br = COLORS.orange; }
             if (status === 'all')  { bg = COLORS.green; br = COLORS.green; }
             return (
-              <div key={dKey} className="flex items-center justify-center rounded-full text-xs"
-                   style={{ width: 28, height: 28, background: bg, border: `1px solid ${br}`, color: bg === 'transparent' ? '#111' : '#fff' }}>
+              <div
+                key={dKey}
+                className="flex items-center justify-center rounded-full text-xs"
+                style={{
+                  width: 28, height: 28,
+                  background: bg,
+                  border: `1px solid ${br}`,
+                  color: bg === 'transparent' ? '#111' : '#fff',
+                }}
+              >
                 {day}
               </div>
             );
@@ -99,6 +181,34 @@ export default function MiZona() {
         </div>
       </div>
 
+      {/* === NUEVO: Retos añadidos desde Herramientas (para hoy) === */}
+      <section className="mt-5">
+        <div className="mb-2 text-sm text-black/60">Retos de hoy</div>
+        <ul className="list">
+          {retosHoy.length === 0 && (
+            <li className="muted" style={{ padding: '10px 0' }}>
+              No tienes retos añadidos desde Herramientas para hoy.
+            </li>
+          )}
+          {retosHoy.map(r => (
+            <li
+              key={r.id}
+              style={{ padding: '12px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+            >
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <input type="checkbox" onChange={() => completarReto(r.id)} />
+                <span>{r.text}{r.permanent ? ' · (permanente)' : ''}</span>
+              </label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn secondary" onClick={() => editarReto(r.id)}>Editar</button>
+                <button className="btn red" onClick={() => borrarReto(r.id)}>Borrar</button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      {/* Programas activos (como lo tenías) */}
       <div className="mt-5 space-y-3">
         {active.length === 0 && (
           <div className="rounded-2xl border p-4 text-sm text-black/70" style={{ borderColor: COLORS.line }}>

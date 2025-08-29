@@ -6,10 +6,12 @@ import { Notebook, Heart, Target, BookOpen, Check, Trash2, Copy, X } from 'lucid
 /* ===========================
    Helpers de almacenamiento
    =========================== */
-const LS_NOTES = 'akira_notes_v1';
-const LS_GRATITUDE = 'akira_gratitude_v2';     // v2: ahora son filas por día
+const LS_NOTES = 'akira_notes_v2';              // v2: ahora incluye "title"
+const LS_GRATITUDE = 'akira_gratitude_v2';      // v2: filas por día
 const LS_GOALS = 'akira_goals_today_v1';
 const LS_BOOKS = 'akira_books_v1';
+const LS_RETOS = 'akira_mizona_retos_v1';       // retos para "Mi zona"
+const OLD_LS_NOTES = 'akira_notes_v1';          // <- para migración
 
 function loadLS<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback;
@@ -25,10 +27,45 @@ const fmtDate = (d: string | number) =>
   new Date(d).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
 const todayKey = () => new Date().toISOString().slice(0, 10);
 
+/* =========
+   Migración v1 -> v2 de notas
+   ========= */
+function migrateNotesIfNeeded() {
+  if (typeof window === 'undefined') return;
+  try {
+    // Si ya existe v2, no migramos.
+    if (localStorage.getItem(LS_NOTES)) return;
+
+    const raw = localStorage.getItem(OLD_LS_NOTES);
+    if (!raw) return;
+
+    const v1 = JSON.parse(raw);
+    if (!Array.isArray(v1)) return;
+
+    // Acepta formatos antiguos: string o {id,text,createdAt}
+    const migrated = v1.map((n: any) => {
+      if (typeof n === 'string') {
+        return { id: crypto.randomUUID(), title: '', text: n, createdAt: Date.now() };
+      }
+      return {
+        id: n?.id || crypto.randomUUID(),
+        title: '',
+        text: typeof n?.text === 'string' ? n.text : '',
+        createdAt: Number(n?.createdAt) || Date.now(),
+      };
+    });
+
+    localStorage.setItem(LS_NOTES, JSON.stringify(migrated));
+    localStorage.removeItem(OLD_LS_NOTES);
+  } catch {
+    // noop
+  }
+}
+
 /* ===========================
    Tipos
    =========================== */
-type Note = { id: string; text: string; createdAt: number };
+type Note = { id: string; title: string; text: string; createdAt: number };
 
 type GratitudeRow = { id: string; text: string };
 type GratitudeEntry = { date: string; rows: GratitudeRow[]; savedAt: number }; // por día (YYYY-MM-DD)
@@ -40,6 +77,9 @@ type BookBase = { id: string; title: string; author?: string; notes?: string; cr
 type BookReading = BookBase & { startedAt: number };
 type BookFinished = BookBase & { finishedAt: number };
 type BooksStore = { reading: BookReading[]; wishlist: BookBase[]; finished: BookFinished[] };
+
+/** ⬇️ ahora soporta retos permanentes */
+type Reto = { id: string; text: string; createdAt: number; due: string; done: boolean; permanent?: boolean };
 
 /* ===========================
    Herramientas
@@ -57,8 +97,8 @@ export default function Herramientas() {
 
   return (
     <div className="py-6 container">
-      <h2 style={{ margin: '8px 0 4px' }}>Herramientas</h2>
-      <p style={{ margin: '0 0 16px', color: '#666' }}>Tu espacio para escribir y agradecer cada día.</p>
+      <h2 className="page-title">Herramientas</h2>
+      <p className="muted" style={{ margin: '0 0 16px' }}>Tu espacio para escribir y agradecer cada día.</p>
 
       {/* Tabs tipo píldora con iconos (estilos en globals.css .tabbar) */}
       <div role="tablist" className="tabbar">
@@ -86,27 +126,31 @@ export default function Herramientas() {
 }
 
 /* ===========================
-   Notas
+   Notas (con Título) — incluye migración v1->v2
    =========================== */
 function NotasTool() {
+  // Ejecuta migración ANTES de leer estado inicial
+  migrateNotesIfNeeded();
+
   const [notes, setNotes] = useState<Note[]>(() => loadLS<Note[]>(LS_NOTES, []));
+  const [title, setTitle] = useState('');
   const [text, setText] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   useEffect(() => { saveLS(LS_NOTES, notes); }, [notes]);
 
   const addNote = () => {
-    const t = text.trim();
-    if (!t) return;
-    setNotes([{ id: crypto.randomUUID(), text: t, createdAt: Date.now() }, ...notes]);
-    setText('');
+    const ti = title.trim(), tx = text.trim();
+    if (!ti && !tx) return;
+    setNotes([{ id: crypto.randomUUID(), title: ti, text: tx, createdAt: Date.now() }, ...notes]);
+    setTitle(''); setText('');
   };
 
   const delNote = (id: string) => setNotes(notes.filter(n => n.id !== id));
 
   const copyNote = async (n: Note) => {
     try {
-      await navigator.clipboard.writeText(n.text);
+      await navigator.clipboard.writeText(`${n.title ? n.title + '\n' : ''}${n.text}`);
       setCopiedId(n.id);
       setTimeout(() => setCopiedId(null), 1200);
     } catch {}
@@ -115,33 +159,27 @@ function NotasTool() {
   return (
     <div>
       <h3 style={{ marginTop: 0 }}>Mis notas</h3>
-      <p className="muted">Escribe frases que te inspiran, ideas o reflexiones. Se guardan en tu dispositivo.</p>
-
       <div className="rows" style={{ marginTop: 12 }}>
-        <textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Escribe una nota rápida…"
-          className="textarea"
-          rows={3}
-        />
+        <input className="input" placeholder="Título (opcional)" value={title} onChange={e=>setTitle(e.target.value)} />
+        <textarea className="textarea" rows={3} placeholder="Escribe una nota rápida…" value={text} onChange={e=>setText(e.target.value)} />
         <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
           <button onClick={addNote} className="btn">Guardar nota</button>
         </div>
       </div>
 
-      <div style={{ marginTop: 16 }} className="rows">
+      <div className="rows" style={{ marginTop: 16 }}>
         {notes.length === 0 && <div className="muted">Aún no tienes notas.</div>}
         {notes.map(n => (
           <div key={n.id} className="row">
             <div className="mb-1" style={{ fontSize: 11, color: '#777' }}>{fmtDateTime(n.createdAt)}</div>
-            <p className="whitespace-pre-wrap" style={{ margin: 0 }}>{n.text}</p>
+            {n.title && <div style={{ fontWeight: 700, marginBottom: 4 }}>{n.title}</div>}
+            {n.text && <p className="whitespace-pre-wrap" style={{ margin: 0 }}>{n.text}</p>}
             <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
               <button onClick={() => copyNote(n)} className="btn ghost" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                 {copiedId === n.id ? <Check size={14} /> : <Copy size={14} />} {copiedId === n.id ? 'Copiado' : 'Copiar'}
               </button>
               <button onClick={() => delNote(n.id)} className="btn red" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <Trash2 size={14} /> Borrar
+                <Trash2 className="h-3.5 w-3.5" /> Borrar
               </button>
             </div>
           </div>
@@ -152,7 +190,7 @@ function NotasTool() {
 }
 
 /* ===========================
-   Gratitud (v2: filas)
+   Gratitud (v2: filas) — abre "Entradas anteriores" al guardar
    =========================== */
 function GratitudTool() {
   type Entries = Record<string, GratitudeEntry>;
@@ -207,7 +245,7 @@ function GratitudTool() {
       </div>
 
       <section style={{ marginTop: 16 }}>
-        <details className="accordion">
+        <details className="accordion" open={!!current.savedAt}>
           <summary><strong>Entradas anteriores</strong></summary>
           <div style={{ marginTop: 8 }}>
             <ul className="list">
@@ -240,7 +278,7 @@ function GratitudTool() {
 }
 
 /* ===========================
-   Objetivos para hoy
+   Objetivos para hoy → Mi zona (sin check, con Editar/Repetir/Borrar)
    =========================== */
 function GoalsTool() {
   const [byDay, setByDay] = useState<GoalsByDay>(() => loadLS<GoalsByDay>(LS_GOALS, {}));
@@ -250,20 +288,77 @@ function GoalsTool() {
 
   useEffect(() => { saveLS(LS_GOALS, byDay); }, [byDay]);
 
+  // Helpers retos (Mi zona)
+  const loadRetos = (): Reto[] => loadLS<Reto[]>(LS_RETOS, []);
+  const saveRetos = (retos: Reto[]) => saveLS(LS_RETOS, retos);
+
   const add = () => {
     const t = text.trim();
     if (!t) return;
-    const g: Goal = { id: crypto.randomUUID(), text: t, done: false, createdAt: Date.now() };
-    setByDay({ ...byDay, [today]: [g, ...list] });
+    // 1) Enviar a Mi zona (no permanente por defecto)
+    const reto: Reto = { id: crypto.randomUUID(), text: t, createdAt: Date.now(), due: today, done: false, permanent: false };
+    saveRetos([reto, ...loadRetos()]);
+    alert('¡Fenomenal! Has añadido un reto nuevo. Puedes verlo en “Mi zona”. Este reto se eliminará cuando lo hayas cumplido o si lo borras.');
+
+    // 2) Guardar histórico local sin check
+    const simple = { id: reto.id, text: reto.text, createdAt: reto.createdAt, done: false };
+    setByDay({ ...byDay, [today]: [simple, ...list] });
     setText('');
   };
-  const toggle = (id: string) => setByDay({ ...byDay, [today]: list.map(g => g.id === id ? { ...g, done: !g.done } : g) });
-  const del = (id: string) => setByDay({ ...byDay, [today]: list.filter(g => g.id !== id) });
+
+  const edit = (id: string) => {
+    const nuevo = prompt('Editar objetivo:', list.find(x => x.id === id)?.text || '');
+    if (nuevo == null) return;
+    const updated = list.map(x => x.id === id ? { ...x, text: nuevo } : x);
+    setByDay({ ...byDay, [today]: updated });
+    const retos = loadRetos();
+    saveRetos(retos.map(r => r.id === id ? { ...r, text: nuevo } : r));
+  };
+
+  const del = (id: string) => {
+    setByDay({ ...byDay, [today]: list.filter(g => g.id !== id) });
+    saveRetos(loadRetos().filter(r => r.id !== id));
+  };
+
+  const repetir = (id: string) => {
+    const opciones = ['3', '7', '21', '30', 'permanente'];
+    const sel = prompt('Repetir durante (3, 7, 21, 30 días o permanente):', '7');
+    if (!sel || !opciones.includes(sel)) return;
+
+    const base = list.find(x => x.id === id);
+    if (!base) return;
+
+    // ✅ Permanente: crear reto para HOY con permanent:true (Mi zona lo recreará al completarlo)
+    if (sel === 'permanente') {
+      const retos = loadRetos();
+      retos.unshift({
+        id: crypto.randomUUID(),
+        text: base.text,
+        createdAt: Date.now(),
+        due: today,
+        done: false,
+        permanent: true,
+      });
+      saveRetos(retos);
+      alert('He marcado este reto como permanente. Al completarlo en “Mi zona” se recreará automáticamente para mañana.');
+      return;
+    }
+
+    // 3/7/21/30 días: crear uno por día empezando hoy
+    const n = parseInt(sel, 10);
+    const retos = loadRetos();
+    for (let i = 0; i < n; i++) {
+      const due = new Date(); due.setDate(due.getDate() + i);
+      retos.push({ id: crypto.randomUUID(), text: base.text, createdAt: Date.now(), due: due.toISOString().slice(0, 10), done: false, permanent: false });
+    }
+    saveRetos(retos);
+    alert(`¡Listo! Repetiré este reto durante ${n} días en “Mi zona”.`);
+  };
 
   return (
     <div>
       <h3 style={{ marginTop: 0 }}>Objetivos para hoy</h3>
-      <p className="muted">Pequeñas acciones que suman: «Contactar con un amigo», «Decir te quiero a un familiar»…</p>
+      <p className="muted">Se enviarán a <b>Mi zona</b> como retos del día.</p>
 
       <div className="rows" style={{ marginTop: 12 }}>
         <div className="row" style={{ display: 'flex', gap: 8 }}>
@@ -271,15 +366,17 @@ function GoalsTool() {
           <button className="btn" onClick={add}>Añadir</button>
         </div>
 
+        {/* Histórico simple sin checkbox */}
         <ul className="list card">
-          {list.length === 0 && <li style={{ padding: '8px 0' }} className="muted">Sin objetivos hoy. ¡Añade el primero!</li>}
+          {list.length === 0 && <li style={{ padding: '8px 0' }} className="muted">Aún no hay objetivos guardados hoy.</li>}
           {list.map(g => (
             <li key={g.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <input type="checkbox" checked={g.done} onChange={() => toggle(g.id)} />
-                <span style={{ textDecoration: g.done ? 'line-through' : 'none' }}>{g.text}</span>
-              </label>
-              <button className="btn red" onClick={() => del(g.id)}>Borrar</button>
+              <span>{g.text}</span>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn secondary" onClick={() => edit(g.id)}>Editar</button>
+                <button className="btn" onClick={() => repetir(g.id)}>Repetir</button>
+                <button className="btn red" onClick={() => del(g.id)}>Borrar</button>
+              </div>
             </li>
           ))}
         </ul>
@@ -289,7 +386,7 @@ function GoalsTool() {
 }
 
 /* ===========================
-   Mis libros
+   Mis libros (pop-up directo, botón verde, editar/volver a leer)
    =========================== */
 function BooksTool() {
   const [store, setStore] = useState<BooksStore>(() => loadLS<BooksStore>(LS_BOOKS, { reading: [], wishlist: [], finished: [] }));
@@ -333,23 +430,16 @@ function BooksTool() {
     setFormW({ title: '', author: '', notes: '' });
   };
 
-  // Modal compartir / confirmar "Empezar a leer"
+  // Modal compartir / confirmar "Empezar a leer" (directo)
   const [showModal, setShowModal] = useState<{ open: boolean; text: string; onConfirm: () => void }>({ open: false, text: '', onConfirm: () => {} });
   const closeModal = () => setShowModal({ open: false, text: '', onConfirm: () => {} });
 
-  const startFromWishlist = async (id: string) => {
+  const startFromWishlist = (id: string) => {
     const b = store.wishlist.find(x => x.id === id); if (!b) return;
     const now = Date.now();
     const r: BookReading = { ...b, startedAt: now } as BookReading;
 
     const shareText = `Voy a empezar un nuevo libro: "${b.title}"${b.author ? ` de ${b.author}` : ''}. ¡Es una excelente noticia! Me estoy convirtiendo en un gran lector.`;
-    const shareData = { title: 'Nuevo libro', text: shareText, url: location.href };
-
-    let shared = false;
-    if (navigator.share) {
-      try { await navigator.share(shareData); shared = true; } catch {}
-    }
-
     const confirm = () => {
       setStore({
         ...store,
@@ -358,8 +448,7 @@ function BooksTool() {
       });
     };
 
-    if (!shared) setShowModal({ open: true, text: shareText, onConfirm: () => { confirm(); closeModal(); } });
-    else confirm();
+    setShowModal({ open: true, text: shareText, onConfirm: () => { confirm(); closeModal(); } });
   };
 
   const shareLinks = useMemo(() => {
@@ -367,7 +456,7 @@ function BooksTool() {
     return {
       whatsapp: `https://wa.me/?text=${t}`,
       twitter: `https://twitter.com/intent/tweet?text=${t}`,
-      facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(location.href)}&quote=${t}`,
+      facebook: `https://www.facebook.com/sharer/sharer.php?quote=${t}`,
       instagram: `https://www.instagram.com/`,
       tiktok: `https://www.tiktok.com/`,
     };
@@ -434,11 +523,17 @@ function BooksTool() {
         <ul className="list">
           {store.finished.length === 0 && <li style={{ padding: '8px 0' }} className="muted">Aún no hay libros terminados.</li>}
           {store.finished.map(b => (
-            <li key={b.id} style={{ padding: '10px 0' }}>
-              <div><strong>{b.title}</strong>{b.author ? ` · ${b.author}` : ''}</div>
-              <small className="muted">Terminado el {fmtDate(b.finishedAt)}</small>
-              {b.notes && <div className="muted" style={{ marginTop: 4 }}>{b.notes}</div>}
-            </li>
+            <FinishedItem
+              key={b.id}
+              book={b}
+              onUpdate={(nb) => {
+                setStore({ ...store, finished: store.finished.map(x => x.id === nb.id ? nb : x) });
+              }}
+              onReRead={() => {
+                const reread: BookReading = { ...b, startedAt: Date.now(), createdAt: Date.now() };
+                setStore({ ...store, finished: store.finished.filter(x => x.id !== b.id), reading: [reread, ...store.reading] });
+              }}
+            />
           ))}
         </ul>
       </section>
@@ -456,16 +551,53 @@ function BooksTool() {
               Eso reforzará tu deseo de hacerlo y puede motivar a los demás a seguir tu camino.
             </p>
             <div className="actions">
-              <a href={shareLinks.whatsapp} target="_blank" rel="noreferrer">WhatsApp</a>
-              <a href={shareLinks.twitter} target="_blank" rel="noreferrer">Twitter/X</a>
-              <a href={shareLinks.facebook} target="_blank" rel="noreferrer">Facebook</a>
-              <a href={shareLinks.instagram} target="_blank" rel="noreferrer">Instagram</a>
-              <a href={shareLinks.tiktok} target="_blank" rel="noreferrer">TikTok</a>
-              <button className="btn" onClick={showModal.onConfirm}>Vamos a por ello</button>
+              <a href={shareLinks.whatsapp} target="_blank" rel="noreferrer">💬 WhatsApp</a>
+              <a href={shareLinks.twitter} target="_blank" rel="noreferrer">🐦 Twitter/X</a>
+              <a href={shareLinks.facebook} target="_blank" rel="noreferrer">📘 Facebook</a>
+              <a href={shareLinks.instagram} target="_blank" rel="noreferrer">📸 Instagram</a>
+              <a href={shareLinks.tiktok} target="_blank" rel="noreferrer">🎵 TikTok</a>
+              <button className="btn green" onClick={showModal.onConfirm}>Vamos a por ello</button>
             </div>
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+/* Subcomponente para "Libros terminados" con Editar/Volver a leer */
+function FinishedItem({ book, onUpdate, onReRead }: {
+  book: BookFinished;
+  onUpdate: (b: BookFinished) => void;
+  onReRead: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [notes, setNotes] = useState(book.notes || '');
+
+  const save = () => { onUpdate({ ...book, notes: notes.trim() || undefined }); setEditing(false); };
+
+  return (
+    <li style={{ padding: '10px 0' }}>
+      <div><strong>{book.title}</strong>{book.author ? ` · ${book.author}` : ''}</div>
+      <small className="muted">Terminado el {fmtDate(book.finishedAt)}</small>
+
+      {editing ? (
+        <div className="rows" style={{ marginTop: 8 }}>
+          <textarea className="textarea" placeholder="Notas del libro…" value={notes} onChange={e => setNotes(e.target.value)} />
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button className="btn" onClick={save}>Guardar</button>
+            <button className="btn ghost" onClick={() => { setNotes(book.notes || ''); setEditing(false); }}>Cancelar</button>
+          </div>
+        </div>
+      ) : (
+        <>
+          {book.notes && <div className="muted" style={{ marginTop: 6 }}>{book.notes}</div>}
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button className="btn secondary" onClick={() => setEditing(true)}>Editar</button>
+            <button className="btn" onClick={onReRead}>Volver a leer</button>
+          </div>
+        </>
+      )}
+    </li>
   );
 }

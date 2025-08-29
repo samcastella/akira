@@ -14,43 +14,44 @@ export default function BottomNav() {
     { href: '/mizona', label: 'Mi zona', icon: User },
     { href: '/herramientas', label: 'Herramientas', icon: GraduationCap },
     { href: '/amigos', label: 'Amigos', icon: Users },
-  ];
+  ] as const;
 
   return (
-    <div
-      className="fixed inset-x-0 bottom-0 z-30"
+    <nav
+      className="bottomnav"
       style={{
+        // altura incluye el safe-area; SIN padding-bottom aquí
         height: `calc(${NAV_HEIGHT}px + env(safe-area-inset-bottom, 0px))`,
-        background: COLORS.accent,
-        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+        background: COLORS.accent, // amarillo
       }}
     >
-      <div className="mx-auto grid h-full max-w-md grid-cols-5">
+      <div className="mx-auto flex h-full w-full max-w-md">
         {items.map(({ href, label, icon: Icon }) => {
-          const isActive = pathname === href;
+          const active = pathname === href;
 
-          // Estilo especial para "Mi zona" (negro cuando no está activo)
-          let bg = isActive ? '#fff' : COLORS.accent;
-          let fg = COLORS.text;
-          if (href === '/mizona') {
-            bg = isActive ? '#fff' : COLORS.black;
-            fg = isActive ? COLORS.text : '#fff';
-          }
+          // estilo de la "píldora"
+          const pillStyle: React.CSSProperties = active
+            ? { background: '#fff', color: COLORS.text }
+            : href === '/mizona'
+            ? { background: COLORS.black, color: '#fff' } // Mi zona negra cuando no está activa
+            : { background: 'transparent', color: COLORS.text };
 
           return (
             <Link
               key={href}
               href={href}
               aria-label={label}
-              className="flex h-full flex-col items-center justify-center transition-colors"
-              style={{ background: bg, color: fg }}
+              aria-current={active ? 'page' : undefined}
+              className="bn-item"
             >
-              <Icon className="h-6 w-6" />
-              <span className="mt-1 text-[12px] leading-none">{label}</span>
+              <span className="bn-pill" style={pillStyle}>
+                <Icon className="h-5 w-5" />
+                <span className="mt-1 text-[12px] leading-none">{label}</span>
+              </span>
             </Link>
           );
         })}
       </div>
-    </div>
+    </nav>
   );
 }

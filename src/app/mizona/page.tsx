@@ -4,11 +4,20 @@ import MiZona from '@/components/MiZona';
 
 export default function MiZonaPage() {
   return (
-    <main className="container">
-      <h2 style={{ margin: '8px 0 12px' }}>Mi zona</h2>
-      <div className="card">
+    <main className="container" style={{ paddingTop: 24, paddingBottom: 24 }}>
+      <h2 className="page-title">Mi zona</h2>
+
+      {/* Panel blanco, ancho completo dentro del container, SIN borde */}
+      <section
+        style={{
+          background: 'var(--background)',
+          borderRadius: 'var(--radius-card)',
+          padding: 18,
+          border: 'none',
+        }}
+      >
         <MiZona />
-      </div>
+      </section>
     </main>
   );
 }

@@ -85,6 +85,9 @@ input, textarea, button, select, a {
    Utilidades UI de la app
    ========= */
 
+/* Títulos de página (p.ej. "Herramientas") */
+.page-title { font-size: 28px; font-weight: 800; margin: 8px 0 4px; }
+
 /* Contenedor editorial (lo seguimos usando en varias páginas) */
 .container {
   max-width: 940px;
@@ -136,7 +139,7 @@ input, textarea, button, select, a {
 .input {
   width: 100%;
   padding: 12px 14px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--line); /* <— token */
   border-radius: var(--radius-input);
   background: var(--background);
   color: var(--foreground);
@@ -144,12 +147,21 @@ input, textarea, button, select, a {
 .textarea {
   width: 100%;
   padding: 12px 14px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--line); /* <— token */
   border-radius: var(--radius-input);
   background: var(--background);
   color: var(--foreground);
   min-height: 70px;
   resize: vertical;
+}
+/* Focus accesible */
+.input:focus,
+.textarea:focus,
+.btn:focus,
+a:focus,
+button:focus {
+  outline: 2px solid rgba(0,0,0,.08);
+  outline-offset: 2px;
 }
 
 /* Botón cápsula compacto */
@@ -167,7 +179,7 @@ input, textarea, button, select, a {
 .btn.secondary {
   background: var(--background);
   color: var(--foreground);
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--line); /* <— token */
 }
 .btn.red {
   background: #d92c2c;
@@ -179,13 +191,22 @@ input, textarea, button, select, a {
   color: var(--foreground);
   border: 1px solid var(--accent);
 }
+/* Nuevo: botón verde (Libros → "Vamos a por ello") */
+.btn.green {
+  background: #16a34a;
+  border-color: #16a34a;
+  color: #fff;
+}
+.btn.green:hover { filter: brightness(.95); }
+/* Estado disabled genérico */
+.btn:disabled { opacity: .6; cursor: not-allowed; }
 
 /* Badges y texto atenuado */
 .badge {
   font-size: 12px;
   padding: 4px 8px;
   border-radius: 999px;
-  border: 1px solid #eaeaea;
+  border: 1px solid var(--line);
   background: var(--background);
   color: var(--foreground);
 }
@@ -195,7 +216,7 @@ input, textarea, button, select, a {
 .rows { display: grid; gap: 12px; }
 .row {
   background: var(--background);
-  border: 1px solid #efefef;
+  border: 1px solid var(--line); /* <— token */
   border-radius: 16px;
   padding: 12px;
 }
@@ -261,3 +282,33 @@ details.accordion summary::-webkit-details-marker { display: none; }
   cursor: pointer;
 }
 
+/* =========
+   BottomNav (píldora activa llena el alto)
+   ========= */
+.bottomnav{
+  position: fixed; left: 0; right: 0; bottom: 0;
+  z-index: 50;
+  display: flex; align-items: stretch; /* hijos heredan alto */
+  /* height y background se definen inline desde el componente */
+}
+
+.bn-item{
+  flex: 1;
+  position: relative;
+  display: flex; align-items: stretch; justify-content: center;
+  text-decoration: none; color: inherit;
+}
+
+.bn-pill{
+  box-sizing: border-box;
+  height: 100%;
+  padding: 8px 14px calc(8px + env(safe-area-inset-bottom, 0px));
+  border-radius: 9999px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 4px;
+  color: inherit;
+}
+
+.bn-item[aria-current="page"] .bn-pill{
+  box-shadow: 0 2px 6px rgba(0,0,0,.06);
+}

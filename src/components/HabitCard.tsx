@@ -6,13 +6,38 @@ const archivoBlack = Archivo_Black({ weight: '400', subsets: ['latin'], variable
 
 export type HabitCardData = { key: string; title: string; subtitle: string; image: string };
 
-export default function HabitCard({ data, onOpen }: { data: HabitCardData; onOpen: (key: string) => void }) {
+export default function HabitCard({
+  data,
+  onOpen,
+  imagePriority = false, // ⬅️ nuevo prop
+}: {
+  data: HabitCardData;
+  onOpen: (key: string) => void;
+  imagePriority?: boolean;
+}) {
+  const open = () => onOpen(data.key);
+
   return (
-    <div className="relative overflow-hidden" onClick={() => onOpen(data.key)} role="button" tabIndex={0} aria-label={data.title}>
+    <div
+      className="relative overflow-hidden cursor-pointer"
+      onClick={open}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } }}
+      role="button"
+      tabIndex={0}
+      aria-label={data.title}
+    >
       <div className="relative w-full" style={{ height: 0, paddingBottom: '125%', backgroundColor: '#111' }}>
-        <Image src={data.image} alt={data.title} fill sizes="(max-width: 768px) 100vw, 600px" className="object-cover" />
+        <Image
+          src={data.image}
+          alt={data.title}
+          fill
+          className="object-cover"
+          sizes="(max-width: 768px) 100vw, 600px"
+          priority={imagePriority}             // ⬅️ prioridad para precarga de las 2 primeras
+        />
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent" />
       </div>
+
       <div className="absolute inset-0 flex flex-col justify-end p-5">
         <div className="text-white/85 text-sm">{data.subtitle}</div>
         <div className={`${archivoBlack.className} text-white text-4xl leading-tight`}>{data.title}</div>
