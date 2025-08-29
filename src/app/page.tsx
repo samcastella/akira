@@ -105,7 +105,7 @@ function ProgramCard({ program }: { program: ProgramLike }) {
    Página
    ========================= */
 export default function HomePage() {
-  // 👉 No tipamos explícitamente para evitar el choque ProgramMeta vs Program
+  // No tipamos explícitamente para evitar choque ProgramMeta vs Program
   const programs = useMemo(() => listPrograms(), []);
   const [thoughts, setThoughts] = useState<Thought[]>(FALLBACK_THOUGHTS);
   const [todayThought, setTodayThought] = useState<Thought | null>(null);
@@ -152,11 +152,18 @@ export default function HomePage() {
               onClick={() => setModalOpen(true)}
               className="mt-3 inline-flex items-center px-4 py-2 rounded-full border border-black/15 bg-white hover:bg-black hover:text-white transition-colors text-sm font-medium"
             >
-              Ver
+              Ver pensamiento
             </button>
           </div>
 
-          <ThoughtModal open={modalOpen} onClose={() => setModalOpen(false)} thought={todayThought} />
+          {/* Modal: props correctas y render condicional */}
+          {modalOpen && todayThought && (
+            <ThoughtModal
+              title={todayThought.title}
+              body={todayThought.body}
+              onClose={() => setModalOpen(false)}
+            />
+          )}
         </section>
       )}
 
