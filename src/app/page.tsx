@@ -103,7 +103,7 @@ function ProgramCard({ program }: { program: ProgramLike }) {
 
           <div className="mt-3">
             <span
-              className="inline-flex items-center px-4 py-2 bg-white text-black text-sm font-medium
+              className="inline-flex items-center px-4 py-2 rounded-full bg-white text-black text-sm font-medium
                          group-hover:translate-y-[-1px] transition-transform"
             >
               Ver programa
@@ -181,7 +181,7 @@ export default function HomePage() {
             <p className="text-black/80 text-sm">{truncateWords(todayThought.body, 8)}</p>
             <button
               onClick={() => setModalOpen(true)}
-              className="mt-2 inline-flex items-center px-4 py-2 bg-black text-white text-sm font-medium hover:opacity-90 transition-opacity"
+              className="mt-2 inline-flex items-center px-4 py-2 rounded-full bg-black text-white text-sm font-medium hover:opacity-90 transition-opacity"
             >
               Ver
             </button>
@@ -212,7 +212,7 @@ export default function HomePage() {
         </h3>
         <Link
           href="/habitos"
-          className="inline-flex items-center px-5 py-2.5 rounded-full bg.black text-white text-sm font-medium hover:opacity-90 transition-opacity"
+          className="inline-flex items-center px-5 py-2.5 rounded-full bg-black text-white text-sm font-medium hover:opacity-90 transition-opacity"
         >
           Ver programas ahora
         </Link>
