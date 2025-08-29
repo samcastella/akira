@@ -1,78 +1,151 @@
+// src/app/page.tsx
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronRight } from 'lucide-react';
-import HabitCard, { HabitCardData } from '@/components/HabitCard';
+import Link from 'next/link';
 import ThoughtModal from '@/components/ThoughtModal';
-import { COLORS } from '@/lib/constants';
-import { todayThought } from '@/lib/thoughts';
+import { listPrograms } from '@/lib/programs_catalog';
 
-const FEATURED_HABITS: HabitCardData[] = [
-  { key: 'lectura',    title: 'La máquina lectora',      subtitle: 'Conviértete en un superlector', image: '/reading.jpg' },
-  { key: 'burpees',    title: 'Unos f*kn burpees',       subtitle: 'Comienza hoy y no pares',        image: '/burpees.jpg' },
-  { key: 'ahorro',     title: 'Ahorra sin darte cuenta', subtitle: 'Un hábito pequeño que cambia tu futuro', image: '/savings.jpg' },
-  { key: 'meditacion', title: 'Medita 5 minutos',        subtitle: 'Encuentra calma en tu día',      image: '/meditation.jpg' },
+// ===== Pensamiento del día =====
+type Thought = { id: string; title: string; body: string };
+
+const LS_THOUGHTS = 'akira_thoughts_v1';
+const LS_THOUGHT_SHOWN = 'akira_thought_last_seen';
+
+function todayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function loadThoughts(): Thought[] {
+  if (typeof window === 'undefined') return FALLBACK_THOUGHTS;
+  try {
+    const raw = localStorage.getItem(LS_THOUGHTS);
+    const arr = raw ? (JSON.parse(raw) as Thought[]) : [];
+    return arr.length ? arr : FALLBACK_THOUGHTS;
+  } catch {
+    return FALLBACK_THOUGHTS;
+  }
+}
+
+function pickToday(thoughts: Thought[]): Thought {
+  if (!thoughts.length) return FALLBACK_THOUGHTS[0];
+  // determinista por día
+  const idx = Math.abs(hashStr(todayKey())) % thoughts.length;
+  return thoughts[idx];
+}
+
+function hashStr(s: string) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return h;
+}
+
+const FALLBACK_THOUGHTS: Thought[] = [
+  {
+    id: 'fallback-1',
+    title: 'El presente cuenta',
+    body:
+      'Cada página leída hoy es un voto a favor de la identidad que quieres construir. Empieza pequeño, pero empieza. ' +
+      'La constancia pesa menos que la perfección.',
+  },
 ];
 
-export default function Page() {
-  // Pensamiento del día: mostrar 1 vez por día
-  const thought = useMemo(() => todayThought(), []);
-  const [openThought, setOpenThought] = useState(false);
+// ===== Página =====
+export default function HomePage() {
+  // Pensamiento del día
+  const thoughts = useMemo(() => loadThoughts(), []);
+  const today = useMemo(() => todayKey(), []);
+  const thought = useMemo(() => pickToday(thoughts), [thoughts]);
 
+  const [showThought, setShowThought] = useState(false);
+
+  // Mostrar el pop-up automáticamente la primera vez del día
   useEffect(() => {
-    const key = `thought_${new Date().toDateString()}`;
-    if (!localStorage.getItem(key)) {
-      setOpenThought(true);
-      localStorage.setItem(key, 'shown');
-    }
-  }, []);
+    if (typeof window === 'undefined') return;
+    try {
+      const last = localStorage.getItem(LS_THOUGHT_SHOWN);
+      if (last !== today) {
+        setShowThought(true);
+        localStorage.setItem(LS_THOUGHT_SHOWN, today);
+      }
+    } catch {}
+  }, [today]);
+
+  const excerpt = useMemo(() => {
+    const t = thought.body.trim();
+    if (t.length <= 160) return t;
+    const cut = t.slice(0, 160);
+    const lastDot = cut.lastIndexOf('.');
+    return (lastDot > 60 ? cut.slice(0, lastDot + 1) : cut) + '…';
+  }, [thought]);
+
+  // Programas del catálogo
+  const programs = useMemo(() => listPrograms(), []);
 
   return (
-    <main className="container" style={{ background: COLORS.bg, color: COLORS.text }}>
-      <div className="mb-4 flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold">Pensamiento del día</h1>
-          <p className="text-xs text-black/60">{thought.title}: toca para leerlo de nuevo</p>
-        </div>
-        <button
-          onClick={() => setOpenThought(true)}
-          className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white"
-        >
-          Ver pensamiento
-        </button>
-      </div>
-
-      {/* Hábitos: render inmediato, sin splash */}
-      <div className="-mx-4">
-        {FEATURED_HABITS.map((h, i) => (
-          <div key={h.key}>
-            <HabitCard
-              data={h}
-              imagePriority={i < 2}                // ⬅️ prioridad para los 2 primeros
-              onOpen={(key) => { window.location.href = `/habitos?key=${key}`; }}
-            />
+    <main className="container" style={{ paddingBottom: 16 }}>
+      {/* Pensamiento del día */}
+      <section
+        style={{
+          background: 'var(--background)',
+          borderRadius: 'var(--radius-card)',
+          padding: 16,
+          border: 'none',
+          marginTop: 12,
+          minHeight: 148, // un poco más alto
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+          <div style={{ minWidth: 0 }}>
+            <h2 style={{ margin: 0 }}>{thought.title}</h2>
+            <p className="muted" style={{ margin: '6px 0 0' }}>{excerpt}</p>
           </div>
+          <button className="btn btn-primary" onClick={() => setShowThought(true)} aria-haspopup="dialog">
+            Ver
+          </button>
+        </div>
+      </section>
+
+      {/* Programas destacados (imagen a todo el ancho y CTA directo al programa) */}
+      <div style={{ marginTop: 16, display: 'grid', gap: 16 }}>
+        {programs.map((p) => (
+          <article key={p.slug} className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            {p.cover && (
+              <img
+                src={p.cover}
+                alt={p.title}
+                style={{
+                  width: '100%',
+                  height: 220,
+                  objectFit: 'cover',
+                  display: 'block',
+                }}
+              />
+            )}
+            <div style={{ padding: 14 }}>
+              <h3 style={{ margin: '0 0 4px' }}>{p.title}</h3>
+              {p.subtitle && <p className="muted" style={{ margin: 0 }}>{p.subtitle}</p>}
+              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                <Link href={`/habitos/${p.slug}`} className="btn btn-primary">
+                  Empieza ahora
+                </Link>
+                <Link href={`/habitos/${p.slug}`} className="btn secondary">
+                  Ver programa
+                </Link>
+              </div>
+            </div>
+          </article>
         ))}
       </div>
 
-      <div className="mt-6 overflow-hidden rounded-2xl bg-white">
-        <div className="p-5">
-          <div className="mb-3 text-2xl font-bold leading-snug">
-            ¿Listo para más? <br /> Descubre todos los hábitos
-          </div>
-          <Link href="/habitos" className="inline-flex items-center gap-2 rounded-full bg-black px-5 py-3 text-white">
-            Ver hábitos <ChevronRight className="h-4 w-4" />
-          </Link>
-        </div>
-      </div>
-
-      <ThoughtModal
-        open={openThought}
-        onClose={() => setOpenThought(false)}
-        title={thought.title}
-        text={thought.text}
-      />
+      {/* Modal de Pensamiento */}
+      {showThought && (
+        <ThoughtModal
+          title={thought.title}
+          body={thought.body}
+          onClose={() => setShowThought(false)}
+        />
+      )}
     </main>
   );
 }
