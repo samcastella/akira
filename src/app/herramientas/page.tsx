@@ -504,7 +504,7 @@ function GoalsTool() {
 }
 
 /* ===========================
-   Mis libros (igual que antes)
+   Mis libros — lectura con edición de notas, lista de deseos y terminados
    =========================== */
 function BooksTool() {
   const [store, setStore] = useState<BooksStore>(() => loadLS<BooksStore>(LS_BOOKS, { reading: [], wishlist: [], finished: [] }));
@@ -598,15 +598,12 @@ function BooksTool() {
 
         <ul className="list" style={{ marginTop: 12 }}>
           {store.reading.map(b => (
-            <li key={b.id} style={{ padding: '10px 0' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                <div>
-                  <strong>{b.title}</strong>{b.author ? ` · ${b.author}` : ''}
-                  {b.notes && <div className="muted" style={{ marginTop: 4 }}>{b.notes}</div>}
-                </div>
-                <button className="btn red" onClick={() => finishReading(b.id)}>Terminar</button>
-              </div>
-            </li>
+            <ReadingItem
+              key={b.id}
+              book={b}
+              onUpdate={(nb) => setStore({ ...store, reading: store.reading.map(x => x.id === nb.id ? nb : x) })}
+              onFinish={() => finishReading(b.id)}
+            />
           ))}
         </ul>
       </section>
@@ -680,6 +677,52 @@ function BooksTool() {
         </div>
       )}
     </div>
+  );
+}
+
+/* Item de libro en lectura: ver/editar notas + terminar */
+function ReadingItem({
+  book, onUpdate, onFinish
+}: {
+  book: BookReading;
+  onUpdate: (b: BookReading) => void;
+  onFinish: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [notes, setNotes] = useState(book.notes || '');
+
+  useEffect(() => { setNotes(book.notes || ''); }, [book.notes]);
+
+  return (
+    <li style={{ padding: '10px 0' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+        <div style={{ flex: 1 }}>
+          <strong>{book.title}</strong>{book.author ? ` · ${book.author}` : ''}
+          {(!editing && book.notes) && (
+            <div className="muted" style={{ marginTop: 6, whiteSpace: 'pre-wrap' }}>{book.notes}</div>
+          )}
+          {editing && (
+            <div className="rows" style={{ marginTop: 8 }}>
+              <textarea
+                className="textarea"
+                placeholder="Notas del libro…"
+                value={notes}
+                onChange={e => setNotes(e.target.value)}
+              />
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button className="btn" onClick={() => { onUpdate({ ...book, notes: notes.trim() || undefined }); setEditing(false); }}>Guardar</button>
+                <button className="btn ghost" onClick={() => { setNotes(book.notes || ''); setEditing(false); }}>Cancelar</button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', gap: 8 }}>
+          {!editing && <button className="btn secondary" onClick={() => setEditing(true)}>Editar</button>}
+          <button className="btn red" onClick={onFinish}>Terminar</button>
+        </div>
+      </div>
+    </li>
   );
 }
 
