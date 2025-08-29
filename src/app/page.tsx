@@ -43,9 +43,7 @@ function truncateWords(text: string, maxWords = 8) {
 }
 
 /* =========================
-   Card del programa (4:5)
-   Acepta slug o key y pone
-   “Ver programa” dentro.
+   ProgramCard (4:5, 100% ancho)
    ========================= */
 type ProgramLike = {
   slug?: string;
@@ -59,12 +57,28 @@ type ProgramLike = {
 function ProgramCard({ program }: { program: ProgramLike }) {
   const ident = program.slug ?? program.key ?? '';
   const href = program.href ?? (ident ? `/habitos?key=${encodeURIComponent(ident)}` : '/habitos');
-  const { title, subtitle, image = '/placeholder.jpg' } = program;
+  const { title, subtitle } = program;
+
+  // Forzar imágenes por clave solicitadas
+  const imgByKey: Record<string, string> = {
+    lectura: '/reading.jpg',
+    reading: '/reading.jpg',
+    burpees: '/burpees.jpg',
+    finanzas: '/savings.jpg',
+    savings: '/savings.jpg',
+    meditacion: '/meditation.jpg',
+    meditation: '/meditation.jpg',
+  };
+  const fallback = '/reading.jpg';
+  const image =
+    (ident && imgByKey[ident]) ||
+    program.image ||
+    fallback;
 
   return (
     <Link href={href} className="block group">
-      {/* Mantener ratio 4:5: padding-top:125% */}
       <div className="relative w-full rounded-2xl overflow-hidden">
+        {/* Ratio 4:5 */}
         <div style={{ paddingTop: '125%' }} />
         <Image
           src={image}
@@ -75,21 +89,21 @@ function ProgramCard({ program }: { program: ProgramLike }) {
           priority={false}
         />
 
-        {/* Degradado y textos dentro de la imagen */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/25 to-transparent" />
+        {/* Degradado + textos dentro */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent" />
         <div className="absolute inset-x-0 bottom-0 p-4 sm:p-5">
           {subtitle && (
-            <p className="text-white/85 text-sm sm:text-base leading-snug mb-1">
+            <p className="text-white/85 text-sm leading-snug mb-1">
               {subtitle}
             </p>
           )}
-          <h3 className="text-white text-2xl sm:text-3xl font-extrabold leading-tight">
+          <h3 className="text-white text-3xl font-extrabold leading-tight">
             {title}
           </h3>
 
           <div className="mt-3">
             <span
-              className="inline-flex items-center px-3 py-1.5 rounded-full bg-white text-black text-sm font-medium
+              className="inline-flex items-center px-4 py-2 rounded-full bg-white text-black text-sm font-medium
                          group-hover:translate-y-[-1px] transition-transform"
             >
               Ver programa
@@ -106,15 +120,41 @@ function ProgramCard({ program }: { program: ProgramLike }) {
    ========================= */
 export default function HomePage() {
   // No tipamos explícitamente para evitar choque ProgramMeta vs Program
-  const programs = useMemo(() => listPrograms(), []);
-  const [thoughts, setThoughts] = useState<Thought[]>(FALLBACK_THOUGHTS);
+  const catalog = useMemo(() => listPrograms(), []);
   const [todayThought, setTodayThought] = useState<Thought | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
 
+  // Orden deseado de programas (uno bajo otro)
+  const orderedKeys = ['lectura', 'burpees', 'finanzas', 'meditacion'];
+
+  const programsOnePerRow: ProgramLike[] = useMemo(() => {
+    // Normalizamos y reordenamos según orderedKeys
+    const byIdent = new Map<string, any>();
+    for (const p of catalog as any[]) {
+      const ident = (p.slug ?? p.key ?? '').toString();
+      if (ident) byIdent.set(ident, p);
+    }
+
+    const result: ProgramLike[] = [];
+    for (const k of orderedKeys) {
+      const p = byIdent.get(k);
+      if (p) {
+        result.push({
+          ...p,
+          // subtítulo y título ya vienen del catálogo; si faltan, mantenemos lo que haya
+        });
+      }
+    }
+    // Si faltara alguno en el catálogo, añadimos el resto al final
+    for (const p of catalog as any[]) {
+      const ident = (p.slug ?? p.key ?? '').toString();
+      if (!orderedKeys.includes(ident)) result.push(p);
+    }
+    return result;
+  }, [catalog]);
+
   useEffect(() => {
     const list = loadThoughts();
-    setThoughts(list);
-
     const key = todayKey();
     const lastSeen = typeof window !== 'undefined' ? localStorage.getItem(LS_THOUGHT_SHOWN) : null;
 
@@ -134,30 +174,26 @@ export default function HomePage() {
   }, []);
 
   return (
-    <main className="px-4 sm:px-6 md:px-8 pb-16">
-      <h1 className="page-title text-2xl sm:text-3xl md:text-4xl font-semibold tracking-tight mt-4 mb-6">
-        Akira — Build your habits
-      </h1>
+    <main className="px-4 sm:px-6 md:px-8 pb-20">
 
-      {/* Pensamiento del día */}
+      {/* ===== Franja pequeña: Pensamiento del día ===== */}
       {todayThought && (
-        <section className="mb-10 border border-black/10 rounded-2xl p-4 sm:p-6 bg-white">
-          <div className="flex flex-col items-center text-center gap-2">
-            <h2 className="text-base font-medium text-black/70">Pensamiento del día</h2>
-            <h3 className="text-xl sm:text-2xl font-semibold">{todayThought.title}</h3>
-            <p className="text-black/80 max-w-prose">{truncateWords(todayThought.body, 8)}</p>
-
-            {/* Botón centrado y debajo del texto */}
+        <section className="mb-6 rounded-2xl border border-black/10 bg-white px-4 py-3">
+          <div className="flex flex-col items-center text-center gap-1">
+            <h2 className="text-sm font-medium text-black/70">Pensamiento del día</h2>
+            <p className="text-black/80 text-sm">
+              {truncateWords(todayThought.body, 8)}
+            </p>
             <button
               onClick={() => setModalOpen(true)}
-              className="mt-3 inline-flex items-center px-4 py-2 rounded-full border border-black/15 bg-white hover:bg-black hover:text-white transition-colors text-sm font-medium"
+              className="mt-2 inline-flex items-center px-4 py-2 rounded-full border border-black/15 bg-white hover:bg-black hover:text-white transition-colors text-sm font-medium"
             >
-              Ver pensamiento
+              Ver
             </button>
           </div>
 
           {/* Modal: props correctas y render condicional */}
-          {modalOpen && todayThought && (
+          {modalOpen && (
             <ThoughtModal
               title={todayThought.title}
               body={todayThought.body}
@@ -167,15 +203,25 @@ export default function HomePage() {
         </section>
       )}
 
-      {/* Programas (full width, 4:5, textos y CTA dentro) */}
-      <section className="space-y-4">
-        <h2 className="text-xl sm:text-2xl font-semibold">Programas</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-          {(programs as ProgramLike[]).map((p, i) => {
-            const reactKey = p.slug ?? p.key ?? `p-${i}`;
-            return <ProgramCard key={reactKey} program={p} />;
-          })}
-        </div>
+      {/* ===== Programas: 1 por fila, 100% ancho, ratio 4:5 ===== */}
+      <section className="space-y-5">
+        {programsOnePerRow.map((p, i) => {
+          const reactKey = (p.slug ?? p.key ?? `p-${i}`).toString();
+          return <ProgramCard key={reactKey} program={p} />;
+        })}
+      </section>
+
+      {/* ===== CTA final ===== */}
+      <section className="mt-8 mb-2 text-center">
+        <h3 className="text-2xl sm:text-3xl font-semibold mb-4">
+          ¿Te gustaría ver nuestros programas de hábitos?
+        </h3>
+        <Link
+          href="/habitos"
+          className="inline-flex items-center px-5 py-2.5 rounded-full bg-black text-white text-sm font-medium hover:opacity-90 transition-opacity"
+        >
+          Ver programas ahora
+        </Link>
       </section>
     </main>
   );
