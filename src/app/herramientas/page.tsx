@@ -9,12 +9,12 @@ import {
 /* ===========================
    Helpers de almacenamiento
    =========================== */
-const LS_NOTES = 'akira_notes_v2';              // v2: ahora incluye "title"
-const LS_GRATITUDE = 'akira_gratitude_v2';      // v2: filas por día
+const LS_NOTES = 'akira_notes_v2';
+const LS_GRATITUDE = 'akira_gratitude_v2';
 const LS_GOALS = 'akira_goals_today_v1';
 const LS_BOOKS = 'akira_books_v1';
-const LS_RETOS = 'akira_mizona_retos_v1';       // retos para "Mi zona"
-const OLD_LS_NOTES = 'akira_notes_v1';          // <- para migración
+const LS_RETOS = 'akira_mizona_retos_v1';
+const OLD_LS_NOTES = 'akira_notes_v1';
 
 function loadLS<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback;
@@ -81,7 +81,7 @@ function migrateNotesIfNeeded() {
 type Note = { id: string; title: string; text: string; createdAt: number };
 
 type GratitudeRow = { id: string; text: string };
-type GratitudeEntry = { date: string; rows: GratitudeRow[]; savedAt: number }; // por día (YYYY-MM-DD)
+type GratitudeEntry = { date: string; rows: GratitudeRow[]; savedAt: number };
 
 type Goal = { id: string; text: string; done: boolean; createdAt: number };
 type GoalsByDay = Record<string, Goal[]>;
@@ -91,7 +91,6 @@ type BookReading = BookBase & { startedAt: number };
 type BookFinished = BookBase & { finishedAt: number };
 type BooksStore = { reading: BookReading[]; wishlist: BookBase[]; finished: BookFinished[] };
 
-/** ⬇️ retos (Mi zona) */
 type Reto = { id: string; text: string; createdAt: number; due: string; done: boolean; permanent?: boolean };
 
 /* ===========================
@@ -113,7 +112,6 @@ export default function Herramientas() {
       <h2 className="page-title">Herramientas</h2>
       <p className="muted" style={{ margin: '0 0 16px' }}>Tu espacio para escribir y agradecer cada día.</p>
 
-      {/* Tabs */}
       <div role="tablist" className="tabbar">
         {TABS.map(({ key, label, Icon }) => (
           <button
@@ -139,7 +137,7 @@ export default function Herramientas() {
 }
 
 /* ===========================
-   Notas — borde sutil, sin desbordes, sin “Copiar”
+   Notas — borde sutil, sin desbordes
    =========================== */
 function NotasTool() {
   migrateNotesIfNeeded();
@@ -171,7 +169,6 @@ function NotasTool() {
         </div>
       </div>
 
-      {/* Listado SIN .row para evitar doble borde/desborde */}
       <div className="rows" style={{ marginTop: 16 }}>
         {notes.length === 0 && <div className="muted">Aún no tienes notas.</div>}
         {notes.map(n => (
@@ -187,7 +184,6 @@ function NotasTool() {
   );
 }
 
-/* Nota individual */
 function NoteItem({
   note, onUpdate, onDelete
 }: {
@@ -236,30 +232,15 @@ function NoteItem({
         </>
       ) : (
         <>
-          <input
-            className="input w-full"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Título"
-          />
-          <textarea
-            className="textarea w-full mt-2"
-            rows={4}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="Contenido"
-          />
+          <input className="input w-full" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Título" />
+          <textarea className="textarea w-full mt-2" rows={4} value={text} onChange={(e) => setText(e.target.value)} placeholder="Contenido" />
           <div className="flex gap-2 mt-3 justify-end">
-            <button
-              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-black text-white"
-              onClick={() => { onUpdate({ ...note, title: title.trim(), text: text.trim() }); setEditing(false); }}
-            >
+            <button className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-black text-white"
+              onClick={() => { onUpdate({ ...note, title: title.trim(), text: text.trim() }); setEditing(false); }}>
               <Save className="w-4 h-4" /> Guardar
             </button>
-            <button
-              className="px-3 py-1.5 rounded-lg border hover:bg-neutral-50"
-              onClick={() => { setTitle(note.title); setText(note.text); setEditing(false); }}
-            >
+            <button className="px-3 py-1.5 rounded-lg border hover:bg-neutral-50"
+              onClick={() => { setTitle(note.title); setText(note.text); setEditing(false); }}>
               Cancelar
             </button>
           </div>
@@ -270,7 +251,7 @@ function NoteItem({
 }
 
 /* ===========================
-   Gratitud — Guardar -> item del día colapsado (Ver/Editar/Guardar)
+   Gratitud
    =========================== */
 function GratitudTool() {
   type Entries = Record<string, GratitudeEntry>;
@@ -303,7 +284,6 @@ function GratitudTool() {
         Anota durante el día las cosas por las que te sientes agradecido.
       </p>
 
-      {/* Formulario HOY */}
       <div className="card" style={{ marginTop: 12 }}>
         <div className="card-header">
           <div><div style={{ fontWeight: 600 }}>{formatDateLabel(today)}</div></div>
@@ -325,7 +305,6 @@ function GratitudTool() {
         </div>
       </div>
 
-      {/* Items colapsados: HOY (si hay contenido/guardado) + anteriores */}
       <section style={{ marginTop: 16 }}>
         {(current.savedAt || hasAnyText) && (
           <GratitudeDay
@@ -372,7 +351,7 @@ function GratitudeDay({
   const visibleRows = rows.filter(r => r.text.trim());
 
   return (
-    <div className="border rounded-xl p-4 mb-3">
+    <div className="border rounded-xl p-4 mb-3" style={{ overflow: 'hidden' }}>
       <div className="flex items-center justify-between">
         <strong>{formatDateLabel(date)}</strong>
         {!open ? (
@@ -425,7 +404,7 @@ function GratitudeDay({
 }
 
 /* ===========================
-   Objetivos para hoy — más “aire”, sin Repetir
+   Objetivos para hoy — más “aire”
    =========================== */
 function GoalsTool() {
   const [byDay, setByDay] = useState<GoalsByDay>(() => loadLS<GoalsByDay>(LS_GOALS, {}));
@@ -442,7 +421,6 @@ function GoalsTool() {
   const add = () => {
     const t = text.trim();
     if (!t) return;
-    // Solo hoy (sin repetir)
     const reto: Reto = { id: crypto.randomUUID(), text: t, createdAt: Date.now(), due: today, done: false };
     saveRetos([reto, ...loadRetos()]);
 
@@ -456,14 +434,11 @@ function GoalsTool() {
     if (nuevo == null) return;
     const updated = list.map(x => x.id === id ? { ...x, text: nuevo } : x);
     setByDay({ ...byDay, [today]: updated });
-    // actualizar en Mi zona si sigue pendiente
-    const retos = loadRetos();
-    saveRetos(retos.map(r => r.id === id ? { ...r, text: nuevo } : r));
+    saveRetos(loadRetos().map(r => r.id === id ? { ...r, text: nuevo } : r));
   };
 
   const del = (id: string) => {
     setByDay({ ...byDay, [today]: list.filter(g => g.id !== id) });
-    // quitar también de Mi zona si aún está pendiente
     saveRetos(loadRetos().filter(r => r.id !== id));
   };
 
@@ -472,7 +447,6 @@ function GoalsTool() {
       <h3 style={{ marginTop: 0 }}>Objetivos para hoy</h3>
       <p className="muted">Se enviarán a <b>Mi zona</b> como retos del día.</p>
 
-      {/* Crear objetivo con más “respiración” */}
       <div className="rows" style={{ marginTop: 12 }}>
         <div className="row" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <input
@@ -485,7 +459,6 @@ function GoalsTool() {
           <button className="btn" onClick={add}>Añadir</button>
         </div>
 
-        {/* Histórico: cada objetivo en su propia .row (más padding) */}
         <div className="rows">
           {list.length === 0 && <div className="muted">Aún no hay objetivos guardados hoy.</div>}
           {list.map(g => (
@@ -504,7 +477,7 @@ function GoalsTool() {
 }
 
 /* ===========================
-   Mis libros — lectura con edición de notas, lista de deseos y terminados
+   Mis libros — pop-ups para Ver/Editar
    =========================== */
 function BooksTool() {
   const [store, setStore] = useState<BooksStore>(() => loadLS<BooksStore>(LS_BOOKS, { reading: [], wishlist: [], finished: [] }));
@@ -512,6 +485,105 @@ function BooksTool() {
 
   const [formR, setFormR] = useState({ title: '', author: '', notes: '' });
   const [formW, setFormW] = useState({ title: '', author: '', notes: '' });
+
+  // --- MODAL estado general
+  type ModalKind = 'reading' | 'wishlist' | 'finished';
+  const [modal, setModal] = useState<{
+    open: boolean;
+    kind: ModalKind | null;
+    editing: boolean;
+    data: (BookReading | BookBase | BookFinished) | null;
+    init: { title: string; author: string; notes: string }; // para detectar cambios
+    form: { title: string; author: string; notes: string };
+  }>({
+    open: false, kind: null, editing: false, data: null,
+    init: { title: '', author: '', notes: '' },
+    form: { title: '', author: '', notes: '' },
+  });
+
+  const openModal = (kind: ModalKind, book: any, editing = false) => {
+    const init = { title: book.title || '', author: book.author || '', notes: book.notes || '' };
+    setModal({ open: true, kind, editing, data: book, init, form: { ...init } });
+  };
+  const closeModal = () => setModal(m => ({ ...m, open: false }));
+
+  const hasChanges = modal.form.title !== modal.init.title
+    || modal.form.author !== modal.init.author
+    || modal.form.notes !== modal.init.notes;
+
+  // --- Acciones modal
+  const saveModal = () => {
+    if (!modal.data || !modal.kind) return;
+    if (modal.kind === 'reading') {
+      const b = modal.data as BookReading;
+      const nb: BookReading = { ...b, title: modal.form.title.trim() || b.title, author: modal.form.author.trim() || undefined, notes: modal.form.notes.trim() || undefined };
+      setStore(s => ({ ...s, reading: s.reading.map(x => x.id === b.id ? nb : x) }));
+    }
+    if (modal.kind === 'wishlist') {
+      const b = modal.data as BookBase;
+      const nb: BookBase = { ...b, title: modal.form.title.trim() || b.title, author: modal.form.author.trim() || undefined, notes: modal.form.notes.trim() || undefined };
+      setStore(s => ({ ...s, wishlist: s.wishlist.map(x => x.id === b.id ? nb : x) }));
+    }
+    if (modal.kind === 'finished') {
+      const b = modal.data as BookFinished;
+      const nb: BookFinished = { ...b, title: modal.form.title.trim() || b.title, author: modal.form.author.trim() || undefined, notes: modal.form.notes.trim() || undefined };
+      setStore(s => ({ ...s, finished: s.finished.map(x => x.id === b.id ? nb : x) }));
+    }
+    // refrescamos init para que el botón vuelva a "Editar"
+    setModal(m => ({ ...m, init: { ...m.form }, editing: false }));
+  };
+
+  const startFromWishlist = (id: string, payload?: { title?: string; author?: string; notes?: string }) => {
+    setStore(s => {
+      const b = s.wishlist.find(x => x.id === id);
+      if (!b) return s;
+      const now = Date.now();
+      const reading: BookReading = {
+        id: b.id,
+        title: payload?.title ?? b.title,
+        author: payload?.author ?? b.author,
+        notes: payload?.notes ?? b.notes,
+        createdAt: b.createdAt,
+        startedAt: now,
+      };
+      return {
+        ...s,
+        wishlist: s.wishlist.filter(x => x.id !== id),
+        reading: [reading, ...s.reading],
+      };
+    });
+    closeModal();
+  };
+
+  const finishReading = (id: string) => {
+    setStore(s => {
+      const b = s.reading.find(x => x.id === id);
+      if (!b) return s;
+      const finished: BookFinished = { ...b, finishedAt: Date.now() };
+      return {
+        ...s,
+        reading: s.reading.filter(x => x.id !== id),
+        finished: [finished, ...s.finished],
+      };
+    });
+    closeModal();
+  };
+
+  const rereadFinished = (id: string) => {
+    setStore(s => {
+      const b = s.finished.find(x => x.id === id);
+      if (!b) return s;
+      const reading: BookReading = { ...b, startedAt: Date.now(), createdAt: Date.now() };
+      // @ts-ignore finished has finishedAt, reading ignores it
+      delete (reading as any).finishedAt;
+      return {
+        ...s,
+        finished: s.finished.filter(x => x.id !== id),
+        reading: [reading, ...s.reading],
+      };
+    });
+    closeModal();
+  };
 
   const addReading = () => {
     if (!formR.title.trim()) return alert('El nombre del libro es obligatorio');
@@ -528,12 +600,6 @@ function BooksTool() {
     setFormR({ title: '', author: '', notes: '' });
   };
 
-  const finishReading = (id: string) => {
-    const b = store.reading.find(x => x.id === id); if (!b) return;
-    const finished: BookFinished = { ...b, finishedAt: Date.now() };
-    setStore({ ...store, reading: store.reading.filter(x => x.id !== id), finished: [finished, ...store.finished] });
-  };
-
   const addWishlist = () => {
     if (!formW.title.trim()) return alert('El nombre del libro es obligatorio');
     const now = Date.now();
@@ -548,38 +614,7 @@ function BooksTool() {
     setFormW({ title: '', author: '', notes: '' });
   };
 
-  // Modal compartir / confirmar "Empezar a leer" (directo)
-  const [showModal, setShowModal] = useState<{ open: boolean; text: string; onConfirm: () => void }>({ open: false, text: '', onConfirm: () => {} });
-  const closeModal = () => setShowModal({ open: false, text: '', onConfirm: () => {} });
-
-  const startFromWishlist = (id: string) => {
-    const b = store.wishlist.find(x => x.id === id); if (!b) return;
-    const now = Date.now();
-    const r: BookReading = { ...b, startedAt: now } as BookReading;
-
-    const shareText = `Voy a empezar un nuevo libro: "${b.title}"${b.author ? ` de ${b.author}` : ''}. ¡Es una excelente noticia! Me estoy convirtiendo en un gran lector.`;
-    const confirm = () => {
-      setStore({
-        ...store,
-        wishlist: store.wishlist.filter(x => x.id !== id),
-        reading: [r, ...store.reading],
-      });
-    };
-
-    setShowModal({ open: true, text: shareText, onConfirm: () => { confirm(); closeModal(); } });
-  };
-
-  const shareLinks = useMemo(() => {
-    const t = encodeURIComponent(showModal.text);
-    return {
-      whatsapp: `https://wa.me/?text=${t}`,
-      twitter: `https://twitter.com/intent/tweet?text=${t}`,
-      facebook: `https://www.facebook.com/sharer/sharer.php?quote=${t}`,
-      instagram: `https://www.instagram.com/`,
-      tiktok: `https://www.tiktok.com/`,
-    };
-  }, [showModal.text]);
-
+  // --- UI
   return (
     <div>
       <h3 style={{ marginTop: 0 }}>Mis libros</h3>
@@ -598,12 +633,17 @@ function BooksTool() {
 
         <ul className="list" style={{ marginTop: 12 }}>
           {store.reading.map(b => (
-            <ReadingItem
-              key={b.id}
-              book={b}
-              onUpdate={(nb) => setStore({ ...store, reading: store.reading.map(x => x.id === nb.id ? nb : x) })}
-              onFinish={() => finishReading(b.id)}
-            />
+            <li key={b.id} style={{ padding: '10px 0' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                <div style={{ overflow: 'hidden' }}>
+                  <strong>{b.title}</strong>{b.author ? ` · ${b.author}` : ''}
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn secondary" onClick={() => openModal('reading', b, false)}>Ver</button>
+                  <button className="btn" onClick={() => openModal('reading', b, true)}>Editar</button>
+                </div>
+              </div>
+            </li>
           ))}
         </ul>
       </section>
@@ -622,11 +662,14 @@ function BooksTool() {
         <ul className="list" style={{ marginTop: 12 }}>
           {store.wishlist.map(b => (
             <li key={b.id} style={{ padding: '10px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
+              <div style={{ overflow: 'hidden' }}>
                 <strong>{b.title}</strong>{b.author ? ` · ${b.author}` : ''}
-                {b.notes && <div className="muted" style={{ marginTop: 4 }}>{b.notes}</div>}
+                {b.notes && <div className="muted" style={{ marginTop: 4, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{b.notes}</div>}
               </div>
-              <button className="btn" onClick={() => startFromWishlist(b.id)}>Empezar a leer</button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn secondary" onClick={() => openModal('wishlist', b, true)}>Editar</button>
+                <button className="btn" onClick={() => startFromWishlist(b.id)}>Empezar a leer</button>
+              </div>
             </li>
           ))}
         </ul>
@@ -638,127 +681,93 @@ function BooksTool() {
         <ul className="list">
           {store.finished.length === 0 && <li style={{ padding: '8px 0' }} className="muted">Aún no hay libros terminados.</li>}
           {store.finished.map(b => (
-            <FinishedItem
-              key={b.id}
-              book={b}
-              onUpdate={(nb) => {
-                setStore({ ...store, finished: store.finished.map(x => x.id === nb.id ? nb : x) });
-              }}
-              onReRead={() => {
-                const reread: BookReading = { ...b, startedAt: Date.now(), createdAt: Date.now() };
-                setStore({ ...store, finished: store.finished.filter(x => x.id !== b.id), reading: [reread, ...store.reading] });
-              }}
-            />
+            <li key={b.id} style={{ padding: '10px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <strong>{b.title}</strong>{b.author ? ` · ${b.author}` : ''}
+                <div className="muted" style={{ marginTop: 4 }}>Terminado el {fmtDate(b.finishedAt)}</div>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn secondary" onClick={() => openModal('finished', b, false)}>Ver</button>
+                <button className="btn" onClick={() => openModal('finished', b, true)}>Editar</button>
+                <button className="btn" onClick={() => rereadFinished(b.id)}>Volver a leer</button>
+              </div>
+            </li>
           ))}
         </ul>
       </section>
 
-      {/* Modal compartir */}
-      {showModal.open && (
+      {/* ======== MODAL LIBROS (reutilizable) ======== */}
+      {modal.open && modal.kind && modal.data && (
         <div className="modal-backdrop" onClick={closeModal}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h4 style={{ margin: 0 }}>Vas a empezar un nuevo libro 📚</h4>
-              <button onClick={closeModal} className="btn ghost" aria-label="Cerrar"><X size={16} /></button>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ width: 'min(640px, 94vw)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+              <h4 style={{ margin: 0 }}>
+                {modal.kind === 'reading' && 'Libro en lectura'}
+                {modal.kind === 'wishlist' && 'Libro que quiero leer'}
+                {modal.kind === 'finished' && 'Libro terminado'}
+              </h4>
+              <button onClick={closeModal} className="btn red" aria-label="Cerrar">Cerrar</button>
             </div>
-            <p style={{ marginTop: 8 }}>
-              ¡Es una excelente noticia! Te estás convirtiendo en un gran lector. ¿Te gustaría anunciar al mundo el libro que vas a comenzar?
-              Eso reforzará tu deseo de hacerlo y puede motivar a los demás a seguir tu camino.
-            </p>
+
+            {/* Contenido */}
+            <div className="rows" style={{ marginTop: 12 }}>
+              {/* Título y autor siempre editables si modal.editing */}
+              {!modal.editing ? (
+                <>
+                  <div style={{ fontSize: 18, fontWeight: 700 }}>{modal.form.title || 'Sin título'}</div>
+                  {modal.form.author && <div className="muted">de {modal.form.author}</div>}
+                </>
+              ) : (
+                <>
+                  <input className="input" placeholder="Título" value={modal.form.title}
+                         onChange={e => setModal(m => ({ ...m, form: { ...m.form, title: e.target.value } }))} />
+                  <input className="input" placeholder="Autor" value={modal.form.author}
+                         onChange={e => setModal(m => ({ ...m, form: { ...m.form, author: e.target.value } }))} />
+                </>
+              )}
+
+              {/* Notas */}
+              {!modal.editing ? (
+                <div className="row" style={{ whiteSpace: 'pre-wrap', minHeight: 80 }}>
+                  {modal.form.notes ? modal.form.notes : <span className="muted">Sin notas</span>}
+                </div>
+              ) : (
+                <textarea className="textarea" rows={6} placeholder="Notas…"
+                  value={modal.form.notes}
+                  onChange={e => setModal(m => ({ ...m, form: { ...m.form, notes: e.target.value } }))} />
+              )}
+            </div>
+
+            {/* Botonera */}
             <div className="actions">
-              <a href={shareLinks.whatsapp} target="_blank" rel="noreferrer">💬 WhatsApp</a>
-              <a href={shareLinks.twitter} target="_blank" rel="noreferrer">🐦 Twitter/X</a>
-              <a href={shareLinks.facebook} target="_blank" rel="noreferrer">📘 Facebook</a>
-              <a href={shareLinks.instagram} target="_blank" rel="noreferrer">📸 Instagram</a>
-              <a href={shareLinks.tiktok} target="_blank" rel="noreferrer">🎵 TikTok</a>
-              <button className="btn green" onClick={showModal.onConfirm}>Vamos a por ello</button>
+              {/* Editar / Actualizar */}
+              {!modal.editing ? (
+                <button className="btn secondary" onClick={() => setModal(m => ({ ...m, editing: true }))}>Editar</button>
+              ) : (
+                <button className="btn" disabled={!hasChanges} onClick={saveModal}>
+                  {hasChanges ? 'Actualizar' : 'Actualizar'}
+                </button>
+              )}
+
+              {/* Acciones según tipo */}
+              {modal.kind === 'reading' && (
+                <button className="btn red" onClick={() => finishReading((modal.data as BookReading).id)}>Terminar</button>
+              )}
+
+              {modal.kind === 'wishlist' && (
+                <button className="btn green"
+                        onClick={() => startFromWishlist((modal.data as BookBase).id, modal.editing ? modal.form : undefined)}>
+                  Empezar a leer
+                </button>
+              )}
+
+              {modal.kind === 'finished' && (
+                <button className="btn" onClick={() => rereadFinished((modal.data as BookFinished).id)}>Volver a leer</button>
+              )}
             </div>
           </div>
         </div>
       )}
     </div>
-  );
-}
-
-/* Item de libro en lectura: ver/editar notas + terminar */
-function ReadingItem({
-  book, onUpdate, onFinish
-}: {
-  book: BookReading;
-  onUpdate: (b: BookReading) => void;
-  onFinish: () => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [notes, setNotes] = useState(book.notes || '');
-
-  useEffect(() => { setNotes(book.notes || ''); }, [book.notes]);
-
-  return (
-    <li style={{ padding: '10px 0' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-        <div style={{ flex: 1 }}>
-          <strong>{book.title}</strong>{book.author ? ` · ${book.author}` : ''}
-          {(!editing && book.notes) && (
-            <div className="muted" style={{ marginTop: 6, whiteSpace: 'pre-wrap' }}>{book.notes}</div>
-          )}
-          {editing && (
-            <div className="rows" style={{ marginTop: 8 }}>
-              <textarea
-                className="textarea"
-                placeholder="Notas del libro…"
-                value={notes}
-                onChange={e => setNotes(e.target.value)}
-              />
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                <button className="btn" onClick={() => { onUpdate({ ...book, notes: notes.trim() || undefined }); setEditing(false); }}>Guardar</button>
-                <button className="btn ghost" onClick={() => { setNotes(book.notes || ''); setEditing(false); }}>Cancelar</button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div style={{ display: 'flex', gap: 8 }}>
-          {!editing && <button className="btn secondary" onClick={() => setEditing(true)}>Editar</button>}
-          <button className="btn red" onClick={onFinish}>Terminar</button>
-        </div>
-      </div>
-    </li>
-  );
-}
-
-/* Subcomponente para "Libros terminados" con Editar/Volver a leer */
-function FinishedItem({ book, onUpdate, onReRead }: {
-  book: BookFinished;
-  onUpdate: (b: BookFinished) => void;
-  onReRead: () => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [notes, setNotes] = useState(book.notes || '');
-
-  const save = () => { onUpdate({ ...book, notes: notes.trim() || undefined }); setEditing(false); };
-
-  return (
-    <li style={{ padding: '10px 0' }}>
-      <div><strong>{book.title}</strong>{book.author ? ` · ${book.author}` : ''}</div>
-      <small className="muted">Terminado el {fmtDate(book.finishedAt)}</small>
-
-      {editing ? (
-        <div className="rows" style={{ marginTop: 8 }}>
-          <textarea className="textarea" placeholder="Notas del libro…" value={notes} onChange={e => setNotes(e.target.value)} />
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-            <button className="btn" onClick={save}>Guardar</button>
-            <button className="btn ghost" onClick={() => { setNotes(book.notes || ''); setEditing(false); }}>Cancelar</button>
-          </div>
-        </div>
-      ) : (
-        <>
-          {book.notes && <div className="muted" style={{ marginTop: 6 }}>{book.notes}</div>}
-          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-            <button className="btn secondary" onClick={() => setEditing(true)}>Editar</button>
-            <button className="btn" onClick={onReRead}>Volver a leer</button>
-          </div>
-        </>
-      )}
-    </li>
   );
 }
