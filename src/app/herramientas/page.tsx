@@ -16,8 +16,8 @@ const LS_BOOKS = 'akira_books_v1';
 const LS_RETOS = 'akira_mizona_retos_v1';
 const OLD_LS_NOTES = 'akira_notes_v1';
 const LS_BEHAVIORS = 'akira_behaviors_v1';
-const LS_MEALS = 'akira_meals_v1';              // <-- NUEVO
-const LS_MEALS_PROFILE = 'akira_meals_profile_v1'; // <-- NUEVO
+const LS_MEALS = 'akira_meals_v1';
+const LS_MEALS_PROFILE = 'akira_meals_profile_v1';
 
 function loadLS<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback;
@@ -33,8 +33,18 @@ const fmtTime = (d: number) =>
   new Date(d).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
 const fmtDate = (d: string | number) =>
   new Date(d).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }).replace('.', '');
-const todayKey = () => new Date().toISOString().slice(0, 10);
-const dateKey = (ts: number) => new Date(ts).toISOString().slice(0, 10);
+
+/* =========
+   Claves de fecha — **LOCAL** (no UTC)
+   ========= */
+function localDateKeyFromDate(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const da = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${da}`;
+}
+const todayKey = () => localDateKeyFromDate(new Date());
+const dateKey = (ts: number) => localDateKeyFromDate(new Date(ts));
 
 /* =========
    Fechas legibles (Hoy/Ayer)
@@ -136,7 +146,7 @@ export default function Herramientas() {
     { key: 'notas', label: 'Mis notas', Icon: Notebook },
     { key: 'gratitud', label: 'Diario de gratitud', Icon: Heart },
     { key: 'conductas', label: 'Registro de conductas', Icon: Activity },
-    { key: 'comidas', label: 'Registro de comidas', Icon: Utensils }, // <-- NUEVA
+    { key: 'comidas', label: 'Registro de comidas', Icon: Utensils },
     { key: 'objetivos', label: 'Objetivos para hoy', Icon: Target },
     { key: 'libros', label: 'Mis libros', Icon: BookOpen },
   ];
@@ -166,7 +176,7 @@ export default function Herramientas() {
         {tab === 'notas' && <NotasTool />}
         {tab === 'gratitud' && <GratitudTool />}
         {tab === 'conductas' && <ConductasTool />}
-        {tab === 'comidas' && <ComidasTool />} {/* <-- NUEVO */}
+        {tab === 'comidas' && <ComidasTool />}
         {tab === 'objetivos' && <GoalsTool />}
         {tab === 'libros' && <BooksTool />}
       </section>
@@ -621,7 +631,7 @@ function BehaviorCard({
 }
 
 /* ===========================
-   Registro de Comidas (NUEVO)
+   Registro de Comidas (rediseñado)
    =========================== */
 function ComidasTool() {
   // Perfil
@@ -634,41 +644,59 @@ function ComidasTool() {
   useEffect(() => { saveLS(LS_MEALS, byDay); }, [byDay]);
 
   const today = todayKey();
-  const list = byDay[today] || [];
 
-  // Formulario añadir
-  const mealTypes: MealType[] = ['Desayuno','Almuerzo','Comida','Merienda','Cena','Picoteo'];
-  const [type, setType] = useState<MealType>('Comida');
-  const [title, setTitle] = useState('');
-  const [calStr, setCalStr] = useState('');
+  // Abrir/cerrar por día (hoy abierto por defecto)
+  const [openDays, setOpenDays] = useState<Record<string, boolean>>({});
+  useEffect(() => { setOpenDays(o => ({ ...o, [today]: true })); }, [today]);
 
-  const addMeal = () => {
-    const t = title.trim();
-    if (!type || !t) return;
-    const calories = calStr.trim() ? Math.max(0, Number(calStr.trim())) : undefined;
-    const e: MealEntry = { id: crypto.randomUUID(), ts: Date.now(), type, title: t, calories };
-    setByDay(prev => ({ ...prev, [today]: [e, ...(prev[today] || [])] }));
-    setTitle(''); setCalStr('');
+  // Formularios por día (para poder añadir en días pasados)
+  type FormState = { type: MealType; title: string; calStr: string; time: string };
+  const [forms, setForms] = useState<Record<string, FormState>>({});
+
+  const getForm = (dk: string): FormState => forms[dk] || { type: 'Comida', title: '', calStr: '', time: '' };
+  const setForm = (dk: string, next: Partial<FormState>) =>
+    setForms(prev => ({ ...prev, [dk]: { ...getForm(dk), ...next } }));
+
+  // Días disponibles (si no hay registro de hoy, igualmente aparece)
+  const allDays = useMemo(() => {
+    const s = new Set<string>(Object.keys(byDay));
+    s.add(today);
+    return Array.from(s).sort((a,b)=>b.localeCompare(a));
+  }, [byDay, today]);
+
+  // Helpers
+  const summarize = (arr: MealEntry[]) => {
+    const count = arr.length;
+    const provided = arr.some(m => typeof m.calories === 'number');
+    const kcal = provided ? arr.reduce((acc, m) => acc + (m.calories || 0), 0) : null;
+    const diff = (typeof profile.target === 'number' && kcal !== null) ? (kcal - profile.target) : null;
+    return { count, kcal, diff };
   };
 
-  const deleteMeal = (id: string) => {
-    setByDay(prev => ({ ...prev, [today]: (prev[today] || []).filter(m => m.id !== id) }));
+  const addMealForDay = (dk: string) => {
+    const f = getForm(dk);
+    const title = f.title.trim();
+    if (!title) return;
+
+    const calories = f.calStr.trim() ? Math.max(0, Number(f.calStr.trim())) : undefined;
+    const hhmm = /^\d{2}:\d{2}$/.test(f.time) ? f.time : '12:00';
+    // Timestamp local dentro del día seleccionado
+    const ts = new Date(`${dk}T${hhmm}:00`).getTime();
+
+    const entry: MealEntry = { id: crypto.randomUUID(), ts, type: f.type, title, calories };
+    setByDay(prev => {
+      const arr = prev[dk] || [];
+      const newArr = [entry, ...arr].sort((a,b)=>b.ts - a.ts);
+      return { ...prev, [dk]: newArr };
+    });
+    // limpiar formulario de ese día
+    setForm(dk, { title: '', calStr: '', time: '' });
+    setOpenDays(o => ({ ...o, [dk]: true })); // lo dejamos abierto
   };
 
-  // Totales de hoy
-  const mealsCount = list.length;
-  const caloriesProvided = list.some(m => typeof m.calories === 'number');
-  const caloriesToday = caloriesProvided ? list.reduce((acc, m) => acc + (m.calories || 0), 0) : null;
-  const diff = (typeof profile.target === 'number' && caloriesToday !== null)
-    ? caloriesToday - profile.target
-    : null;
-
-  // Historial (todas las fechas)
-  const grouped: Record<string, MealEntry[]> = {};
-  Object.entries(byDay).forEach(([dk, arr]) => { grouped[dk] = arr; });
-  const days = Object.keys(grouped).sort((a,b)=>b.localeCompare(a));
-
-  const [open, setOpen] = useState(false);
+  const deleteMeal = (dk: string, id: string) => {
+    setByDay(prev => ({ ...prev, [dk]: (prev[dk] || []).filter(m => m.id !== id) }));
+  };
 
   return (
     <div>
@@ -708,72 +736,78 @@ function ComidasTool() {
         </div>
       </section>
 
-      {/* Añadir comida */}
-      <section className="card" style={{ marginTop: 12 }}>
-        <div className="rows">
-          <div className="row" style={{ display:'grid', gridTemplateColumns:'180px 1fr 160px auto', gap:8 }}>
-            <select className="input" value={type} onChange={e=>setType(e.target.value as MealType)}>
-              {mealTypes.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-            <input className="input" placeholder="Comida (p. ej., Huevos con bacon)" value={title} onChange={e=>setTitle(e.target.value)} />
-            <input className="input" inputMode="numeric" placeholder="Calorías (kcal · opcional)" value={calStr} onChange={e=>setCalStr(e.target.value)} />
-            <button className="btn inline-flex items-center gap-2 whitespace-nowrap" onClick={addMeal}>
-              <Plus className="w-4 h-4" /> Registrar
-            </button>
-          </div>
-        </div>
+      {/* Tarjetas por día (resumen + desplegable + formulario + lista) */}
+      <section className="rows" style={{ marginTop: 12 }}>
+        {allDays.map(dk => {
+          const arr = (byDay[dk] || []).slice().sort((a,b)=>b.ts - a.ts);
+          const { count, kcal, diff } = summarize(arr);
+          const open = !!openDays[dk];
+          const form = getForm(dk);
 
-        {/* Totales + Flecha */}
-        <div className="mt-3" style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
-          <span className="muted">Número de comidas: <b>{mealsCount}</b></span>
-          <span className="muted">Calorías consumidas: <b>{caloriesToday !== null ? caloriesToday : '—'}</b></span>
-          {diff !== null && (
-            <span className="muted">Diferencia vs objetivo: <b style={{ whiteSpace:'nowrap' }}>
-              {diff > 0 ? `+${diff}` : `${diff}`} kcal
-            </b></span>
-          )}
-          <button
-            className="btn secondary inline-flex items-center px-2 py-1"
-            aria-label={open ? 'Ocultar historial' : 'Ver historial'}
-            title={open ? 'Ocultar historial' : 'Ver historial'}
-            onClick={() => setOpen(!open)}
-          >
-            {open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-          </button>
-        </div>
+          return (
+            <div key={dk} className="border rounded-2xl p-4">
+              {/* Resumen compactado */}
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div>
+                  <div>· <b>Fecha:</b> {formatDateLabel(dk)}</div>
+                  <div className="muted" style={{ marginTop: 4 }}>
+                    <div>· Número de comidas: <b>{count}</b></div>
+                    <div>· Calorías consumidas: <b>{kcal !== null ? kcal : '—'}</b></div>
+                    <div>· Diferencia vs objetivo: <b>{diff !== null ? (diff > 0 ? `+${diff}` : `${diff}`) + ' kcal' : '—'}</b></div>
+                  </div>
+                </div>
+                <button
+                  className="btn secondary inline-flex items-center px-2 py-1"
+                  aria-label={open ? 'Ocultar' : 'Ver detalles'}
+                  title={open ? 'Ocultar' : 'Ver detalles'}
+                  onClick={() => setOpenDays(o => ({ ...o, [dk]: !o[dk] }))}
+                >
+                  {open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </button>
+              </div>
 
-        {/* Historial agrupado por día */}
-        {open && (
-          <div className="rows mt-3">
-            {days.length === 0 && <div className="muted">Aún no hay comidas registradas.</div>}
-            {days.map(dk => (
-              <div key={dk} className="border rounded-xl p-3">
-                <div style={{ fontWeight: 600 }}>{formatDateLabel(dk)}</div>
-                <ul className="list" style={{ marginTop: 8 }}>
-                  {(grouped[dk] || []).map(e => (
-                    <li key={e.id} style={{ padding:'8px 0' }}>
-                      <div className="flex items-start justify-between gap-3 flex-wrap">
-                        <div style={{ minWidth:0, flex:'1 1 320px' }}>
-                          <div className="muted" style={{ fontSize:12 }}>{fmtTime(e.ts)}</div>
-                          <div className="inline-flex items-center gap-2">
-                            <span className="inline-block rounded-full border px-2 py-0.5">{e.type}</span>
-                            <span><b>{e.title}</b></span>
-                            <span className="muted">{typeof e.calories === 'number' ? `· ${e.calories} kcal` : '· kcal —'}</span>
+              {/* Contenido desplegable */}
+              {open && (
+                <div className="rows mt-3">
+                  {/* Formulario para este día */}
+                  <div className="row" style={{ display:'grid', gap:8, gridTemplateColumns:'repeat(auto-fit, minmax(160px, 1fr))' }}>
+                    <select className="input" value={form.type} onChange={e=>setForm(dk, { type: e.target.value as MealType })}>
+                      {(['Desayuno','Almuerzo','Comida','Merienda','Cena','Picoteo'] as MealType[]).map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                    <textarea className="textarea" rows={2} placeholder="Comida (p. ej., Huevos con bacon)" value={form.title} onChange={e=>setForm(dk, { title: e.target.value })} />
+                    <input className="input" inputMode="numeric" placeholder="Calorías (kcal · opcional)" value={form.calStr} onChange={e=>setForm(dk, { calStr: e.target.value })} />
+                    <input className="input" type="time" placeholder="Hora (opcional)" value={form.time} onChange={e=>setForm(dk, { time: e.target.value })} />
+                    <button className="btn inline-flex items-center gap-2 whitespace-nowrap" onClick={() => addMealForDay(dk)}>
+                      <Plus className="w-4 h-4" /> Registrar en {formatDateLabel(dk)}
+                    </button>
+                  </div>
+
+                  {/* Lista de comidas del día */}
+                  <ul className="list" style={{ marginTop: 8 }}>
+                    {arr.length === 0 && <li className="muted" style={{ padding:'6px 0' }}>Sin comidas registradas.</li>}
+                    {arr.map(e => (
+                      <li key={e.id} style={{ padding:'8px 0' }}>
+                        <div className="flex items-start justify-between gap-3 flex-wrap">
+                          <div style={{ minWidth:0, flex:'1 1 320px' }}>
+                            <div className="muted" style={{ fontSize:12 }}>{fmtTime(e.ts)}</div>
+                            <div className="inline-flex items-center gap-2">
+                              <span className="inline-block rounded-full border px-2 py-0.5">{e.type}</span>
+                              <span><b>{e.title}</b></span>
+                              <span className="muted">{typeof e.calories === 'number' ? `· ${e.calories} kcal` : '· kcal —'}</span>
+                            </div>
                           </div>
-                        </div>
-                        {dateKey(e.ts) === today ? (
-                          <button className="btn red inline-flex items-center gap-2 whitespace-nowrap" onClick={() => deleteMeal(e.id)}>
+                          <button className="btn red inline-flex items-center gap-2 whitespace-nowrap" onClick={() => deleteMeal(dk, e.id)}>
                             <Trash2 className="w-4 h-4" /> Borrar
                           </button>
-                        ) : null}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </section>
     </div>
   );
@@ -1102,7 +1136,7 @@ function BooksTool() {
         </ul>
       </section>
 
-      {/* ======== MODAL LIBROS (reutilizable) ======== */}
+      {/* ======== MODAL ESTADÍSTICAS ======== */}
       {statsOpen && (
         <div className="modal-backdrop" onClick={() => setStatsOpen(false)}>
           <div className="modal" onClick={e => e.stopPropagation()} style={{ width: 'min(520px, 92vw)', textAlign: 'center' }}>
