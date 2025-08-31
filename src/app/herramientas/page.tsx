@@ -3,8 +3,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Notebook, Heart, Target, BookOpen,
-  Trash2, X, Pencil, Save, Eye
+  Trash2, X, Pencil, Save, Eye, Utensils, Calculator
 } from 'lucide-react';
+import CalorieCalculatorModal from '@/components/CalorieCalculatorModal';
 
 /* ===========================
    Helpers de almacenamiento
@@ -14,6 +15,7 @@ const LS_GRATITUDE = 'akira_gratitude_v2';
 const LS_GOALS = 'akira_goals_today_v1';
 const LS_BOOKS = 'akira_books_v1';
 const LS_RETOS = 'akira_mizona_retos_v1';
+const LS_MEALS = 'akira_meals_v1';
 const OLD_LS_NOTES = 'akira_notes_v1';
 
 function loadLS<T>(key: string, fallback: T): T {
@@ -90,19 +92,37 @@ type GoalsByDay = Record<string, Goal[]>;
 
 type Reto = { id: string; text: string; createdAt: number; due: string; done: boolean; permanent?: boolean };
 
+/* ===== Registro de comidas (tipos) ===== */
+type MealItem = {
+  id: string;
+  foodId?: string;
+  customName?: string;
+  kcalPer100g: number;
+  grams: number;
+};
+type MealResult = {
+  id: string;
+  name: string;
+  items: MealItem[];
+  totalKcal: number;
+  createdAt: number;
+};
+type MealsByDay = Record<string, MealResult[]>;
+
 /* ===========================
    Herramientas
    =========================== */
 export default function Herramientas() {
-  type TabKey = 'notas' | 'gratitud' | 'objetivos' | 'libros';
+  type TabKey = 'comidas' | 'notas' | 'gratitud' | 'objetivos' | 'libros';
   const TABS: { key: TabKey; label: string; Icon: React.ComponentType<any> }[] = [
+    { key: 'comidas', label: 'Comidas', Icon: Utensils },
     { key: 'notas', label: 'Mis notas', Icon: Notebook },
     { key: 'gratitud', label: 'Diario de gratitud', Icon: Heart },
     { key: 'objetivos', label: 'Objetivos para hoy', Icon: Target },
     { key: 'libros', label: 'Mis libros', Icon: BookOpen },
   ];
 
-  const [tab, setTab] = useState<TabKey>('notas');
+  const [tab, setTab] = useState<TabKey>('comidas');
 
   return (
     <div className="py-6 container" style={{ background: '#fff' }}>
@@ -124,11 +144,121 @@ export default function Herramientas() {
       </div>
 
       <section className="card" id={`panel-${tab}`} role="tabpanel" aria-labelledby={`tab-${tab}`}>
+        {tab === 'comidas' && <FoodLogTool />}
         {tab === 'notas' && <NotasTool />}
         {tab === 'gratitud' && <GratitudTool />}
         {tab === 'objetivos' && <GoalsTool />}
         {tab === 'libros' && <BooksTool />}
       </section>
+    </div>
+  );
+}
+
+/* ===========================
+   Registro de Comidas
+   =========================== */
+function FoodLogTool() {
+  const [byDay, setByDay] = useState<MealsByDay>(() => loadLS<MealsByDay>(LS_MEALS, {}));
+  const [calcOpen, setCalcOpen] = useState(false);
+
+  const today = todayKey();
+  const meals = byDay[today] ?? [];
+  const totalKcal = meals.reduce((a, m) => a + (m.totalKcal || 0), 0);
+
+  // Quick add (si quieres registrar algo sin la calculadora)
+  const [quickName, setQuickName] = useState('');
+  const [quickKcal, setQuickKcal] = useState('');
+
+  useEffect(() => { saveLS(LS_MEALS, byDay); }, [byDay]);
+
+  const addMeal = (m: MealResult) => {
+    setByDay(prev => ({ ...prev, [today]: [m, ...(prev[today] ?? [])] }));
+  };
+
+  const quickRegister = () => {
+    const name = quickName.trim();
+    const kcal = Number(quickKcal.trim());
+    if (!name || !kcal || kcal <= 0) return;
+    const payload: MealResult = {
+      id: crypto.randomUUID(),
+      name,
+      items: [],
+      totalKcal: Math.round(kcal),
+      createdAt: Date.now(),
+    };
+    addMeal(payload);
+    setQuickName(''); setQuickKcal('');
+  };
+
+  const delMeal = (id: string) => {
+    setByDay(prev => ({ ...prev, [today]: (prev[today] ?? []).filter(m => m.id !== id) }));
+  };
+
+  return (
+    <div>
+      <h3 style={{ marginTop: 0 }}>Registro de comidas</h3>
+      <div className="muted" style={{ marginTop: 4 }}>{formatDateLabel(today)}</div>
+
+      {/* Botón negro: Calculadora de calorías */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+        <button
+          className="btn"
+          onClick={() => setCalcOpen(true)}
+          title="Abrir calculadora de calorías"
+          aria-label="Abrir calculadora de calorías"
+        >
+          <Calculator className="w-4 h-4" /> Calculadora de calorías
+        </button>
+      </div>
+
+      {/* Formulario rápido + botón verde Registrar comida */}
+      <div className="rows" style={{ marginTop: 12 }}>
+        <div className="row" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <input className="input" placeholder="Nombre de la comida" value={quickName}
+                 onChange={e => setQuickName(e.target.value)} style={{ flex: '1 1 220px', minWidth: 0 }} />
+          <input className="input" placeholder="kcal" inputMode="numeric" value={quickKcal}
+                 onChange={e => setQuickKcal(e.target.value)} style={{ width: 120 }} />
+          <button className="btn green" onClick={quickRegister}>
+            <Utensils className="w-4 h-4" /> Registrar comida
+          </button>
+        </div>
+      </div>
+
+      {/* Lista de comidas del día */}
+      <section className="card" style={{ marginTop: 12 }}>
+        <div className="flex items-center justify-between gap-2" style={{ display: 'flex' }}>
+          <h4 style={{ margin: 0 }}>Comidas de hoy</h4>
+          <div className="muted">Total: <b>{Math.round(totalKcal)}</b> kcal</div>
+        </div>
+
+        <ul className="list" style={{ marginTop: 8 }}>
+          {meals.length === 0 && <li className="muted" style={{ padding: '8px 0' }}>Aún no has registrado comidas hoy.</li>}
+          {meals.map(m => (
+            <li key={m.id} style={{ padding: '10px 0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+                  <strong>{m.name}</strong>
+                  <div className="muted" style={{ marginTop: 4 }}>
+                    {m.items.length
+                      ? `${m.items.length} ingrediente${m.items.length > 1 ? 's' : ''} · ${m.totalKcal} kcal`
+                      : `${m.totalKcal} kcal`}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  <button className="btn red" onClick={() => delMeal(m.id)}>Borrar</button>
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      {/* Modal calculadora */}
+      <CalorieCalculatorModal
+        isOpen={calcOpen}
+        onClose={() => setCalcOpen(false)}
+        onSave={(meal) => { addMeal(meal); setCalcOpen(false); }}
+      />
     </div>
   );
 }
@@ -364,7 +494,6 @@ function GratitudeDay({ date, rows, onUpdate, editable = true }: {
 /* ===========================
    Objetivos para hoy
    =========================== */
-
 function GoalsTool() {
   const [byDay, setByDay] = useState<GoalsByDay>(() => loadLS<GoalsByDay>(LS_GOALS, {}));
   const [text, setText] = useState('');
