@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import ThoughtModal from '@/components/ThoughtModal';
 import { listPrograms } from '@/lib/programs_catalog';
+import { BookOpen, Dumbbell, PiggyBank, Brain, ArrowRight } from 'lucide-react'; // ← iconos
 
 /* =========================
    Tipos y helpers
@@ -68,12 +69,23 @@ function pickImage(ident: string | undefined, index: number) {
   return (ident && mapByKey[ident]) || byIndex[index] || '/reading.jpg';
 }
 
+// ← Mapeo de icono por programa (lectura, burpees, finanzas, meditación)
+function pickIcon(ident?: string) {
+  const k = (ident ?? '').toLowerCase();
+  if (k.includes('lect') || k.includes('read')) return BookOpen;
+  if (k.includes('burp')) return Dumbbell;
+  if (k.includes('fin') || k.includes('sav')) return PiggyBank;
+  if (k.includes('medit') || k.includes('mind')) return Brain;
+  return ArrowRight;
+}
+
 function ProgramCard({ program }: { program: ProgramLike }) {
   const { title, subtitle } = program;
   const ident = program.slug ?? program.key ?? '';
   const href = program.href ?? (ident ? `/habitos?key=${encodeURIComponent(ident)}` : '/habitos');
 
   const image = program.image ?? pickImage(ident, 0);
+  const Icon = pickIcon(ident);
 
   return (
     <Link href={href} className="block group">
@@ -103,10 +115,11 @@ function ProgramCard({ program }: { program: ProgramLike }) {
 
           <div className="mt-3">
             <span
-              className="inline-flex items-center px-4 py-2 rounded-full bg-white text-black text-sm font-medium
-                         group-hover:translate-y-[-1px] transition-transform"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white text-black text-sm font-medium
+                         transition-colors group-active:bg-black group-active:text-white"
             >
               Ver programa
+              <Icon className="h-4 w-4" aria-hidden="true" />
             </span>
           </div>
         </div>
