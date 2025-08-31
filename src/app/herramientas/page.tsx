@@ -3,9 +3,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Notebook, Heart, Target, BookOpen,
-  Trash2, X, Pencil, Save, Eye, Utensils, Calculator
+  Trash2, X, Pencil, Save, Eye, Activity, ChevronDown, ChevronUp, Plus, Utensils
 } from 'lucide-react';
-import CalorieCalculatorModal from '@/components/CalorieCalculatorModal';
 
 /* ===========================
    Helpers de almacenamiento
@@ -15,8 +14,10 @@ const LS_GRATITUDE = 'akira_gratitude_v2';
 const LS_GOALS = 'akira_goals_today_v1';
 const LS_BOOKS = 'akira_books_v1';
 const LS_RETOS = 'akira_mizona_retos_v1';
-const LS_MEALS = 'akira_meals_v1';
 const OLD_LS_NOTES = 'akira_notes_v1';
+const LS_BEHAVIORS = 'akira_behaviors_v1';
+const LS_MEALS = 'akira_meals_v1';
+const LS_MEALS_PROFILE = 'akira_meals_profile_v1';
 
 function loadLS<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback;
@@ -28,9 +29,22 @@ function saveLS<T>(key: string, value: T) {
 }
 const fmtDateTime = (d: string | number) =>
   new Date(d).toLocaleString('es-ES', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).replace('.', '');
+const fmtTime = (d: number) =>
+  new Date(d).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
 const fmtDate = (d: string | number) =>
   new Date(d).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }).replace('.', '');
-const todayKey = () => new Date().toISOString().slice(0, 10);
+
+/* =========
+   Claves de fecha — **LOCAL** (no UTC)
+   ========= */
+function localDateKeyFromDate(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const da = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${da}`;
+}
+const todayKey = () => localDateKeyFromDate(new Date());
+const dateKey = (ts: number) => localDateKeyFromDate(new Date(ts));
 
 /* =========
    Fechas legibles (Hoy/Ayer)
@@ -78,7 +92,7 @@ function migrateNotesIfNeeded() {
 }
 
 /* ===========================
-   Tipos (añadimos pages?: number)
+   Tipos existentes
    =========================== */
 type Note = { id: string; title: string; text: string; createdAt: number };
 
@@ -92,42 +106,57 @@ type GoalsByDay = Record<string, Goal[]>;
 
 type Reto = { id: string; text: string; createdAt: number; due: string; done: boolean; permanent?: boolean };
 
-/* ===== Registro de comidas (tipos) ===== */
-type MealItem = {
+/* ===========================
+   Tipos NUEVOS (Conductas)
+   =========================== */
+type Mood =
+  | 'Aburrido' | 'Ansioso' | 'Nervioso' | 'Relajado' | 'Eufórico'
+  | 'Triste' | 'Cansado' | 'Estresado' | 'Enfadado' | 'Feliz'
+  | 'Otro';
+
+type BehaviorEntry = {
   id: string;
-  foodId?: string;
-  customName?: string;
-  kcalPer100g: number;
-  grams: number;
+  ts: number;
+  signal: string;
+  mood: Mood;
+  moodOther?: string;
 };
-type MealResult = {
+
+type Behavior = {
   id: string;
   name: string;
-  items: MealItem[];
-  totalKcal: number;
   createdAt: number;
+  entries: BehaviorEntry[];
 };
-type MealsByDay = Record<string, MealResult[]>;
+
+/* ===========================
+   Tipos NUEVOS (Comidas)
+   =========================== */
+type MealType = 'Desayuno' | 'Almuerzo' | 'Comida' | 'Merienda' | 'Cena' | 'Picoteo';
+type MealEntry = { id: string; ts: number; type: MealType; title: string; calories?: number };
+type MealsByDay = Record<string, MealEntry[]>;
+type MealProfile = { height?: number; weight?: number; target?: number };
 
 /* ===========================
    Herramientas
    =========================== */
 export default function Herramientas() {
-  type TabKey = 'comidas' | 'notas' | 'gratitud' | 'objetivos' | 'libros';
+  type TabKey = 'notas' | 'gratitud' | 'conductas' | 'comidas' | 'objetivos' | 'libros';
   const TABS: { key: TabKey; label: string; Icon: React.ComponentType<any> }[] = [
-    { key: 'comidas', label: 'Comidas', Icon: Utensils },
     { key: 'notas', label: 'Mis notas', Icon: Notebook },
     { key: 'gratitud', label: 'Diario de gratitud', Icon: Heart },
+    { key: 'conductas', label: 'Registro de conductas', Icon: Activity },
+    { key: 'comidas', label: 'Registro de comidas', Icon: Utensils },
     { key: 'objetivos', label: 'Objetivos para hoy', Icon: Target },
     { key: 'libros', label: 'Mis libros', Icon: BookOpen },
   ];
 
-  const [tab, setTab] = useState<TabKey>('comidas');
+  const [tab, setTab] = useState<TabKey>('notas');
 
   return (
     <div className="py-6 container" style={{ background: '#fff' }}>
       <h2 className="page-title">Herramientas</h2>
-      <p className="muted" style={{ margin: '0 0 16px' }}>Tu espacio para escribir y agradecer cada día.</p>
+      <p className="muted" style={{ margin: '0 0 16px' }}>Tu espacio para escribir, agradecer y registrar conductas/comidas.</p>
 
       <div role="tablist" className="tabbar">
         {TABS.map(({ key, label, Icon }) => (
@@ -144,121 +173,13 @@ export default function Herramientas() {
       </div>
 
       <section className="card" id={`panel-${tab}`} role="tabpanel" aria-labelledby={`tab-${tab}`}>
-        {tab === 'comidas' && <FoodLogTool />}
         {tab === 'notas' && <NotasTool />}
         {tab === 'gratitud' && <GratitudTool />}
+        {tab === 'conductas' && <ConductasTool />}
+        {tab === 'comidas' && <ComidasTool />}
         {tab === 'objetivos' && <GoalsTool />}
         {tab === 'libros' && <BooksTool />}
       </section>
-    </div>
-  );
-}
-
-/* ===========================
-   Registro de Comidas
-   =========================== */
-function FoodLogTool() {
-  const [byDay, setByDay] = useState<MealsByDay>(() => loadLS<MealsByDay>(LS_MEALS, {}));
-  const [calcOpen, setCalcOpen] = useState(false);
-
-  const today = todayKey();
-  const meals = byDay[today] ?? [];
-  const totalKcal = meals.reduce((a, m) => a + (m.totalKcal || 0), 0);
-
-  // Quick add (si quieres registrar algo sin la calculadora)
-  const [quickName, setQuickName] = useState('');
-  const [quickKcal, setQuickKcal] = useState('');
-
-  useEffect(() => { saveLS(LS_MEALS, byDay); }, [byDay]);
-
-  const addMeal = (m: MealResult) => {
-    setByDay(prev => ({ ...prev, [today]: [m, ...(prev[today] ?? [])] }));
-  };
-
-  const quickRegister = () => {
-    const name = quickName.trim();
-    const kcal = Number(quickKcal.trim());
-    if (!name || !kcal || kcal <= 0) return;
-    const payload: MealResult = {
-      id: crypto.randomUUID(),
-      name,
-      items: [],
-      totalKcal: Math.round(kcal),
-      createdAt: Date.now(),
-    };
-    addMeal(payload);
-    setQuickName(''); setQuickKcal('');
-  };
-
-  const delMeal = (id: string) => {
-    setByDay(prev => ({ ...prev, [today]: (prev[today] ?? []).filter(m => m.id !== id) }));
-  };
-
-  return (
-    <div>
-      <h3 style={{ marginTop: 0 }}>Registro de comidas</h3>
-      <div className="muted" style={{ marginTop: 4 }}>{formatDateLabel(today)}</div>
-
-      {/* Botón negro: Calculadora de calorías */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
-        <button
-          className="btn"
-          onClick={() => setCalcOpen(true)}
-          title="Abrir calculadora de calorías"
-          aria-label="Abrir calculadora de calorías"
-        >
-          <Calculator className="w-4 h-4" /> Calculadora de calorías
-        </button>
-      </div>
-
-      {/* Formulario rápido + botón verde Registrar comida */}
-      <div className="rows" style={{ marginTop: 12 }}>
-        <div className="row" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <input className="input" placeholder="Nombre de la comida" value={quickName}
-                 onChange={e => setQuickName(e.target.value)} style={{ flex: '1 1 220px', minWidth: 0 }} />
-          <input className="input" placeholder="kcal" inputMode="numeric" value={quickKcal}
-                 onChange={e => setQuickKcal(e.target.value)} style={{ width: 120 }} />
-          <button className="btn green" onClick={quickRegister}>
-            <Utensils className="w-4 h-4" /> Registrar comida
-          </button>
-        </div>
-      </div>
-
-      {/* Lista de comidas del día */}
-      <section className="card" style={{ marginTop: 12 }}>
-        <div className="flex items-center justify-between gap-2" style={{ display: 'flex' }}>
-          <h4 style={{ margin: 0 }}>Comidas de hoy</h4>
-          <div className="muted">Total: <b>{Math.round(totalKcal)}</b> kcal</div>
-        </div>
-
-        <ul className="list" style={{ marginTop: 8 }}>
-          {meals.length === 0 && <li className="muted" style={{ padding: '8px 0' }}>Aún no has registrado comidas hoy.</li>}
-          {meals.map(m => (
-            <li key={m.id} style={{ padding: '10px 0' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-                <div style={{ flex: '1 1 220px', minWidth: 0 }}>
-                  <strong>{m.name}</strong>
-                  <div className="muted" style={{ marginTop: 4 }}>
-                    {m.items.length
-                      ? `${m.items.length} ingrediente${m.items.length > 1 ? 's' : ''} · ${m.totalKcal} kcal`
-                      : `${m.totalKcal} kcal`}
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                  <button className="btn red" onClick={() => delMeal(m.id)}>Borrar</button>
-                </div>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      {/* Modal calculadora */}
-      <CalorieCalculatorModal
-        isOpen={calcOpen}
-        onClose={() => setCalcOpen(false)}
-        onSave={(meal) => { addMeal(meal); setCalcOpen(false); }}
-      />
     </div>
   );
 }
@@ -492,6 +413,476 @@ function GratitudeDay({ date, rows, onUpdate, editable = true }: {
 }
 
 /* ===========================
+   Registro de Conductas
+   =========================== */
+function ConductasTool() {
+  const [behaviors, setBehaviors] = useState<Behavior[]>(() => loadLS<Behavior[]>(LS_BEHAVIORS, []));
+  const [newName, setNewName] = useState('');
+
+  useEffect(() => { saveLS(LS_BEHAVIORS, behaviors); }, [behaviors]);
+
+  const moods: Mood[] = ['Aburrido','Ansioso','Nervioso','Relajado','Eufórico','Triste','Cansado','Estresado','Enfadado','Feliz','Otro'];
+
+  const addBehavior = () => {
+    const name = newName.trim();
+    if (!name) return;
+    const b: Behavior = { id: crypto.randomUUID(), name, createdAt: Date.now(), entries: [] };
+    setBehaviors([b, ...behaviors]);
+    setNewName('');
+  };
+
+  const deleteBehavior = (id: string) => {
+    if (!confirm('¿Eliminar esta conducta y todos sus registros?')) return;
+    setBehaviors(behaviors.filter(b => b.id !== id));
+  };
+
+  const addEntry = (id: string, payload: { signal: string; mood: Mood; moodOther?: string }) => {
+    setBehaviors(behaviors.map(b => {
+      if (b.id !== id) return b;
+      const e: BehaviorEntry = { id: crypto.randomUUID(), ts: Date.now(), signal: payload.signal.trim(), mood: payload.mood, moodOther: payload.mood === 'Otro' ? (payload.moodOther || '').trim() : undefined };
+      return { ...b, entries: [e, ...b.entries] };
+    }));
+  };
+
+  const deleteEntry = (bid: string, eid: string) => {
+    setBehaviors(behaviors.map(b => b.id === bid ? { ...b, entries: b.entries.filter(e => e.id !== eid) } : b));
+  };
+
+  const visible = behaviors.slice().sort((a,b) => (b.createdAt - a.createdAt));
+
+  return (
+    <div>
+      <h3 style={{ marginTop: 0 }}>Registro de conductas</h3>
+      <p className="muted">Crea conductas raíz (p. ej., <i>Fumar</i> o <i>Uso dispositivo móvil</i>) y registra cada repetición con su señal y estado de ánimo.</p>
+
+      {/* Crear conducta */}
+      <div className="rows" style={{ marginTop: 12 }}>
+        <div className="row" style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+          <input className="input" placeholder="Nombre de la conducta (p. ej., Fumar)" value={newName} onChange={e=>setNewName(e.target.value)} style={{ flex:'1 1 260px', minWidth:0 }} />
+          <button className="btn inline-flex items-center gap-2 whitespace-nowrap" onClick={addBehavior}>
+            <Plus className="w-4 h-4" /> Crear
+          </button>
+        </div>
+      </div>
+
+      {/* Lista de conductas */}
+      <div className="rows" style={{ marginTop: 16 }}>
+        {visible.length === 0 && (
+          <div className="muted">Aún no hay conductas creadas.</div>
+        )}
+        {visible.map(b => (
+          <BehaviorCard
+            key={b.id}
+            behavior={b}
+            moods={moods}
+            onAddEntry={addEntry}
+            onDelete={() => deleteBehavior(b.id)}
+            onDeleteEntry={(eid) => deleteEntry(b.id, eid)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BehaviorCard({
+  behavior, moods, onAddEntry, onDelete, onDeleteEntry
+}:{
+  behavior: Behavior;
+  moods: Mood[];
+  onAddEntry: (id: string, payload:{signal:string; mood:Mood; moodOther?:string}) => void;
+  onDelete: () => void;
+  onDeleteEntry: (eid: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [signal, setSignal] = useState('');
+  const [mood, setMood] = useState<Mood>('Relajado');
+  const [moodOther, setMoodOther] = useState('');
+
+  const tKey = todayKey();
+  const countToday = behavior.entries.filter(e => dateKey(e.ts) === tKey).length;
+  const total = behavior.entries.length;
+
+  // Últimos 7 días
+  const now = new Date();
+  const from = new Date(now); from.setHours(0,0,0,0); from.setDate(from.getDate() - 6);
+  const last7 = behavior.entries.filter(e => new Date(e.ts) >= from);
+  const moodDist = last7.reduce<Record<string, number>>((acc, e) => {
+    const k = e.mood === 'Otro' ? (e.moodOther?.trim() || 'Otro') : e.mood;
+    acc[k] = (acc[k] || 0) + 1;
+    return acc;
+  }, {});
+  const moodDistPairs = Object.entries(moodDist).sort((a,b)=>b[1]-a[1]);
+
+  // Historial agrupado por día
+  const grouped: Record<string, BehaviorEntry[]> = {};
+  for (const e of behavior.entries) {
+    const dk = dateKey(e.ts);
+    (grouped[dk] ||= []).push(e);
+  }
+  const days = Object.keys(grouped).sort((a,b)=>b.localeCompare(a));
+
+  const submitEntry = () => {
+    onAddEntry(behavior.id, { signal, mood, moodOther });
+    setSignal(''); setMood('Relajado'); setMoodOther('');
+    setAdding(false);
+    setOpen(true);
+  };
+
+  return (
+    <article className="border rounded-2xl p-4" style={{ borderColor: 'var(--line)' }}>
+      {/* Cabecera */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 700, fontSize: 16, display:'flex', alignItems:'center', gap:8 }}>
+            {behavior.name}
+          </div>
+
+          {/* Totales + Flecha */}
+          <div style={{ marginTop: 2, display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
+            <span className="muted">Hoy: <b>{countToday}</b></span>
+            <span className="muted">Total: <b>{total}</b></span>
+            <button
+              className="btn secondary inline-flex items-center px-2 py-1"
+              aria-label={open ? 'Ocultar historial' : 'Ver historial'}
+              title={open ? 'Ocultar historial' : 'Ver historial'}
+              onClick={() => setOpen(!open)}
+            >
+              {open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </button>
+          </div>
+        </div>
+
+        <div className="flex gap-2 flex-wrap">
+          {!adding ? (
+            <button className="btn inline-flex items-center gap-2 whitespace-nowrap" onClick={() => setAdding(true)}>Registrar</button>
+          ) : (
+            <button className="btn ghost inline-flex items-center gap-2 whitespace-nowrap" onClick={() => setAdding(false)}>Cancelar</button>
+          )}
+          <button className="btn red inline-flex items-center gap-2 whitespace-nowrap" onClick={onDelete}>
+            <Trash2 className="w-4 h-4" /> Borrar
+          </button>
+        </div>
+      </div>
+
+      {/* Formulario rápido */}
+      {adding && (
+        <div className="rows mt-3">
+          <input className="input" placeholder="Señal (¿qué ocurrió antes?)" value={signal} onChange={e=>setSignal(e.target.value)} />
+          <div className="row" style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+            <select className="input" value={mood} onChange={e=>setMood(e.target.value as Mood)} style={{ flex:'1 1 220px' }}>
+              {moods.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+            {mood === 'Otro' && (
+              <input className="input" placeholder="Especifica el estado de ánimo" value={moodOther} onChange={e=>setMoodOther(e.target.value)} style={{ flex:'2 1 260px' }} />
+            )}
+            <button className="btn inline-flex items-center gap-2 whitespace-nowrap" onClick={submitEntry}>Añadir registro</button>
+          </div>
+        </div>
+      )}
+
+      {/* Resumen 7 días */}
+      {moodDistPairs.length > 0 && (
+        <div className="mt-3">
+          <div className="muted" style={{ marginBottom: 6 }}>Últimos 7 días: <b>{last7.length}</b> registros</div>
+          <div className="flex gap-6 flex-wrap">
+            {moodDistPairs.map(([k, v]) => (
+              <span key={k} className="inline-flex items-center gap-2" style={{ fontSize: 13 }}>
+                <span className="inline-block rounded-full border px-2 py-0.5">{k}</span>
+                <b>{v}</b>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Historial */}
+      {open && (
+        <div className="rows mt-3">
+          {days.map(dk => (
+            <div key={dk} className="border rounded-xl p-3">
+              <div style={{ fontWeight: 600 }}>{formatDateLabel(dk)}</div>
+              <ul className="list" style={{ marginTop: 8 }}>
+                {grouped[dk].map(e => (
+                  <li key={e.id} style={{ padding:'8px 0' }}>
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div style={{ minWidth:0, flex:'1 1 280px' }}>
+                        <div className="muted" style={{ fontSize:12 }}>{fmtTime(e.ts)}</div>
+                        <div><b>Estado:</b> {e.mood === 'Otro' ? (e.moodOther?.trim() || 'Otro') : e.mood}</div>
+                        <div className="muted" style={{ whiteSpace:'pre-wrap' }}>
+                          {e.signal ? `Señal: ${e.signal}` : 'Señal: —'}
+                        </div>
+                      </div>
+                      <button className="btn red inline-flex items-center gap-2 whitespace-nowrap" onClick={() => onDeleteEntry(e.id)}>
+                        <Trash2 className="w-4 h-4" /> Borrar
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+          {days.length === 0 && <div className="muted">Sin registros todavía.</div>}
+        </div>
+      )}
+    </article>
+  );
+}
+
+/* ===========================
+   Registro de Comidas (rediseñado) — borde gris + Editar inline
+   =========================== */
+function ComidasTool() {
+  // Perfil
+  const [profile, setProfile] = useState<MealProfile>(() => loadLS<MealProfile>(LS_MEALS_PROFILE, {}));
+  const [editingProfile, setEditingProfile] = useState(false);
+  useEffect(() => { saveLS(LS_MEALS_PROFILE, profile); }, [profile]);
+
+  // Entradas por día
+  const [byDay, setByDay] = useState<MealsByDay>(() => loadLS<MealsByDay>(LS_MEALS, {}));
+  useEffect(() => { saveLS(LS_MEALS, byDay); }, [byDay]);
+
+  const today = todayKey();
+
+  // Abrir/cerrar por día (hoy abierto por defecto)
+  const [openDays, setOpenDays] = useState<Record<string, boolean>>({});
+  useEffect(() => { setOpenDays(o => ({ ...o, [today]: true })); }, [today]);
+
+  // Formularios por día (para poder añadir en días pasados)
+  type FormState = { type: MealType; title: string; calStr: string; time: string };
+  const [forms, setForms] = useState<Record<string, FormState>>({});
+
+  const getForm = (dk: string): FormState => forms[dk] || { type: 'Comida', title: '', calStr: '', time: '' };
+  const setForm = (dk: string, next: Partial<FormState>) =>
+    setForms(prev => ({ ...prev, [dk]: { ...getForm(dk), ...next } }));
+
+  // --- Edición inline de una comida concreta
+  const [editingEntry, setEditingEntry] = useState<{ id: string; day: string } | null>(null);
+  const [editForm, setEditForm] = useState<FormState>({ type: 'Comida', title: '', calStr: '', time: '' });
+
+  const pad2 = (n: number) => String(n).padStart(2, '0');
+  const hhmmFromTs = (ts: number) => {
+    const d = new Date(ts);
+    return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  };
+
+  // Días disponibles (si no hay registro de hoy, igualmente aparece)
+  const allDays = useMemo(() => {
+    const s = new Set<string>(Object.keys(byDay));
+    s.add(today);
+    return Array.from(s).sort((a,b)=>b.localeCompare(a));
+  }, [byDay, today]);
+
+  // Helpers
+  const summarize = (arr: MealEntry[]) => {
+    const count = arr.length;
+    const provided = arr.some(m => typeof m.calories === 'number');
+    const kcal = provided ? arr.reduce((acc, m) => acc + (m.calories || 0), 0) : null;
+    const diff = (typeof profile.target === 'number' && kcal !== null) ? (kcal - profile.target) : null;
+    return { count, kcal, diff };
+  };
+
+  const addMealForDay = (dk: string) => {
+    const f = getForm(dk);
+    const title = f.title.trim();
+    if (!title) return;
+
+    const calories = f.calStr.trim() ? Math.max(0, Number(f.calStr.trim())) : undefined;
+    const hhmm = /^\d{2}:\d{2}$/.test(f.time) ? f.time : '12:00';
+    // Timestamp local dentro del día seleccionado
+    const ts = new Date(`${dk}T${hhmm}:00`).getTime();
+
+    const entry: MealEntry = { id: crypto.randomUUID(), ts, type: f.type, title, calories };
+    setByDay(prev => {
+      const arr = prev[dk] || [];
+      const newArr = [entry, ...arr].sort((a,b)=>b.ts - a.ts);
+      return { ...prev, [dk]: newArr };
+    });
+    // limpiar formulario de ese día
+    setForm(dk, { title: '', calStr: '', time: '' });
+    setOpenDays(o => ({ ...o, [dk]: true })); // lo dejamos abierto
+  };
+
+  const deleteMeal = (dk: string, id: string) => {
+    setByDay(prev => ({ ...prev, [dk]: (prev[dk] || []).filter(m => m.id !== id) }));
+    if (editingEntry?.id === id) setEditingEntry(null);
+  };
+
+  const startEditMeal = (dk: string, e: MealEntry) => {
+    setEditingEntry({ id: e.id, day: dk });
+    setEditForm({
+      type: e.type,
+      title: e.title,
+      calStr: typeof e.calories === 'number' ? String(e.calories) : '',
+      time: hhmmFromTs(e.ts),
+    });
+  };
+
+  const saveEditMeal = () => {
+    if (!editingEntry) return;
+    const { id, day } = editingEntry;
+    const f = editForm;
+    const title = f.title.trim();
+    if (!title) return;
+
+    const calories = f.calStr.trim() ? Math.max(0, Number(f.calStr.trim())) : undefined;
+    const hhmm = /^\d{2}:\d{2}$/.test(f.time) ? f.time : '12:00';
+    const ts = new Date(`${day}T${hhmm}:00`).getTime();
+
+    setByDay(prev => {
+      const arr = prev[day] || [];
+      const newArr = arr
+        .map(m => (m.id === id ? { ...m, type: f.type, title, calories, ts } : m))
+        .sort((a,b)=>b.ts - a.ts);
+      return { ...prev, [day]: newArr };
+    });
+    setEditingEntry(null);
+  };
+
+  return (
+    <div>
+      <h3 style={{ marginTop: 0 }}>Registro de comidas</h3>
+
+      {/* Perfil — borde gris */}
+      <section className="border rounded-2xl p-4" style={{ borderColor: 'var(--line)' }}>
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <strong>Mi perfil</strong>
+          {!editingProfile ? (
+            <button className="btn secondary" onClick={() => setEditingProfile(true)}>Editar</button>
+          ) : (
+            <div className="flex gap-2">
+              <button className="btn" onClick={() => setEditingProfile(false)}>Guardar</button>
+              <button className="btn ghost" onClick={() => { setEditingProfile(false); }}>Cancelar</button>
+            </div>
+          )}
+        </div>
+
+        <div className="rows mt-3">
+          {!editingProfile ? (
+            <div className="muted" style={{ display:'flex', gap:16, flexWrap:'wrap' }}>
+              <span>Altura: <b>{profile.height ?? '—'}</b> cm</span>
+              <span>Peso: <b>{profile.weight ?? '—'}</b> kg</span>
+              <span>Calorías deseadas: <b>{profile.target ?? '—'}</b> kcal</span>
+            </div>
+          ) : (
+            <div className="row" style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))', gap:8 }}>
+              <input className="input" inputMode="numeric" placeholder="Altura (cm)" value={profile.height ?? ''}
+                     onChange={e=>setProfile(p=>({ ...p, height: e.target.value ? Number(e.target.value) : undefined }))} />
+              <input className="input" inputMode="numeric" placeholder="Peso (kg)" value={profile.weight ?? ''}
+                     onChange={e=>setProfile(p=>({ ...p, weight: e.target.value ? Number(e.target.value) : undefined }))} />
+              <input className="input" inputMode="numeric" placeholder="Calorías deseadas (kcal)" value={profile.target ?? ''}
+                     onChange={e=>setProfile(p=>({ ...p, target: e.target.value ? Number(e.target.value) : undefined }))} />
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Tarjetas por día (resumen + desplegable + formulario + lista) */}
+      <section className="rows" style={{ marginTop: 12 }}>
+        {allDays.map(dk => {
+          const arr = (byDay[dk] || []).slice().sort((a,b)=>b.ts - a.ts);
+          const { count, kcal, diff } = summarize(arr);
+          const open = !!openDays[dk];
+          const form = getForm(dk);
+
+          return (
+            <div key={dk} className="border rounded-2xl p-4" style={{ borderColor: 'var(--line)' }}>
+              {/* Resumen compactado */}
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div>
+                  <div>· <b>Fecha:</b> {formatDateLabel(dk)}</div>
+                  <div className="muted" style={{ marginTop: 4 }}>
+                    <div>· Número de comidas: <b>{count}</b></div>
+                    <div>· Calorías consumidas: <b>{kcal !== null ? kcal : '—'}</b></div>
+                    <div>· Diferencia vs objetivo: <b>{diff !== null ? `${diff > 0 ? `+${diff}` : diff} kcal` : '—'}</b></div>
+                  </div>
+                </div>
+                <button
+                  className="btn secondary inline-flex items-center px-2 py-1"
+                  aria-label={open ? 'Ocultar' : 'Ver detalles'}
+                  title={open ? 'Ocultar' : 'Ver detalles'}
+                  onClick={() => setOpenDays(o => ({ ...o, [dk]: !o[dk] }))}
+                >
+                  {open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </button>
+              </div>
+
+              {/* Contenido desplegable */}
+              {open && (
+                <div className="rows mt-3">
+                  {/* Formulario para este día */}
+                  <div className="row" style={{ display:'grid', gap:8, gridTemplateColumns:'repeat(auto-fit, minmax(160px, 1fr))' }}>
+                    <select className="input" value={form.type} onChange={e=>setForm(dk, { type: e.target.value as MealType })}>
+                      {(['Desayuno','Almuerzo','Comida','Merienda','Cena','Picoteo'] as MealType[]).map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                    <textarea className="textarea" rows={2} placeholder="Comida (p. ej., Huevos con bacon)" value={form.title} onChange={e=>setForm(dk, { title: e.target.value })} />
+                    <input className="input" inputMode="numeric" placeholder="Calorías (kcal · opcional)" value={form.calStr} onChange={e=>setForm(dk, { calStr: e.target.value })} />
+                    <input className="input" type="time" placeholder="Hora (opcional)" value={form.time} onChange={e=>setForm(dk, { time: e.target.value })} />
+                    <button className="btn inline-flex items-center gap-2 whitespace-nowrap" onClick={() => addMealForDay(dk)}>
+                      <Plus className="w-4 h-4" /> Registrar en {formatDateLabel(dk)}
+                    </button>
+                  </div>
+
+                  {/* Lista de comidas del día */}
+                  <ul className="list" style={{ marginTop: 8 }}>
+                    {arr.length === 0 && <li className="muted" style={{ padding:'6px 0' }}>Sin comidas registradas.</li>}
+                    {arr.map(e => {
+                      const isEditing = editingEntry?.id === e.id && editingEntry.day === dk;
+                      return (
+                        <li key={e.id} style={{ padding:'8px 0' }}>
+                          {!isEditing ? (
+                            <div className="flex items-start justify-between gap-3 flex-wrap">
+                              <div style={{ minWidth:0, flex:'1 1 320px' }}>
+                                <div className="muted" style={{ fontSize:12 }}>{fmtTime(e.ts)}</div>
+                                <div className="inline-flex items-center gap-2">
+                                  <span className="inline-block rounded-full border px-2 py-0.5">{e.type}</span>
+                                  <span><b>{e.title}</b></span>
+                                  <span className="muted">{typeof e.calories === 'number' ? `· ${e.calories} kcal` : '· kcal —'}</span>
+                                </div>
+                              </div>
+                              <div className="flex gap-2">
+                                <button className="btn secondary inline-flex items-center gap-2 whitespace-nowrap" onClick={() => startEditMeal(dk, e)}>
+                                  <Pencil className="w-4 h-4" /> Editar
+                                </button>
+                                <button className="btn red inline-flex items-center gap-2 whitespace-nowrap" onClick={() => deleteMeal(dk, e.id)}>
+                                  <Trash2 className="w-4 h-4" /> Borrar
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="rows">
+                              <div className="row" style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
+                                <select className="input" value={editForm.type} onChange={e => setEditForm(f => ({ ...f, type: e.target.value as MealType }))}>
+                                  {(['Desayuno', 'Almuerzo', 'Comida', 'Merienda', 'Cena', 'Picoteo'] as MealType[]).map(t => <option key={t} value={t}>{t}</option>)}
+                                </select>
+                                <textarea className="textarea" rows={2} value={editForm.title} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} />
+                                <input className="input" inputMode="numeric" placeholder="kcal" value={editForm.calStr} onChange={e => setEditForm(f => ({ ...f, calStr: e.target.value }))} />
+                                <input className="input" type="time" value={editForm.time} onChange={e => setEditForm(f => ({ ...f, time: e.target.value }))} />
+                              </div>
+                              <div className="flex gap-2 justify-end mt-2">
+                                <button className="btn" onClick={saveEditMeal}>
+                                  <Save className="w-4 h-4" /> Guardar
+                                </button>
+                                <button className="btn ghost" onClick={() => setEditingEntry(null)}>Cancelar</button>
+                              </div>
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </section>
+    </div>
+  );
+}
+
+/* ===========================
    Objetivos para hoy
    =========================== */
 function GoalsTool() {
@@ -578,7 +969,7 @@ function BooksTool() {
     kind: ModalKind | null;
     editing: boolean;
     data: (BookReading | BookBase | BookFinished) | null;
-    init: { title: string; author: string; notes: string; pages: string }; // para detectar cambios
+    init: { title: string; author: string; notes: string; pages: string };
     form: { title: string; author: string; notes: string; pages: string };
   }>({
     open: false, kind: null, editing: false, data: null,
@@ -814,86 +1205,6 @@ function BooksTool() {
         </ul>
       </section>
 
-      {/* ======== MODAL LIBROS (reutilizable) ======== */}
-      {modal.open && modal.kind && modal.data && (
-        <div className="modal-backdrop" onClick={closeModal}>
-          <div className="modal" onClick={e => e.stopPropagation()} style={{ width: 'min(640px, 94vw)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <h4 style={{ margin: 0 }}>
-                {modal.kind === 'reading' && 'Libro en lectura'}
-                {modal.kind === 'wishlist' && 'Libro que quiero leer'}
-                {modal.kind === 'finished' && 'Libro terminado'}
-              </h4>
-              <button onClick={closeModal} className="btn red" aria-label="Cerrar">Cerrar</button>
-            </div>
-
-            {/* Contenido */}
-            <div className="rows" style={{ marginTop: 12 }}>
-              {!modal.editing ? (
-                <>
-                  <div style={{ fontSize: 18, fontWeight: 700 }}>{modal.form.title || 'Sin título'}</div>
-                  {modal.form.author && <div className="muted">de {modal.form.author}</div>}
-                  {modal.form.pages && <div className="muted">Páginas: {modal.form.pages}</div>}
-                </>
-              ) : (
-                <>
-                  <input className="input" placeholder="Título" value={modal.form.title}
-                         onChange={e => setModal(m => ({ ...m, form: { ...m.form, title: e.target.value } }))} />
-                  <input className="input" placeholder="Autor" value={modal.form.author}
-                         onChange={e => setModal(m => ({ ...m, form: { ...m.form, author: e.target.value } }))} />
-                  <input className="input" placeholder="Número de páginas (opcional)" inputMode="numeric" value={modal.form.pages}
-                         onChange={e => setModal(m => ({ ...m, form: { ...m.form, pages: e.target.value } }))} />
-                </>
-              )}
-
-              {!modal.editing ? (
-                <div className="row" style={{ whiteSpace: 'pre-wrap', minHeight: 80 }}>
-                  {modal.form.notes ? modal.form.notes : <span className="muted">Sin notas</span>}
-                </div>
-              ) : (
-                <textarea className="textarea" rows={6} placeholder="Notas…"
-                  value={modal.form.notes}
-                  onChange={e => setModal(m => ({ ...m, form: { ...m.form, notes: e.target.value } }))} />
-              )}
-            </div>
-
-            {/* Botonera */}
-            <div className="actions" style={{ flexWrap: 'wrap' }}>
-              {!modal.editing ? (
-                <button className="btn secondary" onClick={() => setModal(m => ({ ...m, editing: true }))}>Editar</button>
-              ) : (
-                <button className="btn" disabled={!hasChanges} onClick={saveModal}>Actualizar</button>
-              )}
-
-              {modal.kind === 'reading' && (
-                <button className="btn red" onClick={() => finishReading((modal.data as BookReading).id)}>Terminar libro</button>
-              )}
-
-              {modal.kind === 'wishlist' && (
-                <button className="btn green"
-                        onClick={() => startFromWishlist(
-                          (modal.data as BookBase).id,
-                          modal.editing
-                            ? {
-                                title: modal.form.title || undefined,
-                                author: modal.form.author || undefined,
-                                notes: modal.form.notes || undefined,
-                                pages: modal.form.pages.trim() ? Number(modal.form.pages.trim()) : undefined,
-                              }
-                            : undefined
-                        )}>
-                  Empezar a leer
-                </button>
-              )}
-
-              {modal.kind === 'finished' && (
-                <button className="btn" onClick={() => rereadFinished((modal.data as BookFinished).id)}>Volver a leer</button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* ======== MODAL ESTADÍSTICAS ======== */}
       {statsOpen && (
         <div className="modal-backdrop" onClick={() => setStatsOpen(false)}>
@@ -918,3 +1229,4 @@ function BooksTool() {
     </div>
   );
 }
+
