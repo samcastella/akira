@@ -631,7 +631,7 @@ function BehaviorCard({
 }
 
 /* ===========================
-   Registro de Comidas (rediseñado)
+   Registro de Comidas (rediseñado) — borde gris + Editar inline
    =========================== */
 function ComidasTool() {
   // Perfil
@@ -656,6 +656,16 @@ function ComidasTool() {
   const getForm = (dk: string): FormState => forms[dk] || { type: 'Comida', title: '', calStr: '', time: '' };
   const setForm = (dk: string, next: Partial<FormState>) =>
     setForms(prev => ({ ...prev, [dk]: { ...getForm(dk), ...next } }));
+
+  // --- Edición inline de una comida concreta
+  const [editingEntry, setEditingEntry] = useState<{ id: string; day: string } | null>(null);
+  const [editForm, setEditForm] = useState<FormState>({ type: 'Comida', title: '', calStr: '', time: '' });
+
+  const pad2 = (n: number) => String(n).padStart(2, '0');
+  const hhmmFromTs = (ts: number) => {
+    const d = new Date(ts);
+    return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  };
 
   // Días disponibles (si no hay registro de hoy, igualmente aparece)
   const allDays = useMemo(() => {
@@ -696,14 +706,46 @@ function ComidasTool() {
 
   const deleteMeal = (dk: string, id: string) => {
     setByDay(prev => ({ ...prev, [dk]: (prev[dk] || []).filter(m => m.id !== id) }));
+    if (editingEntry?.id === id) setEditingEntry(null);
+  };
+
+  const startEditMeal = (dk: string, e: MealEntry) => {
+    setEditingEntry({ id: e.id, day: dk });
+    setEditForm({
+      type: e.type,
+      title: e.title,
+      calStr: typeof e.calories === 'number' ? String(e.calories) : '',
+      time: hhmmFromTs(e.ts),
+    });
+  };
+
+  const saveEditMeal = () => {
+    if (!editingEntry) return;
+    const { id, day } = editingEntry;
+    const f = editForm;
+    const title = f.title.trim();
+    if (!title) return;
+
+    const calories = f.calStr.trim() ? Math.max(0, Number(f.calStr.trim())) : undefined;
+    const hhmm = /^\d{2}:\d{2}$/.test(f.time) ? f.time : '12:00';
+    const ts = new Date(`${day}T${hhmm}:00`).getTime();
+
+    setByDay(prev => {
+      const arr = prev[day] || [];
+      const newArr = arr
+        .map(m => (m.id === id ? { ...m, type: f.type, title, calories, ts } : m))
+        .sort((a,b)=>b.ts - a.ts);
+      return { ...prev, [day]: newArr };
+    });
+    setEditingEntry(null);
   };
 
   return (
     <div>
       <h3 style={{ marginTop: 0 }}>Registro de comidas</h3>
 
-      {/* Perfil */}
-      <section className="border rounded-2xl p-4">
+      {/* Perfil — borde gris */}
+      <section className="border rounded-2xl p-4" style={{ borderColor: 'var(--line)' }}>
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <strong>Mi perfil</strong>
           {!editingProfile ? (
@@ -745,7 +787,7 @@ function ComidasTool() {
           const form = getForm(dk);
 
           return (
-            <div key={dk} className="border rounded-2xl p-4">
+            <div key={dk} className="border rounded-2xl p-4" style={{ borderColor: 'var(--line)' }}>
               {/* Resumen compactado */}
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div>
@@ -753,7 +795,7 @@ function ComidasTool() {
                   <div className="muted" style={{ marginTop: 4 }}>
                     <div>· Número de comidas: <b>{count}</b></div>
                     <div>· Calorías consumidas: <b>{kcal !== null ? kcal : '—'}</b></div>
-                    <div>· Diferencia vs objetivo: <b>{diff !== null ? (diff > 0 ? `+${diff}` : `${diff}`) + ' kcal' : '—'}</b></div>
+                    <div>· Diferencia vs objetivo: <b>{diff !== null ? `${diff > 0 ? `+${diff}` : diff} kcal` : '—'}</b></div>
                   </div>
                 </div>
                 <button
@@ -785,23 +827,50 @@ function ComidasTool() {
                   {/* Lista de comidas del día */}
                   <ul className="list" style={{ marginTop: 8 }}>
                     {arr.length === 0 && <li className="muted" style={{ padding:'6px 0' }}>Sin comidas registradas.</li>}
-                    {arr.map(e => (
-                      <li key={e.id} style={{ padding:'8px 0' }}>
-                        <div className="flex items-start justify-between gap-3 flex-wrap">
-                          <div style={{ minWidth:0, flex:'1 1 320px' }}>
-                            <div className="muted" style={{ fontSize:12 }}>{fmtTime(e.ts)}</div>
-                            <div className="inline-flex items-center gap-2">
-                              <span className="inline-block rounded-full border px-2 py-0.5">{e.type}</span>
-                              <span><b>{e.title}</b></span>
-                              <span className="muted">{typeof e.calories === 'number' ? `· ${e.calories} kcal` : '· kcal —'}</span>
+                    {arr.map(e => {
+                      const isEditing = editingEntry?.id === e.id && editingEntry.day === dk;
+                      return (
+                        <li key={e.id} style={{ padding:'8px 0' }}>
+                          {!isEditing ? (
+                            <div className="flex items-start justify-between gap-3 flex-wrap">
+                              <div style={{ minWidth:0, flex:'1 1 320px' }}>
+                                <div className="muted" style={{ fontSize:12 }}>{fmtTime(e.ts)}</div>
+                                <div className="inline-flex items-center gap-2">
+                                  <span className="inline-block rounded-full border px-2 py-0.5">{e.type}</span>
+                                  <span><b>{e.title}</b></span>
+                                  <span className="muted">{typeof e.calories === 'number' ? `· ${e.calories} kcal` : '· kcal —'}</span>
+                                </div>
+                              </div>
+                              <div className="flex gap-2">
+                                <button className="btn secondary inline-flex items-center gap-2 whitespace-nowrap" onClick={() => startEditMeal(dk, e)}>
+                                  <Pencil className="w-4 h-4" /> Editar
+                                </button>
+                                <button className="btn red inline-flex items-center gap-2 whitespace-nowrap" onClick={() => deleteMeal(dk, e.id)}>
+                                  <Trash2 className="w-4 h-4" /> Borrar
+                                </button>
+                              </div>
                             </div>
-                          </div>
-                          <button className="btn red inline-flex items-center gap-2 whitespace-nowrap" onClick={() => deleteMeal(dk, e.id)}>
-                            <Trash2 className="w-4 h-4" /> Borrar
-                          </button>
-                        </div>
-                      </li>
-                    ))}
+                          ) : (
+                            <div className="rows">
+                              <div className="row" style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
+                                <select className="input" value={editForm.type} onChange={e => setEditForm(f => ({ ...f, type: e.target.value as MealType }))}>
+                                  {(['Desayuno', 'Almuerzo', 'Comida', 'Merienda', 'Cena', 'Picoteo'] as MealType[]).map(t => <option key={t} value={t}>{t}</option>)}
+                                </select>
+                                <textarea className="textarea" rows={2} value={editForm.title} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} />
+                                <input className="input" inputMode="numeric" placeholder="kcal" value={editForm.calStr} onChange={e => setEditForm(f => ({ ...f, calStr: e.target.value }))} />
+                                <input className="input" type="time" value={editForm.time} onChange={e => setEditForm(f => ({ ...f, time: e.target.value }))} />
+                              </div>
+                              <div className="flex gap-2 justify-end mt-2">
+                                <button className="btn" onClick={saveEditMeal}>
+                                  <Save className="w-4 h-4" /> Guardar
+                                </button>
+                                <button className="btn ghost" onClick={() => setEditingEntry(null)}>Cancelar</button>
+                              </div>
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
               )}
