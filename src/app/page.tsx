@@ -116,7 +116,7 @@ function ProgramCard({ program }: { program: ProgramLike }) {
           <div className="mt-3">
             <span
               className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white text-black text-sm font-medium
-                         transition-colors group-active:bg-black group-active:text-white"
+                         transition-colors duration-75 group-hover:bg-black group-hover:text-white group-active:bg-black group-active:text-white active:scale-[.98]"
             >
               Ver programa
               <Icon className="h-4 w-4" aria-hidden="true" />
@@ -167,7 +167,7 @@ export default function HomePage() {
   useEffect(() => {
     const list = loadThoughts();
     const key = todayKey();
-    const lastSeen = typeof window !== 'undefined' ? localStorage.getItem(LS_THOUGHT_SHOWN) : null;
+    const lastSeen = (typeof window !== 'undefined') ? localStorage.getItem(LS_THOUGHT_SHOWN) : null;
 
     let pick: Thought;
     if (lastSeen === key && typeof window !== 'undefined') {
@@ -186,7 +186,7 @@ export default function HomePage() {
 
   return (
     <main className="px-0 pb-16 bg-white">
-      {/* ===== Franja compacta: título del pensamiento (negrita moderada) + intro + botón negro ===== */}
+      {/* ===== Franja compacta: título del pensamiento (negrita moderada) + intro + botón negro con feedback ===== */}
       {todayThought && (
         <section className="px-4 py-2 m-0">
           <div className="flex flex-col items-center text-center gap-1">
@@ -194,7 +194,8 @@ export default function HomePage() {
             <p className="text-black/80 text-sm">{truncateWords(todayThought.body, 8)}</p>
             <button
               onClick={() => setModalOpen(true)}
-              className="mt-2 inline-flex items-center px-4 py-2 rounded-full bg-black text-white text-sm font-medium hover:opacity-90 transition-opacity"
+              className="mt-2 inline-flex items-center px-4 py-2 rounded-full border border-black bg-black text-white text-sm font-medium
+                         transition-colors duration-75 hover:opacity-90 active:bg-white active:text-black active:scale-[.98]"
             >
               Ver
             </button>

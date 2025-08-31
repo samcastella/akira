@@ -76,9 +76,9 @@ img, video, canvas, svg {
   height: auto;
 }
 
-/* Quita el resalte azul por defecto en iOS */
-input, textarea, button, select, a {
-  -webkit-tap-highlight-color: transparent;
+/* Quita el destello azul en iOS solo en elementos interactivos principales */
+a, button, [role="button"] {
+  -webkit-tap-highlight-color: transparent; /* o rgba(0,0,0,0) */
 }
 
 /* =========
@@ -124,7 +124,7 @@ input, textarea, button, select, a {
   cursor: pointer;
   font-weight: 600;
   line-height: 1;
-  color: var(--foreground);
+  color: inherit;
   display: inline-flex;
   align-items: center;
 }
