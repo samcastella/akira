@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Notebook, Heart, Target, BookOpen,
-  Trash2, X, Pencil, Save, Eye, Activity, ChevronDown, ChevronUp, Plus
+  Trash2, X, Pencil, Save, Eye, Activity, ChevronDown, ChevronUp, Plus, Utensils
 } from 'lucide-react';
 
 /* ===========================
@@ -16,6 +16,8 @@ const LS_BOOKS = 'akira_books_v1';
 const LS_RETOS = 'akira_mizona_retos_v1';
 const OLD_LS_NOTES = 'akira_notes_v1';
 const LS_BEHAVIORS = 'akira_behaviors_v1';
+const LS_MEALS = 'akira_meals_v1';              // <-- NUEVO
+const LS_MEALS_PROFILE = 'akira_meals_profile_v1'; // <-- NUEVO
 
 function loadLS<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback;
@@ -115,18 +117,26 @@ type Behavior = {
   name: string;
   createdAt: number;
   entries: BehaviorEntry[];
-  // archived?: boolean; // ya no usamos archivado en UI
 };
+
+/* ===========================
+   Tipos NUEVOS (Comidas)
+   =========================== */
+type MealType = 'Desayuno' | 'Almuerzo' | 'Comida' | 'Merienda' | 'Cena' | 'Picoteo';
+type MealEntry = { id: string; ts: number; type: MealType; title: string; calories?: number };
+type MealsByDay = Record<string, MealEntry[]>;
+type MealProfile = { height?: number; weight?: number; target?: number };
 
 /* ===========================
    Herramientas
    =========================== */
 export default function Herramientas() {
-  type TabKey = 'notas' | 'gratitud' | 'conductas' | 'objetivos' | 'libros';
+  type TabKey = 'notas' | 'gratitud' | 'conductas' | 'comidas' | 'objetivos' | 'libros';
   const TABS: { key: TabKey; label: string; Icon: React.ComponentType<any> }[] = [
     { key: 'notas', label: 'Mis notas', Icon: Notebook },
     { key: 'gratitud', label: 'Diario de gratitud', Icon: Heart },
     { key: 'conductas', label: 'Registro de conductas', Icon: Activity },
+    { key: 'comidas', label: 'Registro de comidas', Icon: Utensils }, // <-- NUEVA
     { key: 'objetivos', label: 'Objetivos para hoy', Icon: Target },
     { key: 'libros', label: 'Mis libros', Icon: BookOpen },
   ];
@@ -136,7 +146,7 @@ export default function Herramientas() {
   return (
     <div className="py-6 container" style={{ background: '#fff' }}>
       <h2 className="page-title">Herramientas</h2>
-      <p className="muted" style={{ margin: '0 0 16px' }}>Tu espacio para escribir, agradecer y registrar conductas.</p>
+      <p className="muted" style={{ margin: '0 0 16px' }}>Tu espacio para escribir, agradecer y registrar conductas/comidas.</p>
 
       <div role="tablist" className="tabbar">
         {TABS.map(({ key, label, Icon }) => (
@@ -156,6 +166,7 @@ export default function Herramientas() {
         {tab === 'notas' && <NotasTool />}
         {tab === 'gratitud' && <GratitudTool />}
         {tab === 'conductas' && <ConductasTool />}
+        {tab === 'comidas' && <ComidasTool />} {/* <-- NUEVO */}
         {tab === 'objetivos' && <GoalsTool />}
         {tab === 'libros' && <BooksTool />}
       </section>
@@ -392,7 +403,7 @@ function GratitudeDay({ date, rows, onUpdate, editable = true }: {
 }
 
 /* ===========================
-   Registro de Conductas (NUEVO)
+   Registro de Conductas
    =========================== */
 function ConductasTool() {
   const [behaviors, setBehaviors] = useState<Behavior[]>(() => loadLS<Behavior[]>(LS_BEHAVIORS, []));
@@ -518,7 +529,7 @@ function BehaviorCard({
             {behavior.name}
           </div>
 
-          {/* Totales + Flecha para desplegar */}
+          {/* Totales + Flecha */}
           <div style={{ marginTop: 2, display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
             <span className="muted">Hoy: <b>{countToday}</b></span>
             <span className="muted">Total: <b>{total}</b></span>
@@ -545,7 +556,7 @@ function BehaviorCard({
         </div>
       </div>
 
-      {/* Formulario rápido de registro */}
+      {/* Formulario rápido */}
       {adding && (
         <div className="rows mt-3">
           <input className="input" placeholder="Señal (¿qué ocurrió antes?)" value={signal} onChange={e=>setSignal(e.target.value)} />
@@ -606,6 +617,165 @@ function BehaviorCard({
         </div>
       )}
     </article>
+  );
+}
+
+/* ===========================
+   Registro de Comidas (NUEVO)
+   =========================== */
+function ComidasTool() {
+  // Perfil
+  const [profile, setProfile] = useState<MealProfile>(() => loadLS<MealProfile>(LS_MEALS_PROFILE, {}));
+  const [editingProfile, setEditingProfile] = useState(false);
+  useEffect(() => { saveLS(LS_MEALS_PROFILE, profile); }, [profile]);
+
+  // Entradas por día
+  const [byDay, setByDay] = useState<MealsByDay>(() => loadLS<MealsByDay>(LS_MEALS, {}));
+  useEffect(() => { saveLS(LS_MEALS, byDay); }, [byDay]);
+
+  const today = todayKey();
+  const list = byDay[today] || [];
+
+  // Formulario añadir
+  const mealTypes: MealType[] = ['Desayuno','Almuerzo','Comida','Merienda','Cena','Picoteo'];
+  const [type, setType] = useState<MealType>('Comida');
+  const [title, setTitle] = useState('');
+  const [calStr, setCalStr] = useState('');
+
+  const addMeal = () => {
+    const t = title.trim();
+    if (!type || !t) return;
+    const calories = calStr.trim() ? Math.max(0, Number(calStr.trim())) : undefined;
+    const e: MealEntry = { id: crypto.randomUUID(), ts: Date.now(), type, title: t, calories };
+    setByDay(prev => ({ ...prev, [today]: [e, ...(prev[today] || [])] }));
+    setTitle(''); setCalStr('');
+  };
+
+  const deleteMeal = (id: string) => {
+    setByDay(prev => ({ ...prev, [today]: (prev[today] || []).filter(m => m.id !== id) }));
+  };
+
+  // Totales de hoy
+  const mealsCount = list.length;
+  const caloriesProvided = list.some(m => typeof m.calories === 'number');
+  const caloriesToday = caloriesProvided ? list.reduce((acc, m) => acc + (m.calories || 0), 0) : null;
+  const diff = (typeof profile.target === 'number' && caloriesToday !== null)
+    ? caloriesToday - profile.target
+    : null;
+
+  // Historial (todas las fechas)
+  const grouped: Record<string, MealEntry[]> = {};
+  Object.entries(byDay).forEach(([dk, arr]) => { grouped[dk] = arr; });
+  const days = Object.keys(grouped).sort((a,b)=>b.localeCompare(a));
+
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div>
+      <h3 style={{ marginTop: 0 }}>Registro de comidas</h3>
+
+      {/* Perfil */}
+      <section className="border rounded-2xl p-4">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <strong>Mi perfil</strong>
+          {!editingProfile ? (
+            <button className="btn secondary" onClick={() => setEditingProfile(true)}>Editar</button>
+          ) : (
+            <div className="flex gap-2">
+              <button className="btn" onClick={() => setEditingProfile(false)}>Guardar</button>
+              <button className="btn ghost" onClick={() => { setEditingProfile(false); }}>Cancelar</button>
+            </div>
+          )}
+        </div>
+
+        <div className="rows mt-3">
+          {!editingProfile ? (
+            <div className="muted" style={{ display:'flex', gap:16, flexWrap:'wrap' }}>
+              <span>Altura: <b>{profile.height ?? '—'}</b> cm</span>
+              <span>Peso: <b>{profile.weight ?? '—'}</b> kg</span>
+              <span>Calorías deseadas: <b>{profile.target ?? '—'}</b> kcal</span>
+            </div>
+          ) : (
+            <div className="row" style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))', gap:8 }}>
+              <input className="input" inputMode="numeric" placeholder="Altura (cm)" value={profile.height ?? ''}
+                     onChange={e=>setProfile(p=>({ ...p, height: e.target.value ? Number(e.target.value) : undefined }))} />
+              <input className="input" inputMode="numeric" placeholder="Peso (kg)" value={profile.weight ?? ''}
+                     onChange={e=>setProfile(p=>({ ...p, weight: e.target.value ? Number(e.target.value) : undefined }))} />
+              <input className="input" inputMode="numeric" placeholder="Calorías deseadas (kcal)" value={profile.target ?? ''}
+                     onChange={e=>setProfile(p=>({ ...p, target: e.target.value ? Number(e.target.value) : undefined }))} />
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Añadir comida */}
+      <section className="card" style={{ marginTop: 12 }}>
+        <div className="rows">
+          <div className="row" style={{ display:'grid', gridTemplateColumns:'180px 1fr 160px auto', gap:8 }}>
+            <select className="input" value={type} onChange={e=>setType(e.target.value as MealType)}>
+              {mealTypes.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <input className="input" placeholder="Comida (p. ej., Huevos con bacon)" value={title} onChange={e=>setTitle(e.target.value)} />
+            <input className="input" inputMode="numeric" placeholder="Calorías (kcal · opcional)" value={calStr} onChange={e=>setCalStr(e.target.value)} />
+            <button className="btn inline-flex items-center gap-2 whitespace-nowrap" onClick={addMeal}>
+              <Plus className="w-4 h-4" /> Registrar
+            </button>
+          </div>
+        </div>
+
+        {/* Totales + Flecha */}
+        <div className="mt-3" style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
+          <span className="muted">Número de comidas: <b>{mealsCount}</b></span>
+          <span className="muted">Calorías consumidas: <b>{caloriesToday !== null ? caloriesToday : '—'}</b></span>
+          {diff !== null && (
+            <span className="muted">Diferencia vs objetivo: <b style={{ whiteSpace:'nowrap' }}>
+              {diff > 0 ? `+${diff}` : `${diff}`} kcal
+            </b></span>
+          )}
+          <button
+            className="btn secondary inline-flex items-center px-2 py-1"
+            aria-label={open ? 'Ocultar historial' : 'Ver historial'}
+            title={open ? 'Ocultar historial' : 'Ver historial'}
+            onClick={() => setOpen(!open)}
+          >
+            {open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
+        </div>
+
+        {/* Historial agrupado por día */}
+        {open && (
+          <div className="rows mt-3">
+            {days.length === 0 && <div className="muted">Aún no hay comidas registradas.</div>}
+            {days.map(dk => (
+              <div key={dk} className="border rounded-xl p-3">
+                <div style={{ fontWeight: 600 }}>{formatDateLabel(dk)}</div>
+                <ul className="list" style={{ marginTop: 8 }}>
+                  {(grouped[dk] || []).map(e => (
+                    <li key={e.id} style={{ padding:'8px 0' }}>
+                      <div className="flex items-start justify-between gap-3 flex-wrap">
+                        <div style={{ minWidth:0, flex:'1 1 320px' }}>
+                          <div className="muted" style={{ fontSize:12 }}>{fmtTime(e.ts)}</div>
+                          <div className="inline-flex items-center gap-2">
+                            <span className="inline-block rounded-full border px-2 py-0.5">{e.type}</span>
+                            <span><b>{e.title}</b></span>
+                            <span className="muted">{typeof e.calories === 'number' ? `· ${e.calories} kcal` : '· kcal —'}</span>
+                          </div>
+                        </div>
+                        {dateKey(e.ts) === today ? (
+                          <button className="btn red inline-flex items-center gap-2 whitespace-nowrap" onClick={() => deleteMeal(e.id)}>
+                            <Trash2 className="w-4 h-4" /> Borrar
+                          </button>
+                        ) : null}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
   );
 }
 
@@ -933,86 +1103,6 @@ function BooksTool() {
       </section>
 
       {/* ======== MODAL LIBROS (reutilizable) ======== */}
-      {modal.open && modal.kind && modal.data && (
-        <div className="modal-backdrop" onClick={closeModal}>
-          <div className="modal" onClick={e => e.stopPropagation()} style={{ width: 'min(640px, 94vw)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <h4 style={{ margin: 0 }}>
-                {modal.kind === 'reading' && 'Libro en lectura'}
-                {modal.kind === 'wishlist' && 'Libro que quiero leer'}
-                {modal.kind === 'finished' && 'Libro terminado'}
-              </h4>
-              <button onClick={closeModal} className="btn red" aria-label="Cerrar">Cerrar</button>
-            </div>
-
-            {/* Contenido */}
-            <div className="rows" style={{ marginTop: 12 }}>
-              {!modal.editing ? (
-                <>
-                  <div style={{ fontSize: 18, fontWeight: 700 }}>{modal.form.title || 'Sin título'}</div>
-                  {modal.form.author && <div className="muted">de {modal.form.author}</div>}
-                  {modal.form.pages && <div className="muted">Páginas: {modal.form.pages}</div>}
-                </>
-              ) : (
-                <>
-                  <input className="input" placeholder="Título" value={modal.form.title}
-                         onChange={e => setModal(m => ({ ...m, form: { ...m.form, title: e.target.value } }))} />
-                  <input className="input" placeholder="Autor" value={modal.form.author}
-                         onChange={e => setModal(m => ({ ...m, form: { ...m.form, author: e.target.value } }))} />
-                  <input className="input" placeholder="Número de páginas (opcional)" inputMode="numeric" value={modal.form.pages}
-                         onChange={e => setModal(m => ({ ...m, form: { ...m.form, pages: e.target.value } }))} />
-                </>
-              )}
-
-              {!modal.editing ? (
-                <div className="row" style={{ whiteSpace: 'pre-wrap', minHeight: 80 }}>
-                  {modal.form.notes ? modal.form.notes : <span className="muted">Sin notas</span>}
-                </div>
-              ) : (
-                <textarea className="textarea" rows={6} placeholder="Notas…"
-                  value={modal.form.notes}
-                  onChange={e => setModal(m => ({ ...m, form: { ...m.form, notes: e.target.value } }))} />
-              )}
-            </div>
-
-            {/* Botonera */}
-            <div className="actions" style={{ flexWrap: 'wrap' }}>
-              {!modal.editing ? (
-                <button className="btn secondary" onClick={() => setModal(m => ({ ...m, editing: true }))}>Editar</button>
-              ) : (
-                <button className="btn" disabled={!hasChanges} onClick={saveModal}>Actualizar</button>
-              )}
-
-              {modal.kind === 'reading' && (
-                <button className="btn red" onClick={() => finishReading((modal.data as BookReading).id)}>Terminar libro</button>
-              )}
-
-              {modal.kind === 'wishlist' && (
-                <button className="btn green"
-                        onClick={() => startFromWishlist(
-                          (modal.data as BookBase).id,
-                          modal.editing
-                            ? {
-                                title: modal.form.title || undefined,
-                                author: modal.form.author || undefined,
-                                notes: modal.form.notes || undefined,
-                                pages: modal.form.pages.trim() ? Number(modal.form.pages.trim()) : undefined,
-                              }
-                            : undefined
-                        )}>
-                  Empezar a leer
-                </button>
-              )}
-
-              {modal.kind === 'finished' && (
-                <button className="btn" onClick={() => rereadFinished((modal.data as BookFinished).id)}>Volver a leer</button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ======== MODAL ESTADÍSTICAS ======== */}
       {statsOpen && (
         <div className="modal-backdrop" onClick={() => setStatsOpen(false)}>
           <div className="modal" onClick={e => e.stopPropagation()} style={{ width: 'min(520px, 92vw)', textAlign: 'center' }}>
