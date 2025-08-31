@@ -15,7 +15,7 @@ const LS_GOALS = 'akira_goals_today_v1';
 const LS_BOOKS = 'akira_books_v1';
 const LS_RETOS = 'akira_mizona_retos_v1';
 const OLD_LS_NOTES = 'akira_notes_v1';
-const LS_BEHAVIORS = 'akira_behaviors_v1'; // <-- NUEVO
+const LS_BEHAVIORS = 'akira_behaviors_v1';
 
 function loadLS<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback;
@@ -104,10 +104,10 @@ type Mood =
 
 type BehaviorEntry = {
   id: string;
-  ts: number;             // timestamp
-  signal: string;         // explicación breve
+  ts: number;
+  signal: string;
   mood: Mood;
-  moodOther?: string;     // si mood === 'Otro'
+  moodOther?: string;
 };
 
 type Behavior = {
@@ -115,18 +115,18 @@ type Behavior = {
   name: string;
   createdAt: number;
   entries: BehaviorEntry[];
-  archived?: boolean;
+  // archived?: boolean; // ya no usamos archivado en UI
 };
 
 /* ===========================
    Herramientas
    =========================== */
 export default function Herramientas() {
-  type TabKey = 'notas' | 'gratitud' | 'conductas' | 'objetivos' | 'libros'; // <-- añadimos 'conductas'
+  type TabKey = 'notas' | 'gratitud' | 'conductas' | 'objetivos' | 'libros';
   const TABS: { key: TabKey; label: string; Icon: React.ComponentType<any> }[] = [
     { key: 'notas', label: 'Mis notas', Icon: Notebook },
     { key: 'gratitud', label: 'Diario de gratitud', Icon: Heart },
-    { key: 'conductas', label: 'Registro de conductas', Icon: Activity }, // <-- NUEVA
+    { key: 'conductas', label: 'Registro de conductas', Icon: Activity },
     { key: 'objetivos', label: 'Objetivos para hoy', Icon: Target },
     { key: 'libros', label: 'Mis libros', Icon: BookOpen },
   ];
@@ -155,7 +155,7 @@ export default function Herramientas() {
       <section className="card" id={`panel-${tab}`} role="tabpanel" aria-labelledby={`tab-${tab}`}>
         {tab === 'notas' && <NotasTool />}
         {tab === 'gratitud' && <GratitudTool />}
-        {tab === 'conductas' && <ConductasTool />} {/* <-- NUEVO */}
+        {tab === 'conductas' && <ConductasTool />}
         {tab === 'objetivos' && <GoalsTool />}
         {tab === 'libros' && <BooksTool />}
       </section>
@@ -396,7 +396,6 @@ function GratitudeDay({ date, rows, onUpdate, editable = true }: {
    =========================== */
 function ConductasTool() {
   const [behaviors, setBehaviors] = useState<Behavior[]>(() => loadLS<Behavior[]>(LS_BEHAVIORS, []));
-  const [showArchived, setShowArchived] = useState(false);
   const [newName, setNewName] = useState('');
 
   useEffect(() => { saveLS(LS_BEHAVIORS, behaviors); }, [behaviors]);
@@ -409,19 +408,6 @@ function ConductasTool() {
     const b: Behavior = { id: crypto.randomUUID(), name, createdAt: Date.now(), entries: [] };
     setBehaviors([b, ...behaviors]);
     setNewName('');
-  };
-
-  const renameBehavior = (id: string) => {
-    const current = behaviors.find(b => b.id === id);
-    const name = prompt('Renombrar conducta:', current?.name || '');
-    if (name == null) return;
-    const trimmed = name.trim();
-    if (!trimmed) return;
-    setBehaviors(behaviors.map(b => b.id === id ? { ...b, name: trimmed } : b));
-  };
-
-  const toggleArchive = (id: string) => {
-    setBehaviors(behaviors.map(b => b.id === id ? { ...b, archived: !b.archived } : b));
   };
 
   const deleteBehavior = (id: string) => {
@@ -441,10 +427,7 @@ function ConductasTool() {
     setBehaviors(behaviors.map(b => b.id === bid ? { ...b, entries: b.entries.filter(e => e.id !== eid) } : b));
   };
 
-  const visible = behaviors.filter(b => showArchived ? true : !b.archived);
-
-  // Orden por más recientes a la izquierda
-  visible.sort((a,b) => (b.createdAt - a.createdAt));
+  const visible = behaviors.slice().sort((a,b) => (b.createdAt - a.createdAt));
 
   return (
     <div>
@@ -455,18 +438,16 @@ function ConductasTool() {
       <div className="rows" style={{ marginTop: 12 }}>
         <div className="row" style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
           <input className="input" placeholder="Nombre de la conducta (p. ej., Fumar)" value={newName} onChange={e=>setNewName(e.target.value)} style={{ flex:'1 1 260px', minWidth:0 }} />
-          <button className="btn" onClick={addBehavior}><Plus className="w-4 h-4" /> Crear</button>
-          <label className="muted" style={{ display:'inline-flex', alignItems:'center', gap:8, marginLeft:'auto' }}>
-            <input type="checkbox" checked={showArchived} onChange={e=>setShowArchived(e.target.checked)} />
-            Ver archivadas
-          </label>
+          <button className="btn inline-flex items-center gap-2 whitespace-nowrap" onClick={addBehavior}>
+            <Plus className="w-4 h-4" /> Crear
+          </button>
         </div>
       </div>
 
       {/* Lista de conductas */}
       <div className="rows" style={{ marginTop: 16 }}>
         {visible.length === 0 && (
-          <div className="muted">Aún no hay conductas {showArchived ? 'archivadas' : 'creadas'}.</div>
+          <div className="muted">Aún no hay conductas creadas.</div>
         )}
         {visible.map(b => (
           <BehaviorCard
@@ -474,8 +455,6 @@ function ConductasTool() {
             behavior={b}
             moods={moods}
             onAddEntry={addEntry}
-            onRename={() => renameBehavior(b.id)}
-            onToggleArchive={() => toggleArchive(b.id)}
             onDelete={() => deleteBehavior(b.id)}
             onDeleteEntry={(eid) => deleteEntry(b.id, eid)}
           />
@@ -486,13 +465,11 @@ function ConductasTool() {
 }
 
 function BehaviorCard({
-  behavior, moods, onAddEntry, onRename, onToggleArchive, onDelete, onDeleteEntry
+  behavior, moods, onAddEntry, onDelete, onDeleteEntry
 }:{
   behavior: Behavior;
   moods: Mood[];
   onAddEntry: (id: string, payload:{signal:string; mood:Mood; moodOther?:string}) => void;
-  onRename: () => void;
-  onToggleArchive: () => void;
   onDelete: () => void;
   onDeleteEntry: (eid: string) => void;
 }) {
@@ -538,25 +515,32 @@ function BehaviorCard({
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div style={{ minWidth: 0 }}>
           <div style={{ fontWeight: 700, fontSize: 16, display:'flex', alignItems:'center', gap:8 }}>
-            {behavior.name} {behavior.archived && <span className="muted" style={{ fontWeight:400 }}>(archivada)</span>}
+            {behavior.name}
           </div>
-          <div className="muted" style={{ marginTop: 2, display:'flex', gap:12, flexWrap:'wrap' }}>
-            <span>Hoy: <b>{countToday}</b></span>
-            <span>Total: <b>{total}</b></span>
+
+          {/* Totales + Flecha para desplegar */}
+          <div style={{ marginTop: 2, display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
+            <span className="muted">Hoy: <b>{countToday}</b></span>
+            <span className="muted">Total: <b>{total}</b></span>
+            <button
+              className="btn secondary inline-flex items-center px-2 py-1"
+              aria-label={open ? 'Ocultar historial' : 'Ver historial'}
+              title={open ? 'Ocultar historial' : 'Ver historial'}
+              onClick={() => setOpen(!open)}
+            >
+              {open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </button>
           </div>
         </div>
 
         <div className="flex gap-2 flex-wrap">
           {!adding ? (
-            <button className="btn" onClick={() => setAdding(true)}>Registrar</button>
+            <button className="btn inline-flex items-center gap-2 whitespace-nowrap" onClick={() => setAdding(true)}>Registrar</button>
           ) : (
-            <button className="btn ghost" onClick={() => setAdding(false)}>Cancelar</button>
+            <button className="btn ghost inline-flex items-center gap-2 whitespace-nowrap" onClick={() => setAdding(false)}>Cancelar</button>
           )}
-          <button className="btn secondary" onClick={onRename}>Renombrar</button>
-          <button className="btn secondary" onClick={onToggleArchive}>{behavior.archived ? 'Restaurar' : 'Archivar'}</button>
-          <button className="btn red" onClick={onDelete}>Borrar</button>
-          <button className="btn secondary" onClick={() => setOpen(!open)}>
-            {open ? (<><ChevronUp className="w-4 h-4" /> Ocultar</>) : (<><ChevronDown className="w-4 h-4" /> Ver historial</>)}
+          <button className="btn red inline-flex items-center gap-2 whitespace-nowrap" onClick={onDelete}>
+            <Trash2 className="w-4 h-4" /> Borrar
           </button>
         </div>
       </div>
@@ -572,7 +556,7 @@ function BehaviorCard({
             {mood === 'Otro' && (
               <input className="input" placeholder="Especifica el estado de ánimo" value={moodOther} onChange={e=>setMoodOther(e.target.value)} style={{ flex:'2 1 260px' }} />
             )}
-            <button className="btn" onClick={submitEntry}>Añadir registro</button>
+            <button className="btn inline-flex items-center gap-2 whitespace-nowrap" onClick={submitEntry}>Añadir registro</button>
           </div>
         </div>
       )}
@@ -609,7 +593,9 @@ function BehaviorCard({
                           {e.signal ? `Señal: ${e.signal}` : 'Señal: —'}
                         </div>
                       </div>
-                      <button className="btn red" onClick={() => onDeleteEntry(e.id)}><Trash2 className="w-4 h-4" /> Borrar</button>
+                      <button className="btn red inline-flex items-center gap-2 whitespace-nowrap" onClick={() => onDeleteEntry(e.id)}>
+                        <Trash2 className="w-4 h-4" /> Borrar
+                      </button>
                     </div>
                   </li>
                 ))}
@@ -710,7 +696,7 @@ function BooksTool() {
     kind: ModalKind | null;
     editing: boolean;
     data: (BookReading | BookBase | BookFinished) | null;
-    init: { title: string; author: string; notes: string; pages: string }; // para detectar cambios
+    init: { title: string; author: string; notes: string; pages: string };
     form: { title: string; author: string; notes: string; pages: string };
   }>({
     open: false, kind: null, editing: false, data: null,
