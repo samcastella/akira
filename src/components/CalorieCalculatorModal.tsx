@@ -236,6 +236,9 @@ export default function CalorieCalculatorModal({
   );
 
   const [mealName, setMealName] = useState(initialName);
+  const [nameErr, setNameErr] = useState<string>("");
+  const nameInputRef = useRef<HTMLInputElement>(null);
+
   const [items, setItems] = useState<MealItem[]>(
     initialItems && initialItems.length
       ? initialItems
@@ -245,6 +248,7 @@ export default function CalorieCalculatorModal({
   useEffect(() => {
     if (isOpen) {
       setMealName(initialName);
+      setNameErr("");
       setItems(
         initialItems && initialItems.length
           ? initialItems
@@ -275,20 +279,29 @@ export default function CalorieCalculatorModal({
   function updateRow(id: string, next: MealItem) {
     setItems((prev) => prev.map((x) => (x.id === id ? next : x)));
   }
+
+  // ======= Guardar: nombre obligatorio =======
   function handleSave() {
-    const clean = items.filter(
-      (it) => (it.customName || it.foodId) && it.grams > 0
-    );
-    const name = mealName.trim() || "Comida sin nombre";
+    const name = (mealName || "").trim();
+    if (!name) {
+      setNameErr("Escribe un nombre para el plato");
+      nameInputRef.current?.focus();
+      return;
+    }
+
+    const clean = items.filter((it) => (it.customName || it.foodId) && it.grams > 0);
+
     const payload: MealResult = {
       id: uid(),
-      name,
+      name, // usa exactamente el nombre escrito
       items: clean,
       totalKcal: Math.round(totals.totalKcal),
       createdAt: Date.now(),
     };
     onSave(payload);
   }
+
+  const canSave = mealName.trim().length > 0;
 
   if (!isOpen) return null;
 
@@ -330,15 +343,33 @@ export default function CalorieCalculatorModal({
 
         {/* Contenido */}
         <div className="p-4">
-          {/* Nombre del plato */}
+          {/* Nombre del plato (obligatorio) */}
           <div className="mb-3">
-            <label className="mb-1 block text-sm font-medium">Nombre del plato</label>
+            <label className="mb-1 block text-sm font-medium">
+              Nombre del plato <span className="text-red-600">*</span>
+            </label>
             <input
+              ref={nameInputRef}
+              required
+              aria-invalid={!!nameErr}
+              aria-describedby={nameErr ? "meal-name-error" : undefined}
               value={mealName}
-              onChange={(e) => setMealName(e.target.value)}
+              onChange={(e) => {
+                if (nameErr) setNameErr("");
+                setMealName(e.target.value);
+              }}
               placeholder="Ej: Hamburguesa"
-              className="w-full rounded-lg border border-[var(--line)] px-3 py-2 text-sm"
+              className={`w-full rounded-lg border px-3 py-2 text-sm ${
+                nameErr
+                  ? "border-red-500 ring-1 ring-red-300"
+                  : "border-[var(--line)]"
+              }`}
             />
+            {nameErr && (
+              <p id="meal-name-error" className="mt-1 text-xs text-red-600">
+                {nameErr}
+              </p>
+            )}
           </div>
 
           {/* Lista de ingredientes (sin cabecera) */}
@@ -386,7 +417,10 @@ export default function CalorieCalculatorModal({
               <button
                 type="button"
                 onClick={handleSave}
-                className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm text-white hover:opacity-90 active:opacity-80"
+                disabled={!canSave}
+                className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm text-white hover:opacity-90 active:opacity-80 ${
+                  canSave ? "" : "opacity-50 cursor-not-allowed"
+                }`}
                 style={{ background: "#16a34a" }}
                 title="Añadir la comida al registro"
               >
