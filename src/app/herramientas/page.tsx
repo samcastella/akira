@@ -168,27 +168,31 @@ export default function Herramientas() {
         Tu espacio para escribir, agradecer y registrar conductas/comidas/ejercicio.
       </p>
 
-      {/* TABBAR responsive en cuadrícula:
-         - base: 2 columnas (móviles estrechos como iPhone 14)
-         - sm (≥640): 3 columnas
-         - md (≥768): 6 columnas */}
-      <div
-        role="tablist"
-        className="tabbar grid gap-2 grid-cols-2 sm:grid-cols-3 md:grid-cols-6"
-      >
-        {TABS.map(({ key, label, Icon }) => (
-          <button
-            key={key}
-            role="tab"
-            aria-selected={tab === key}
-            aria-controls={`panel-${key}`}
-            onClick={() => setTab(key)}
-            className="w-full" // que ocupen ancho completo de la celda
-          >
-            <span className="icon"><Icon size={20} /></span>{label}
-          </button>
-        ))}
-      </div>
+      {/* TABBAR responsive en cuadrícula: ocupa 2+ columnas según el ancho */}
+<div
+  role="tablist"
+  className="tabbar"
+  style={{
+    display: 'grid',
+    gap: 8,
+    // 160px mínimo por botón: en iPhone 14 caben 2 por fila; en móviles más anchos, 3–4–6
+    gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
+  }}
+>
+  {TABS.map(({ key, label, Icon }) => (
+    <button
+      key={key}
+      role="tab"
+      aria-selected={tab === key}
+      aria-controls={`panel-${key}`}
+      onClick={() => setTab(key)}
+      // ancho completo de la celda para que todos queden alineados
+      style={{ width: '100%' }}
+    >
+      <span className="icon"><Icon size={20} /></span>{label}
+    </button>
+  ))}
+</div>
 
       <section className="card" id={`panel-${tab}`} role="tabpanel" aria-labelledby={`tab-${tab}`}>
         {tab === 'notas' && <NotasTool />}
