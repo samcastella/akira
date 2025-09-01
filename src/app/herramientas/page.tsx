@@ -5,6 +5,8 @@ import {
   Notebook, Heart, Target, BookOpen,
   Trash2, X, Pencil, Save, Eye, Activity, ChevronDown, ChevronUp, Plus, Utensils
 } from 'lucide-react';
+// NEW: importar el modal
+import CalorieCalculatorModal, { MealResult } from '@/components/CalorieCalculatorModal';
 
 /* ===========================
    Helpers de almacenamiento
@@ -740,6 +742,10 @@ function ComidasTool() {
     setEditingEntry(null);
   };
 
+  // NEW: estado para abrir/cerrar modal y saber el día objetivo
+  const [calcOpen, setCalcOpen] = useState(false);
+  const [calcDay, setCalcDay] = useState<string | null>(null);
+
   return (
     <div>
       <h3 style={{ marginTop: 0 }}>Registro de comidas</h3>
@@ -819,6 +825,16 @@ function ComidasTool() {
                     <textarea className="textarea" rows={2} placeholder="Comida (p. ej., Huevos con bacon)" value={form.title} onChange={e=>setForm(dk, { title: e.target.value })} />
                     <input className="input" inputMode="numeric" placeholder="Calorías (kcal · opcional)" value={form.calStr} onChange={e=>setForm(dk, { calStr: e.target.value })} />
                     <input className="input" type="time" placeholder="Hora (opcional)" value={form.time} onChange={e=>setForm(dk, { time: e.target.value })} />
+
+                    {/* NEW: abrir calculadora de kcal para este día */}
+                    <button
+                      className="btn secondary inline-flex items-center gap-2 whitespace-nowrap"
+                      onClick={() => { setCalcDay(dk); setCalcOpen(true); }}
+                      title="Abrir calculadora de calorías"
+                    >
+                      Calcular kcal
+                    </button>
+
                     <button className="btn inline-flex items-center gap-2 whitespace-nowrap" onClick={() => addMealForDay(dk)}>
                       <Plus className="w-4 h-4" /> Registrar en {formatDateLabel(dk)}
                     </button>
@@ -878,6 +894,20 @@ function ComidasTool() {
           );
         })}
       </section>
+
+      {/* NEW: modal calculadora de calorías (montado una sola vez) */}
+      <CalorieCalculatorModal
+        isOpen={calcOpen}
+        onClose={() => setCalcOpen(false)}
+        initialName={calcDay ? getForm(calcDay).title : ""}
+        onSave={(meal: MealResult) => {
+          if (calcDay) {
+            // Rellenar el formulario del día con el nombre y las kcal totales calculadas
+            setForm(calcDay, { title: meal.name, calStr: String(meal.totalKcal) });
+          }
+          setCalcOpen(false);
+        }}
+      />
     </div>
   );
 }
