@@ -3,15 +3,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Plus, Trash2, Save, X, Search } from "lucide-react";
 
-/* =========
-   Tipos
-   ========= */
-export type Food = {
-  id: string;
-  name: string;
-  kcalPer100g: number;
-};
-
+/* ========= Tipos ========= */
+export type Food = { id: string; name: string; kcalPer100g: number };
 export type MealItem = {
   id: string;
   foodId?: string;
@@ -19,7 +12,6 @@ export type MealItem = {
   kcalPer100g: number;
   grams: number;
 };
-
 export type MealResult = {
   id: string;
   name: string;
@@ -28,9 +20,7 @@ export type MealResult = {
   createdAt: number;
 };
 
-/* =========
-   Dataset local
-   ========= */
+/* ========= Dataset local ========= */
 const BASE_FOODS: Food[] = [
   { id: "arroz", name: "Arroz blanco crudo", kcalPer100g: 357 },
   { id: "arroz_cocido", name: "Arroz blanco cocido", kcalPer100g: 130 },
@@ -69,16 +59,12 @@ const BASE_FOODS: Food[] = [
   { id: "queso", name: "Queso semi-curado", kcalPer100g: 402 },
 ];
 
-/* =========
-   Utils
-   ========= */
+/* ========= Utils ========= */
 const uid = () => Math.random().toString(36).slice(2);
-const clampNum = (n: number, min = 0, max = 1_000_000) => Math.min(max, Math.max(min, n));
-const formatKcal = (n: number) => `${Math.round(n)} kcal`;
+const clampNum = (n: number, min = 0, max = 1_000_000) =>
+  Math.min(max, Math.max(min, n));
 
-/* =========
-   Autocomplete compacto
-   ========= */
+/* ========= Autocomplete (compacto) ========= */
 function Autocomplete({
   value,
   onChange,
@@ -150,9 +136,7 @@ function Autocomplete({
   );
 }
 
-/* =========
-   Fila de ingrediente (una sola línea)
-   ========= */
+/* ========= Fila: Ingrediente + gramos + borrar ========= */
 function IngredientRow({
   foods,
   value,
@@ -164,7 +148,8 @@ function IngredientRow({
   onChange: (next: MealItem) => void;
   onRemove: () => void;
 }) {
-  const displayName = value.customName ?? foods.find((f) => f.id === value.foodId)?.name ?? "";
+  const displayName =
+    value.customName ?? foods.find((f) => f.id === value.foodId)?.name ?? "";
   const [query, setQuery] = useState(displayName);
 
   useEffect(() => {
@@ -172,11 +157,9 @@ function IngredientRow({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value.foodId, value.customName]);
 
-  const kcal = useMemo(() => (value.grams * value.kcalPer100g) / 100, [value.grams, value.kcalPer100g]);
-
   return (
-    <div className="grid grid-cols-[1fr,82px,96px,90px,36px] items-center gap-2">
-      {/* Ingrediente (autocomplete). Escribir = nombre personalizado */}
+    <div className="grid grid-cols-[1fr,90px,36px] items-center gap-2">
+      {/* Nombre del alimento (autocomplete). Escribir = nombre personalizado */}
       <Autocomplete
         value={query}
         onChange={(v) => {
@@ -184,7 +167,12 @@ function IngredientRow({
           onChange({ ...value, customName: v || undefined, foodId: undefined });
         }}
         onPick={(food) => {
-          onChange({ ...value, foodId: food.id, customName: undefined, kcalPer100g: food.kcalPer100g });
+          onChange({
+            ...value,
+            foodId: food.id,
+            customName: undefined,
+            kcalPer100g: food.kcalPer100g,
+          });
           setQuery(food.name);
         }}
         options={foods}
@@ -198,29 +186,17 @@ function IngredientRow({
           inputMode="numeric"
           className="w-full rounded-lg border border-[var(--line)] px-2 py-1.5 text-right text-sm"
           value={value.grams}
-          onChange={(e) => onChange({ ...value, grams: clampNum(parseFloat(e.target.value || "0"), 0, 100000) })}
+          onChange={(e) =>
+            onChange({
+              ...value,
+              grams: clampNum(parseFloat(e.target.value || "0"), 0, 100000),
+            })
+          }
           placeholder="gr"
           aria-label="Gramos"
         />
         <span className="text-xs text-[var(--muted)]">g</span>
       </div>
-
-      {/* kcal / 100g (editable y compacto) */}
-      <input
-        type="number"
-        inputMode="numeric"
-        className="w-full rounded-lg border border-[var(--line)] px-2 py-1.5 text-right text-sm"
-        value={value.kcalPer100g}
-        onChange={(e) =>
-          onChange({ ...value, kcalPer100g: clampNum(parseFloat(e.target.value || "0"), 0, 2000) })
-        }
-        placeholder="kcal/100g"
-        aria-label="kcal por 100g"
-        title="Ajusta el valor si es un ingrediente personalizado o quieres afinar"
-      />
-
-      {/* kcal calculadas */}
-      <div className="text-right text-sm font-medium tabular-nums">{formatKcal(kcal)}</div>
 
       {/* Eliminar */}
       <div className="flex justify-end">
@@ -238,9 +214,7 @@ function IngredientRow({
   );
 }
 
-/* =========
-   Modal principal (compacto y contenido recogido)
-   ========= */
+/* ========= Modal ========= */
 export default function CalorieCalculatorModal({
   isOpen,
   onClose,
@@ -256,7 +230,10 @@ export default function CalorieCalculatorModal({
   initialName?: string;
   initialItems?: MealItem[];
 }) {
-  const foods = useMemo(() => (presetFoods && presetFoods.length ? presetFoods : BASE_FOODS), [presetFoods]);
+  const foods = useMemo(
+    () => (presetFoods && presetFoods.length ? presetFoods : BASE_FOODS),
+    [presetFoods]
+  );
 
   const [mealName, setMealName] = useState(initialName);
   const [items, setItems] = useState<MealItem[]>(
@@ -278,13 +255,19 @@ export default function CalorieCalculatorModal({
   }, [isOpen]);
 
   const totals = useMemo(() => {
-    const totalKcal = items.reduce((acc, it) => acc + (it.grams * it.kcalPer100g) / 100, 0);
+    const totalKcal = items.reduce(
+      (acc, it) => acc + (it.grams * (it.kcalPer100g || 0)) / 100,
+      0
+    );
     const totalGrams = items.reduce((acc, it) => acc + it.grams, 0);
     return { totalKcal, totalGrams };
   }, [items]);
 
   function addRow() {
-    setItems((prev) => [...prev, { id: uid(), foodId: undefined, customName: "", kcalPer100g: 0, grams: 0 }]);
+    setItems((prev) => [
+      ...prev,
+      { id: uid(), foodId: undefined, customName: "", kcalPer100g: 0, grams: 0 },
+    ]);
   }
   function removeRow(id: string) {
     setItems((prev) => prev.filter((x) => x.id !== id));
@@ -293,7 +276,9 @@ export default function CalorieCalculatorModal({
     setItems((prev) => prev.map((x) => (x.id === id ? next : x)));
   }
   function handleSave() {
-    const clean = items.filter((it) => (it.customName || it.foodId) && it.grams > 0 && it.kcalPer100g > 0);
+    const clean = items.filter(
+      (it) => (it.customName || it.foodId) && it.grams > 0
+    );
     const name = mealName.trim() || "Comida sin nombre";
     const payload: MealResult = {
       id: uid(),
@@ -308,22 +293,29 @@ export default function CalorieCalculatorModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
-      {/* Overlay */}
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Overlay (cierra al pulsar fuera) */}
       <button
         className="absolute inset-0 bg-black/50"
         aria-label="Cerrar"
         onClick={onClose}
       />
 
-      {/* Modal compacto */}
+      {/* Contenedor modal: ~65% viewport width + scroll interno */}
       <div
         role="dialog"
         aria-modal="true"
-        className="relative z-10 w-full max-w-xl sm:max-w-lg rounded-t-2xl sm:rounded-2xl bg-white p-3 sm:p-4 shadow-2xl"
+        className="relative z-10 rounded-2xl bg-white shadow-2xl"
+        style={{
+          width: "65vw",
+          maxWidth: "720px",
+          minWidth: "320px",
+          maxHeight: "85vh",
+          overflow: "auto",
+        }}
       >
         {/* Header */}
-        <div className="mb-3 flex items-center justify-between">
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-[var(--line)] bg-white/95 px-4 py-3 backdrop-blur">
           <h2 className="text-base sm:text-lg font-semibold">Calculadora de calorías</h2>
           <button
             type="button"
@@ -336,73 +328,71 @@ export default function CalorieCalculatorModal({
           </button>
         </div>
 
-        {/* Nombre de la comida */}
-        <div className="mb-3">
-          <label className="mb-1 block text-xs font-medium text-[var(--muted)]">Nombre de la comida</label>
-          <input
-            value={mealName}
-            onChange={(e) => setMealName(e.target.value)}
-            placeholder="Ej. Paella"
-            className="w-full rounded-lg border border-[var(--line)] px-3 py-2 text-sm"
-          />
-        </div>
-
-        {/* Tabla de ingredientes (compacta) */}
-        <div className="rounded-xl border border-[var(--line)] p-3">
-          <div className="grid grid-cols-[1fr,82px,96px,90px,36px] gap-2 px-1 pb-2 text-[10px] uppercase tracking-wide text-[var(--muted)]">
-            <div>Ingrediente</div>
-            <div className="text-right">g</div>
-            <div className="text-right">kcal/100g</div>
-            <div className="text-right">kcal</div>
-            <div></div>
+        {/* Contenido */}
+        <div className="p-4">
+          {/* Nombre del plato */}
+          <div className="mb-3">
+            <label className="mb-1 block text-sm font-medium">Nombre del plato</label>
+            <input
+              value={mealName}
+              onChange={(e) => setMealName(e.target.value)}
+              placeholder="Ej: Hamburguesa"
+              className="w-full rounded-lg border border-[var(--line)] px-3 py-2 text-sm"
+            />
           </div>
 
-          <div className="flex flex-col gap-2.5">
-            {items.map((it) => (
-              <IngredientRow
-                key={it.id}
-                foods={foods}
-                value={it}
-                onChange={(next) => updateRow(it.id, next)}
-                onRemove={() => removeRow(it.id)}
-              />
-            ))}
+          {/* Lista de ingredientes (sin cabecera) */}
+          <div className="rounded-xl border border-[var(--line)] p-3">
+            <div className="flex flex-col gap-2.5">
+              {items.map((it) => (
+                <IngredientRow
+                  key={it.id}
+                  foods={foods}
+                  value={it}
+                  onChange={(next) => updateRow(it.id, next)}
+                  onRemove={() => removeRow(it.id)}
+                />
+              ))}
+            </div>
+
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={addRow}
+                className="inline-flex items-center gap-2 rounded-lg border border-[var(--line)] px-3 py-1.5 text-sm hover:bg-gray-50"
+              >
+                <Plus size={16} /> Añadir ingrediente
+              </button>
+            </div>
           </div>
 
-          <div className="mt-3">
-            <button
-              type="button"
-              onClick={addRow}
-              className="inline-flex items-center gap-2 rounded-lg border border-[var(--line)] px-3 py-1.5 text-sm hover:bg-gray-50"
-            >
-              <Plus size={16} /> Añadir ingrediente
-            </button>
-          </div>
-        </div>
+          {/* Totales */}
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+            <div className="text-sm text-[var(--muted)]">
+              <span className="mr-4">Peso total: {Math.round(totals.totalGrams)} g</span>
+              <span>
+                kcal totales: <strong>{Math.round(totals.totalKcal)}</strong>
+              </span>
+            </div>
 
-        {/* Totales */}
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-          <div className="text-sm text-[var(--muted)]">
-            <span className="mr-4">Peso total: {Math.round(totals.totalGrams)} g</span>
-            <span>kcal totales: <strong>{Math.round(totals.totalKcal)}</strong></span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg border border-[var(--line)] px-3 py-1.5 text-sm hover:bg-gray-50"
-            >
-              Cancelar
-            </button>
-            <button
-              type="button"
-              onClick={handleSave}
-              className="inline-flex items-center gap-2 rounded-lg bg-black px-3 py-1.5 text-sm text-white hover:opacity-90 active:opacity-80"
-              title="Añadir la comida al registro"
-            >
-              <Save size={16} /> Añadir al registro
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-lg border border-[var(--line)] px-4 py-2 text-sm hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleSave}
+                className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm text-white hover:opacity-90 active:opacity-80"
+                style={{ background: "#16a34a" }}
+                title="Añadir la comida al registro"
+              >
+                <Save size={16} /> Guardar plato
+              </button>
+            </div>
           </div>
         </div>
       </div>
