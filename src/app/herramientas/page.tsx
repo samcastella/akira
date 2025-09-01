@@ -3,10 +3,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Notebook, Heart, Target, BookOpen,
-  Trash2, X, Pencil, Save, Eye, Activity, ChevronDown, ChevronUp, Plus, Utensils
+  Trash2, X, Pencil, Save, Eye, Activity, ChevronDown, ChevronUp, Plus, Utensils, Dumbbell
 } from 'lucide-react';
+
 // NEW: importar el modal
 import CalorieCalculatorModal, { MealResult } from '@/components/CalorieCalculatorModal';
+// NEW: importar el registro de ejercicio
+import ExerciseLog from '@/components/ExerciseLog';
 
 /* ===========================
    Helpers de almacenamiento
@@ -143,12 +146,15 @@ type MealProfile = { height?: number; weight?: number; target?: number };
    Herramientas
    =========================== */
 export default function Herramientas() {
-  type TabKey = 'notas' | 'gratitud' | 'conductas' | 'comidas' | 'objetivos' | 'libros';
+  // NEW: añadimos la pestaña 'ejercicio'
+  type TabKey = 'notas' | 'gratitud' | 'conductas' | 'comidas' | 'objetivos' | 'libros' | 'ejercicio';
+
   const TABS: { key: TabKey; label: string; Icon: React.ComponentType<any> }[] = [
     { key: 'notas', label: 'Mis notas', Icon: Notebook },
     { key: 'gratitud', label: 'Diario de gratitud', Icon: Heart },
     { key: 'conductas', label: 'Registro de conductas', Icon: Activity },
     { key: 'comidas', label: 'Registro de comidas', Icon: Utensils },
+    { key: 'ejercicio', label: 'Registro de ejercicio', Icon: Dumbbell }, // NEW
     { key: 'objetivos', label: 'Objetivos para hoy', Icon: Target },
     { key: 'libros', label: 'Mis libros', Icon: BookOpen },
   ];
@@ -158,9 +164,18 @@ export default function Herramientas() {
   return (
     <div className="py-6 container" style={{ background: '#fff' }}>
       <h2 className="page-title">Herramientas</h2>
-      <p className="muted" style={{ margin: '0 0 16px' }}>Tu espacio para escribir, agradecer y registrar conductas/comidas.</p>
+      <p className="muted" style={{ margin: '0 0 16px' }}>
+        Tu espacio para escribir, agradecer y registrar conductas/comidas/ejercicio.
+      </p>
 
-      <div role="tablist" className="tabbar">
+      {/* TABBAR responsive en cuadrícula:
+         - base: 2 columnas (móviles estrechos como iPhone 14)
+         - sm (≥640): 3 columnas
+         - md (≥768): 6 columnas */}
+      <div
+        role="tablist"
+        className="tabbar grid gap-2 grid-cols-2 sm:grid-cols-3 md:grid-cols-6"
+      >
         {TABS.map(({ key, label, Icon }) => (
           <button
             key={key}
@@ -168,6 +183,7 @@ export default function Herramientas() {
             aria-selected={tab === key}
             aria-controls={`panel-${key}`}
             onClick={() => setTab(key)}
+            className="w-full" // que ocupen ancho completo de la celda
           >
             <span className="icon"><Icon size={20} /></span>{label}
           </button>
@@ -179,13 +195,13 @@ export default function Herramientas() {
         {tab === 'gratitud' && <GratitudTool />}
         {tab === 'conductas' && <ConductasTool />}
         {tab === 'comidas' && <ComidasTool />}
+        {tab === 'ejercicio' && <ExerciseLog />}{/* NEW */}
         {tab === 'objetivos' && <GoalsTool />}
         {tab === 'libros' && <BooksTool />}
       </section>
     </div>
   );
 }
-
 /* ===========================
    Notas
    =========================== */
@@ -631,6 +647,7 @@ function BehaviorCard({
     </article>
   );
 }
+
 /* ===========================
    Registro de Comidas (rediseñado) — ajustes solicitados
    =========================== */
