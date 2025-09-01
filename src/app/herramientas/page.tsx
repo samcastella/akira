@@ -631,9 +631,8 @@ function BehaviorCard({
     </article>
   );
 }
-
 /* ===========================
-   Registro de Comidas (rediseñado) — borde gris + Editar inline
+   Registro de Comidas (rediseñado) — ajustes solicitados
    =========================== */
 function ComidasTool() {
   // Perfil
@@ -655,19 +654,24 @@ function ComidasTool() {
   type FormState = { type: MealType; title: string; calStr: string; time: string };
   const [forms, setForms] = useState<Record<string, FormState>>({});
 
-  const getForm = (dk: string): FormState => forms[dk] || { type: 'Comida', title: '', calStr: '', time: '' };
+  const pad2 = (n: number) => String(n).padStart(2, '0');
+  const hhmmFromTs = (ts: number) => {
+    const d = new Date(ts);
+    return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  };
+  const currentHHMM = () => {
+    const d = new Date();
+    return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  };
+
+  const getForm = (dk: string): FormState =>
+    forms[dk] || { type: 'Comida', title: '', calStr: '', time: currentHHMM() };
   const setForm = (dk: string, next: Partial<FormState>) =>
     setForms(prev => ({ ...prev, [dk]: { ...getForm(dk), ...next } }));
 
   // --- Edición inline de una comida concreta
   const [editingEntry, setEditingEntry] = useState<{ id: string; day: string } | null>(null);
   const [editForm, setEditForm] = useState<FormState>({ type: 'Comida', title: '', calStr: '', time: '' });
-
-  const pad2 = (n: number) => String(n).padStart(2, '0');
-  const hhmmFromTs = (ts: number) => {
-    const d = new Date(ts);
-    return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-  };
 
   // Días disponibles (si no hay registro de hoy, igualmente aparece)
   const allDays = useMemo(() => {
@@ -691,7 +695,7 @@ function ComidasTool() {
     if (!title) return;
 
     const calories = f.calStr.trim() ? Math.max(0, Number(f.calStr.trim())) : undefined;
-    const hhmm = /^\d{2}:\d{2}$/.test(f.time) ? f.time : '12:00';
+    const hhmm = /^\d{2}:\d{2}$/.test(f.time) ? f.time : currentHHMM();
     // Timestamp local dentro del día seleccionado
     const ts = new Date(`${dk}T${hhmm}:00`).getTime();
 
@@ -701,8 +705,8 @@ function ComidasTool() {
       const newArr = [entry, ...arr].sort((a,b)=>b.ts - a.ts);
       return { ...prev, [dk]: newArr };
     });
-    // limpiar formulario de ese día
-    setForm(dk, { title: '', calStr: '', time: '' });
+    // limpiar formulario de ese día (dejando hora actual por defecto)
+    setForm(dk, { title: '', calStr: '', time: currentHHMM() });
     setOpenDays(o => ({ ...o, [dk]: true })); // lo dejamos abierto
   };
 
@@ -729,7 +733,7 @@ function ComidasTool() {
     if (!title) return;
 
     const calories = f.calStr.trim() ? Math.max(0, Number(f.calStr.trim())) : undefined;
-    const hhmm = /^\d{2}:\d{2}$/.test(f.time) ? f.time : '12:00';
+    const hhmm = /^\d{2}:\d{2}$/.test(f.time) ? f.time : currentHHMM();
     const ts = new Date(`${day}T${hhmm}:00`).getTime();
 
     setByDay(prev => {
@@ -748,10 +752,10 @@ function ComidasTool() {
 
   return (
     <div>
-      <h3 style={{ marginTop: 0 }}>Registro de comidas</h3>
+      {/* Eliminado el H3 “Registro de comidas” para que lo primero sea Mi perfil */}
 
-      {/* Perfil — borde gris */}
-      <section className="border rounded-2xl p-4" style={{ borderColor: 'var(--line)' }}>
+      {/* Perfil — SIN bordes grises */}
+      <section className="rounded-2xl p-4">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <strong>Mi perfil</strong>
           {!editingProfile ? (
@@ -826,17 +830,18 @@ function ComidasTool() {
                     <input className="input" inputMode="numeric" placeholder="Calorías (kcal · opcional)" value={form.calStr} onChange={e=>setForm(dk, { calStr: e.target.value })} />
                     <input className="input" type="time" placeholder="Hora (opcional)" value={form.time} onChange={e=>setForm(dk, { time: e.target.value })} />
 
-                    {/* NEW: abrir calculadora de kcal para este día */}
+                    {/* Calculadora — ahora botón NEGRO y texto actualizado */}
                     <button
-                      className="btn secondary inline-flex items-center gap-2 whitespace-nowrap"
+                      className="btn inline-flex items-center gap-2 whitespace-nowrap"
                       onClick={() => { setCalcDay(dk); setCalcOpen(true); }}
                       title="Abrir calculadora de calorías"
                     >
-                      Calcular kcal
+                      Calculadora de calorías
                     </button>
 
-                    <button className="btn inline-flex items-center gap-2 whitespace-nowrap" onClick={() => addMealForDay(dk)}>
-                      <Plus className="w-4 h-4" /> Registrar en {formatDateLabel(dk)}
+                    {/* Registrar — ahora VERDE y sin fecha */}
+                    <button className="btn green inline-flex items-center gap-2 whitespace-nowrap" onClick={() => addMealForDay(dk)}>
+                      <Plus className="w-4 h-4" /> Registrar
                     </button>
                   </div>
 
@@ -877,7 +882,8 @@ function ComidasTool() {
                                 <input className="input" type="time" value={editForm.time} onChange={e => setEditForm(f => ({ ...f, time: e.target.value }))} />
                               </div>
                               <div className="flex gap-2 justify-end mt-2">
-                                <button className="btn" onClick={saveEditMeal}>
+                                {/* Guardar en una sola línea con icono + texto */}
+                                <button className="btn inline-flex items-center gap-2 whitespace-nowrap" onClick={saveEditMeal}>
                                   <Save className="w-4 h-4" /> Guardar
                                 </button>
                                 <button className="btn ghost" onClick={() => setEditingEntry(null)}>Cancelar</button>
@@ -895,7 +901,7 @@ function ComidasTool() {
         })}
       </section>
 
-      {/* NEW: modal calculadora de calorías (montado una sola vez) */}
+      {/* Modal calculadora de calorías (montado una sola vez) */}
       <CalorieCalculatorModal
         isOpen={calcOpen}
         onClose={() => setCalcOpen(false)}
@@ -1259,4 +1265,3 @@ function BooksTool() {
     </div>
   );
 }
-
