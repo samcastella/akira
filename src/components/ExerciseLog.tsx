@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { Save, Pencil, Trash2, X } from "lucide-react";
+import { Save, Pencil, Trash2, X, ChevronDown, ChevronUp } from "lucide-react";
 
 /* ===========================
    Tipos y helpers
@@ -76,6 +76,9 @@ export default function ExerciseLog() {
   // Calorías: autocalculadas pero editables
   const [calories, setCalories] = useState<number>(() => Math.round(KCAL_PER_MIN["V3"] * 30));
   const [manualCalories, setManualCalories] = useState<boolean>(false); // si el usuario tocó el campo
+
+  // Info panel (plegado/desplegado)
+  const [infoOpen, setInfoOpen] = useState(false);
 
   // Cargar / Guardar LS
   useEffect(() => {
@@ -319,42 +322,50 @@ export default function ExerciseLog() {
         </div>
       </form>
 
-      {/* Texto informativo */}
-      <div className="mt-6 rounded-2xl border border-[var(--line)] bg-white p-4">
-        <h3 className="text-base font-semibold mb-2">
-          ¿Cómo puedo calcular las calorías que gasto haciendo ejercicio?
-        </h3>
-        <p className="text-sm leading-relaxed">
-          Lo ideal es usar un dispositivo específico (reloj inteligente, banda de pecho) para una
-          medición precisa. Si no lo tienes, en esta app podrás <strong>elegir la intensidad
-          (V1–V5)</strong> y <strong>poner los minutos</strong>: generaremos una estimación
-          automática, pero el <strong>resultado es editable</strong> para que, si conoces el dato
-          exacto (por ejemplo, el que te da tu reloj), puedas modificarlo y guardarlo.
-        </p>
-        <ul className="mt-3 space-y-2 text-sm">
-          <li>
-            <strong>V1 — Muy suave / Recuperación</strong>: paseo muy tranquilo, movilidad,
-            respiración, estiramientos suaves, <em>pilates terapéutico</em> o rehabilitación.
-          </li>
-          <li>
-            <strong>V2 — Ejercicio suave</strong>: andar tranquilo, estiramientos,{" "}
-            <em>pilates básico</em>, yoga suave.
-          </li>
-          <li>
-            <strong>V3 — Ejercicio moderado</strong>: andar rápido, bici urbana, nadar suave,
-            bailar, <em>pádel recreativo</em>, <em>entrenamiento de fuerza tradicional</em> (series
-            con descansos).
-          </li>
-          <li>
-            <strong>V4 — Ejercicio intenso</strong>: correr continuo, bici deportiva, natación
-            continua, <em>pádel competitivo</em>, <em>entrenamiento de fuerza</em> con superseries o
-            circuitos.
-          </li>
-          <li>
-            <strong>V5 — Ejercicio muy intenso</strong>: HIIT, sprints, fútbol/baloncesto
-            competitivo, crossfit/intervalos.
-          </li>
-        </ul>
+      {/* Texto informativo con acordeón */}
+      <div className="mt-6 rounded-2xl border border-[var(--line)] bg-white">
+        <button
+          type="button"
+          className="w-full flex items-center justify-between gap-2 px-4 py-3"
+          aria-expanded={infoOpen}
+          onClick={() => setInfoOpen((v) => !v)}
+        >
+          <h3 className="text-base font-semibold m-0">
+            ¿Cómo puedo calcular las calorías que gasto haciendo ejercicio?
+          </h3>
+          {infoOpen ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+        </button>
+
+        {infoOpen && (
+          <div className="px-4 pb-4">
+            <p className="text-sm leading-relaxed">
+              Lo ideal es usar un dispositivo específico (reloj inteligente, banda de pecho) para una
+              medición precisa. Si no lo tienes, en esta app podrás <strong>elegir la intensidad (V1–V5)</strong> y
+              <strong> poner los minutos</strong>: generaremos una estimación automática, pero el <strong>resultado es editable</strong> para
+              que, si conoces el dato exacto (por ejemplo, el que te da tu reloj), puedas modificarlo y guardarlo.
+            </p>
+            <ul className="mt-3 space-y-2 text-sm">
+              <li>
+                <strong>V1 — Muy suave / Recuperación</strong>: paseo muy tranquilo, movilidad,
+                respiración, estiramientos suaves, <em>pilates terapéutico</em> o rehabilitación.
+              </li>
+              <li>
+                <strong>V2 — Ejercicio suave</strong>: andar tranquilo, estiramientos, <em>pilates básico</em>, yoga suave.
+              </li>
+              <li>
+                <strong>V3 — Ejercicio moderado</strong>: andar rápido, bici urbana, nadar suave, bailar,
+                <em> pádel recreativo</em>, <em>entrenamiento de fuerza tradicional</em> (series con descansos).
+              </li>
+              <li>
+                <strong>V4 — Ejercicio intenso</strong>: correr continuo, bici deportiva, natación continua,
+                <em> pádel competitivo</em>, <em>entrenamiento de fuerza</em> con superseries o circuitos.
+              </li>
+              <li>
+                <strong>V5 — Ejercicio muy intenso</strong>: HIIT, sprints, fútbol/baloncesto competitivo, crossfit/intervalos.
+              </li>
+            </ul>
+          </div>
+        )}
       </div>
 
       {/* Lista de registros */}
