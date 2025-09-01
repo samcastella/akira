@@ -20,7 +20,7 @@ export type MealResult = {
   createdAt: number;
 };
 
-/* ========= Dataset local ========= */
+//* ========= Dataset local ========= */
 const BASE_FOODS: Food[] = [
 { id: "arroz", name: "Arroz blanco crudo", kcalPer100g: 357 },
 { id: "arroz_cocido", name: "Arroz blanco cocido", kcalPer100g: 130 },
@@ -433,7 +433,7 @@ function Autocomplete({
 
   return (
     <div className="relative" ref={ref}>
-      <div className="flex items-center gap-2 rounded-lg border border-[var(--line)] bg-white px-2.5 py-1.5 focus-within:ring-2 focus-within:ring-black">
+      <div className="flex items-center gap-2 rounded-lg border border-[var(--line)] bg-white px-3 py-2 focus-within:ring-2 focus-within:ring-black">
         <Search size={14} className="opacity-70" />
         <input
           value={value}
@@ -443,7 +443,9 @@ function Autocomplete({
             setOpen(true);
           }}
           placeholder={placeholder}
-          className="w-full outline-none text-sm"
+          className="w-full outline-none"
+          /* Evita auto-zoom en iOS */
+          style={{ fontSize: 16, lineHeight: "22px" }}
         />
       </div>
       {open && (
@@ -494,7 +496,7 @@ function IngredientRow({
   }, [value.foodId, value.customName]);
 
   return (
-    <div className="grid grid-cols-[1fr,90px,36px] items-center gap-2">
+    <div className="grid grid-cols-[1fr,100px,36px] items-center gap-2">
       {/* Nombre del alimento (autocomplete). Escribir = nombre personalizado */}
       <Autocomplete
         value={query}
@@ -519,8 +521,8 @@ function IngredientRow({
       <div className="flex items-center gap-1.5">
         <input
           type="number"
-          inputMode="numeric"
-          className="w-full rounded-lg border border-[var(--line)] px-2 py-1.5 text-right text-sm"
+          inputMode="decimal"
+          className="w-full rounded-lg border border-[var(--line)] px-2 py-2 text-right"
           value={value.grams}
           onChange={(e) =>
             onChange({
@@ -530,6 +532,8 @@ function IngredientRow({
           }
           placeholder="gr"
           aria-label="Gramos"
+          /* Evita auto-zoom en iOS */
+          style={{ fontSize: 16, lineHeight: "22px" }}
         />
         <span className="text-xs text-[var(--muted)]">g</span>
       </div>
@@ -695,11 +699,8 @@ export default function CalorieCalculatorModal({
                 setMealName(e.target.value);
               }}
               placeholder="Ej: Hamburguesa"
-              className={`w-full rounded-lg border px-3 py-2 text-sm ${
-                nameErr
-                  ? "border-red-500 ring-1 ring-red-300"
-                  : "border-[var(--line)]"
-              }`}
+              className="w-full rounded-lg border px-3 py-2"
+              style={{ fontSize: 16, lineHeight: "22px", borderColor: nameErr ? "#ef4444" : "var(--line)" }}
             />
             {nameErr && (
               <p id="meal-name-error" className="mt-1 text-xs text-red-600">
