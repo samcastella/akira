@@ -137,15 +137,10 @@ export default function HomePage() {
           ))}
         </div>
 
-        {/* Modal de Pensamiento */}
-        {showThought && (
-          <ThoughtModal
-            title={thought.title}
-            body={thought.body}
-            onClose={() => setShowThought(false)}
-          />
-        )}
-      </main>
-    </>
-  );
-}
+    {/* Modal de Pensamiento */}
+<ThoughtModal
+  open={showThought}
+  title={thought.title}
+  text={thought.body}
+  onClose={() => setShowThought(false)}
+/>
