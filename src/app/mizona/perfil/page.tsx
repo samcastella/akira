@@ -32,6 +32,24 @@ function loadUser(): Profile {
   }
 }
 
+/* ===== Helpers Instagram ===== */
+function normalizeInstagramLink(val?: string) {
+  if (!val) return undefined;
+  const trimmed = val.trim();
+  // Si ya trae http(s) lo dejamos
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  // Si viene @usuario o solo usuario
+  const user = trimmed.replace(/^@/, '');
+  return `https://instagram.com/${user}`;
+}
+
+function instagramLabel(val?: string) {
+  if (!val) return '—';
+  const m = val.match(/instagram\.com\/([^/?#]+)/i);
+  if (m?.[1]) return '@' + m[1];
+  return '@' + val.replace(/^@/, '');
+}
+
 export default function PerfilPage() {
   const [editing, setEditing] = useState(false);
   const [profile, setProfile] = useState<Profile>({});
@@ -114,13 +132,14 @@ export default function PerfilPage() {
             <Row label="Sexo" value={profile.sexo || '—'} />
             <Row label="Peso (kg)" value={profile.peso ?? '—'} />
             <Row label="Calorías diarias" value={profile.caloriasDiarias ?? '—'} />
+
+            {/* Instagram con formateo y enlace normalizado */}
             <Row
               label="Instagram"
-              value={profile.instagram || '—'}
-              link={
-                profile.instagram?.startsWith('http') ? profile.instagram : undefined
-              }
+              value={profile.instagram ? instagramLabel(profile.instagram) : '—'}
+              link={normalizeInstagramLink(profile.instagram)}
             />
+
             <Row
               label="TikTok"
               value={profile.tiktok || '—'}
@@ -245,10 +264,10 @@ export default function PerfilPage() {
                 }
               />
             </Field>
-            <Field label="Instagram (URL)">
+            <Field label="Instagram (URL o @usuario)">
               <input
                 className="input text-[16px]"
-                placeholder="https://instagram.com/usuario"
+                placeholder="https://instagram.com/usuario o @usuario"
                 value={profile.instagram || ''}
                 onChange={(e) => handleChange('instagram', e.target.value)}
               />
@@ -303,7 +322,8 @@ export default function PerfilPage() {
             aria-modal="true"
           >
             <p className="font-semibold">
-              Tus cambios han sido guardados con éxitos
+              {/* Corregido: éxito (singular) */}
+              Tus cambios han sido guardados con éxito
             </p>
             <div className="mt-4 flex justify-end gap-2">
               <button
@@ -334,21 +354,21 @@ function Row({
   link?: string;
 }) {
   const content = link ? (
-    <a href={link} target="_blank" rel="noreferrer" className="underline">
+    <a href={link} target="_blank" rel="noreferrer" className="underline break-all">
       {value}
     </a>
   ) : (
-    value
+    <span className="break-all">{value}</span>
   );
+
   return (
     <div
-      className="flex items-center justify-between border-t"
+      className="flex items-start gap-3 border-t"
       style={{ borderColor: 'var(--line)', paddingTop: 8 }}
     >
-      <div className="muted" style={{ marginRight: 12 }}>
-        {label}
-      </div>
-      <div style={{ fontWeight: 600 }}>{content}</div>
+      <div className="muted shrink-0">{label}</div>
+      {/* min-w-0 es CLAVE para que los enlaces largos no rompan el layout en flex */}
+      <div className="ml-auto font-semibold text-right min-w-0">{content}</div>
     </div>
   );
 }
