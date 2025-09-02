@@ -2,13 +2,12 @@
 
 import { useMemo, useState } from 'react';
 import { UserProfile, estimateCalories, saveUserMerge } from '@/lib/user';
-import { Rocket } from 'lucide-react';
+import { Rocket, ArrowLeft } from 'lucide-react';
 
 type Step = 1 | 2 | 3;
 type Sex = 'masculino' | 'femenino' | 'prefiero_no_decirlo';
 type Act = 'sedentario' | 'ligero' | 'moderado' | 'intenso';
 
-// Extendemos por si el tipo UserProfile aún no tuviera todos los campos
 type FormUser = UserProfile & {
   sexo?: Sex;
   edad?: number;
@@ -43,7 +42,6 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
       const est = estimateCalories?.(user as UserProfile);
       if (est) return setUser((p) => ({ ...p, caloriasDiarias: est }));
     } catch {}
-    // Fallback rápido por si estimateCalories no está disponible
     const { sexo, edad, estatura, peso, actividad } = user;
     if (!edad || !estatura || !peso) return;
     const base = 10 * peso + 6.25 * estatura - 5 * edad + (sexo === 'masculino' ? 5 : sexo === 'femenino' ? -161 : 0);
@@ -58,7 +56,6 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
   function nextFromStep1(e: React.FormEvent) {
     e.preventDefault();
     if (!canNext1) return;
-    // Guardado incremental
     saveUserMerge({
       nombre: user.nombre,
       apellido: user.apellido,
@@ -70,7 +67,6 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
 
   function nextFromStep2(e: React.FormEvent) {
     e.preventDefault();
-    // Guardado incremental de salud
     saveUserMerge({
       sexo: user.sexo,
       edad: user.edad,
@@ -83,21 +79,18 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
   }
 
   function finish() {
-    // Último merge por si algo cambió
     saveUserMerge(user);
-    onClose?.(); // El layout desbloquea la app
+    onClose?.();
   }
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60">
-      {/* Tarjeta del modal con scroll interno */}
       <div
         className="bg-white w-[70vw] max-w-2xl mx-4 rounded-2xl shadow-xl text-sm flex flex-col max-h-[85svh]"
         role="dialog"
         aria-modal="true"
         aria-labelledby="reg-title"
       >
-        {/* Cabecera fija */}
         <div className="p-6 pb-3 flex items-center justify-between">
           <h2 id="reg-title" className="text-base font-bold">Registro</h2>
           <div className="flex items-center gap-2 text-[10px]">
@@ -107,9 +100,8 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
           </div>
         </div>
 
-        {/* Contenido con overflow interno */}
         <div className="px-6 pb-6 overflow-y-auto">
-          {/* PASO 1 — Datos básicos (tipografía compacta) */}
+          {/* PASO 1 */}
           {step === 1 && (
             <form onSubmit={nextFromStep1} className="space-y-4">
               <div>
@@ -124,7 +116,7 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
                     type="text"
                     value={user.nombre ?? ''}
                     onChange={(e) => handleChange('nombre', e.target.value)}
-                    className="mt-1 input"
+                    className="mt-1 input text-[16px]"
                     required
                   />
                 </label>
@@ -134,7 +126,7 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
                     type="text"
                     value={user.apellido ?? ''}
                     onChange={(e) => handleChange('apellido', e.target.value)}
-                    className="mt-1 input"
+                    className="mt-1 input text-[16px]"
                     required
                   />
                 </label>
@@ -146,7 +138,7 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
                   type="email"
                   value={user.email ?? ''}
                   onChange={(e) => handleChange('email', e.target.value)}
-                  className="mt-1 input"
+                  className="mt-1 input text-[16px]"
                   required
                 />
               </label>
@@ -157,7 +149,7 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
                   type="tel"
                   value={user.telefono ?? ''}
                   onChange={(e) => handleChange('telefono', e.target.value)}
-                  className="mt-1 input"
+                  className="mt-1 input text-[16px]"
                 />
               </label>
 
@@ -173,7 +165,7 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
             </form>
           )}
 
-          {/* PASO 2 — Perfil salud (botones 1 fila, estilos de la app) */}
+          {/* PASO 2 */}
           {step === 2 && (
             <form onSubmit={nextFromStep2} className="space-y-4">
               <div>
@@ -187,7 +179,7 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
                 <label className="block text-xs">
                   <span className="font-medium">Sexo</span>
                   <select
-                    className="mt-1 input"
+                    className="mt-1 input text-[16px]"
                     value={user.sexo ?? 'prefiero_no_decirlo'}
                     onChange={(e) => handleChange('sexo', e.target.value as Sex)}
                   >
@@ -204,7 +196,7 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
                     min={5}
                     value={user.edad ?? ''}
                     onChange={(e) => handleChange('edad', e.target.value ? Number(e.target.value) : undefined)}
-                    className="mt-1 input"
+                    className="mt-1 input text-[16px]"
                   />
                 </label>
 
@@ -215,7 +207,7 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
                     min={80}
                     value={user.estatura ?? ''}
                     onChange={(e) => handleChange('estatura', e.target.value ? Number(e.target.value) : undefined)}
-                    className="mt-1 input"
+                    className="mt-1 input text-[16px]"
                   />
                 </label>
 
@@ -227,14 +219,14 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
                     step="0.1"
                     value={user.peso ?? ''}
                     onChange={(e) => handleChange('peso', e.target.value ? Number(e.target.value) : undefined)}
-                    className="mt-1 input"
+                    className="mt-1 input text-[16px]"
                   />
                 </label>
 
                 <label className="block text-xs">
                   <span className="font-medium">Actividad</span>
                   <select
-                    className="mt-1 input"
+                    className="mt-1 input text-[16px]"
                     value={user.actividad ?? 'sedentario'}
                     onChange={(e) => handleChange('actividad', e.target.value as Act)}
                   >
@@ -255,7 +247,7 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
                       onChange={(e) =>
                         handleChange('caloriasDiarias', e.target.value ? Number(e.target.value) : undefined)
                       }
-                      className="input"
+                      className="input text-[16px]"
                     />
                     <button
                       type="button"
@@ -269,36 +261,41 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
                 </label>
               </div>
 
-              {/* Botones en una sola fila, sin wrap */}
+              {/* Enlace para omitir el paso */}
+              <p className="text-xs text-gray-600 text-center mt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    saveUserMerge({
+                      sexo: user.sexo,
+                      edad: user.edad,
+                      estatura: user.estatura,
+                      peso: user.peso,
+                      actividad: user.actividad,
+                      caloriasDiarias: user.caloriasDiarias,
+                    });
+                    setStep(3);
+                  }}
+                  className="underline underline-offset-2"
+                >
+                  Omitir este paso
+                </button>
+              </p>
+
+              {/* Botonera */}
               <div className="flex gap-2 justify-between flex-nowrap">
                 <button
                   type="button"
                   onClick={() => setStep(1)}
-                  className="btn secondary whitespace-nowrap"
+                  className="btn secondary whitespace-nowrap inline-flex items-center"
                 >
+                  <ArrowLeft size={16} className="mr-1" />
                   Atrás
                 </button>
                 <div className="flex gap-2 flex-nowrap">
                   <button
-                    type="button"
-                    onClick={() => {
-                      saveUserMerge({
-                        sexo: user.sexo,
-                        edad: user.edad,
-                        estatura: user.estatura,
-                        peso: user.peso,
-                        actividad: user.actividad,
-                        caloriasDiarias: user.caloriasDiarias,
-                      });
-                      setStep(3);
-                    }}
-                    className="btn whitespace-nowrap"  // negro
-                  >
-                    Saltar
-                  </button>
-                  <button
                     type="submit"
-                    className="btn secondary whitespace-nowrap"
+                    className="btn whitespace-nowrap"
                   >
                     Guardar
                   </button>
@@ -307,7 +304,7 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
             </form>
           )}
 
-          {/* PASO 3 — Bienvenida + reglas (tipografía más pequeña) */}
+          {/* PASO 3 */}
           {step === 3 && (
             <div className="space-y-3 text-xs leading-snug">
               <div>
