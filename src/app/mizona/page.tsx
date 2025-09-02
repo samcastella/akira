@@ -1,11 +1,30 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { Check, RotateCcw, Trash2 } from 'lucide-react';
 
 /* ====== storage + tipos ====== */
 const LS_RETOS = 'akira_mizona_retos_v1';
+const LS_USER  = 'akira_user_v1';              // donde RegistrationModal guarda con saveUserMerge
+const LS_ACTIVE_PROGRAMS = 'akira_programs_active_v1'; // array de keys de programas activos
+
 type Reto = { id: string; text: string; createdAt: number; due: string; done: boolean; permanent?: boolean };
+
+type UserProfileLS = {
+  nombre?: string;
+  apellido?: string;
+  email?: string;
+  telefono?: string;
+  sexo?: 'masculino' | 'femenino' | 'prefiero_no_decirlo';
+  edad?: number;
+  estatura?: number;
+  peso?: number;
+  actividad?: 'sedentario' | 'ligero' | 'moderado' | 'intenso';
+  caloriasDiarias?: number;
+  instagram?: string;
+  tiktok?: string;
+};
 
 function loadLS<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback;
@@ -23,7 +42,15 @@ const fmtDate = (d: string | number) =>
 /* ====== página ====== */
 export default function MiZonaPage() {
   const [retos, setRetos] = useState<Reto[]>(() => loadLS<Reto[]>(LS_RETOS, []));
+  const [user, setUser]   = useState<UserProfileLS>(() => loadLS<UserProfileLS>(LS_USER, {}));
+  const [activePrograms, setActivePrograms] = useState<string[]>(() => loadLS<string[]>(LS_ACTIVE_PROGRAMS, []));
+
   useEffect(() => { saveLS(LS_RETOS, retos); }, [retos]);
+  useEffect(() => {
+    // refresco por si el usuario vuelve desde Registro/Perfil
+    setUser(loadLS<UserProfileLS>(LS_USER, {}));
+    setActivePrograms(loadLS<string[]>(LS_ACTIVE_PROGRAMS, []));
+  }, []);
 
   const today = todayKey();
 
@@ -65,7 +92,6 @@ export default function MiZonaPage() {
           done: false,
           permanent: true,
         };
-        // Lo ponemos arriba para que aparezca primero en listas
         updated.unshift(clone);
       }
       return updated;
@@ -80,11 +106,52 @@ export default function MiZonaPage() {
     setRetos(prev => prev.filter(r => r.id !== id));
   }
 
+  const greetingName = user?.nombre?.trim() ? user.nombre : 'usuario/a';
+  const age = user?.edad ?? '—';
+  const weight = user?.peso ?? '—';
+  const activeCount = activePrograms?.length ?? 0;
+
   return (
     <main className="container" style={{ paddingTop: 24, paddingBottom: 24 }}>
       <h2 className="page-title">Mi zona</h2>
 
-      {/* Panel blanco, ancho completo dentro del container, SIN borde */}
+      {/* ===== Panel saludo + datos rápidos ===== */}
+      <section
+        style={{
+          background: 'var(--background)',
+          borderRadius: 'var(--radius-card)',
+          padding: 18,
+          border: '1px solid var(--line)',
+          marginBottom: 16
+        }}
+      >
+        <p className="text-sm" style={{ margin: 0, fontWeight: 700 }}>
+          Hola {greetingName},
+        </p>
+
+        <div className="mt-3 grid grid-cols-3 gap-8 text-sm">
+          <div>
+            <div className="muted">Edad</div>
+            <div style={{ fontWeight: 600 }}>{age}</div>
+          </div>
+          <div>
+            <div className="muted">Peso</div>
+            <div style={{ fontWeight: 600 }}>{weight}</div>
+          </div>
+          <div>
+            <div className="muted">Programas activos</div>
+            <div style={{ fontWeight: 600 }}>{activeCount}</div>
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <Link href="/mizona/perfil" className="btn">
+            Ver más
+          </Link>
+        </div>
+      </section>
+
+      {/* ===== Retos ===== */}
       <section
         style={{
           background: 'var(--background)',
