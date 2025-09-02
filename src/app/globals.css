@@ -366,3 +366,40 @@ details.accordion summary::-webkit-details-marker { display: none; }
   outline: 2px solid color-mix(in oklab, var(--accent) 10%, transparent);
   outline-offset: 2px;
 }
+/* === HOME: botones y CTA === */
+
+/* Reponemos una variante explícita de primario */
+.btn.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+/* “Ver programa”: cuando lo pulsas, fondo negro */
+.btn.secondary:active {
+  background: #000;
+  color: #fff;
+  border-color: #000;
+}
+
+/* Icono dentro de botones (texto + icono) */
+.btn .icon {
+  display: inline-flex;
+  margin-left: 8px;
+  line-height: 0;
+}
+
+/* === HOME: imágenes de portada a todo el ancho con ratio 4:5 === */
+.card .cover-img {
+  width: 100%;
+  aspect-ratio: 4 / 5;   /* 4:5 como definimos en Home */
+  object-fit: cover;
+  display: block;
+}
+
+/* === HOME: bloque "Pensamiento" vertical en móvil/desktop === */
+.home-thought {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
