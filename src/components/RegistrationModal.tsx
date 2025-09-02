@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { UserProfile, estimateCalories, saveUserMerge } from '@/lib/user';
 import { Rocket, ArrowLeft } from 'lucide-react';
-import { supabase } from '../../lib/supabaseClient';
+import { supabase } from '@/lib/supabaseClient';
 
 type Step = 1 | 2 | 3;
 type Sex = 'masculino' | 'femenino' | 'prefiero_no_decirlo';
