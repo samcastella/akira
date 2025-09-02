@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { UserProfile, estimateCalories, saveUserMerge } from '@/lib/user';
 import { Rocket, ArrowLeft } from 'lucide-react';
+import { supabase } from '../../lib/supabaseClient';
 
 type Step = 1 | 2 | 3;
 type Sex = 'masculino' | 'femenino' | 'prefiero_no_decirlo';
@@ -28,14 +29,30 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
     actividad: 'sedentario',
   });
 
+  // Nuevos estados para auth
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+
   function handleChange<K extends keyof FormUser>(key: K, value: FormUser[K]) {
     setUser((prev) => ({ ...prev, [key]: value }));
   }
 
-  const canNext1 = useMemo(
-    () => !!user.nombre?.trim() && !!user.apellido?.trim() && !!user.email?.trim(),
-    [user.nombre, user.apellido, user.email]
-  );
+  const canNext1 = useMemo(() => {
+    const okBasics = !!user.nombre?.trim() && !!user.apellido?.trim() && !!user.email?.trim();
+    const passLen = password.length >= 6; // puedes subirlo a 8 si quieres
+    const match = password === confirm;
+    return okBasics && passLen && match;
+  }, [user.nombre, user.apellido, user.email, password, confirm]);
+
+  const passError = useMemo(() => {
+    if (!password && !confirm) return '';
+    if (password.length < 6) return 'La contraseña debe tener al menos 6 caracteres.';
+    if (password !== confirm) return 'Las contraseñas no coinciden.';
+    return '';
+  }, [password, confirm]);
 
   function handleAutoCalories() {
     try {
@@ -53,16 +70,53 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
     setUser((p) => ({ ...p, caloriasDiarias: tdee }));
   }
 
-  function nextFromStep1(e: React.FormEvent) {
+  async function nextFromStep1(e: React.FormEvent) {
     e.preventDefault();
+    setErr(null);
+    setInfo(null);
     if (!canNext1) return;
-    saveUserMerge({
-      nombre: user.nombre,
-      apellido: user.apellido,
-      email: user.email,
-      telefono: user.telefono,
-    });
-    setStep(2);
+
+    setLoading(true);
+    try {
+      // 1) Registro con Supabase (email + password)
+      const { data, error } = await supabase.auth.signUp({
+        email: user.email!,
+        password,
+        options: { emailRedirectTo: window.location.origin }
+      });
+      if (error) throw error;
+
+      // 2) Guardar datos básicos en local para el resto de la app
+      saveUserMerge({
+        nombre: user.nombre,
+        apellido: user.apellido,
+        email: user.email,
+        telefono: user.telefono,
+      });
+
+      // 3) Si hay sesión inmediata (confirmación desactivada) → upsert perfil y pasar al paso 2
+      if (data.session?.user) {
+        const uid = data.session.user.id;
+        await supabase.from('public_profiles').upsert({
+          user_id: uid,
+          nombre: user.nombre || null,
+          apellido: user.apellido || null,
+          sexo: user.sexo || null,
+          instagram: null,
+          tiktok: null,
+        }, { onConflict: 'user_id' });
+
+        setStep(2);
+        return;
+      }
+
+      // 4) Si la confirmación por email está activada
+      setInfo('Te hemos enviado un correo para confirmar tu cuenta. Abre el enlace y vuelve a la app para continuar.');
+    } catch (e: any) {
+      setErr(e?.message || 'No se pudo completar el registro.');
+    } finally {
+      setLoading(false);
+    }
   }
 
   function nextFromStep2(e: React.FormEvent) {
@@ -143,6 +197,30 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
                 />
               </label>
 
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <label className="block text-xs">
+                  <span className="font-medium">Contraseña</span>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="mt-1 input text-[16px]"
+                    required
+                  />
+                </label>
+                <label className="block text-xs">
+                  <span className="font-medium">Repetir contraseña</span>
+                  <input
+                    type="password"
+                    value={confirm}
+                    onChange={(e) => setConfirm(e.target.value)}
+                    className="mt-1 input text-[16px]"
+                    required
+                  />
+                </label>
+              </div>
+              {passError && <p className="text-[11px] text-red-600">{passError}</p>}
+
               <label className="block text-xs">
                 <span className="font-medium">Teléfono (opcional)</span>
                 <input
@@ -153,13 +231,16 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
                 />
               </label>
 
+              {err && <p className="text-[11px] text-red-600">{err}</p>}
+              {info && <p className="text-[11px] text-amber-700">{info}</p>}
+
               <div className="flex gap-2 justify-end">
                 <button
                   type="submit"
-                  disabled={!canNext1}
+                  disabled={!canNext1 || !!passError || loading}
                   className="btn disabled:opacity-50 whitespace-nowrap"
                 >
-                  Continuar
+                  {loading ? 'Creando cuenta…' : 'Continuar'}
                 </button>
               </div>
             </form>
