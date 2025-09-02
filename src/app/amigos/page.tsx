@@ -96,7 +96,7 @@ function eachDateInclusive(start: string, end: string): string[] {
    =========================== */
 export default function AmigosPage() {
   const me = useMemo(() => myPublicProfile(), []);
-  const [tab, setTab] = useState<'crear' | 'unirse' | 'buscar'>('crear');
+  const [tab, setTab] = useState<'crear' | 'unirse' | 'retos' | 'buscar' | 'ranking'>('crear');
 
   // Sincroniza mi perfil público en el “directorio”
   useEffect(() => {
@@ -111,32 +111,19 @@ export default function AmigosPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 mb-4">
-        <button
-          className={`btn ${tab === 'crear' ? '' : 'secondary'}`}
-          onClick={() => setTab('crear')}
-        >
-          Crear reto
-        </button>
-        <button
-          className={`btn ${tab === 'unirse' ? '' : 'secondary'}`}
-          onClick={() => setTab('unirse')}
-        >
-          Unirse con código
-        </button>
-        <button
-          className={`btn ${tab === 'buscar' ? '' : 'secondary'}`}
-          onClick={() => setTab('buscar')}
-        >
-          Buscar amigos
-        </button>
+      <div className="flex gap-2 mb-4 flex-wrap">
+        <button className={`btn ${tab === 'crear' ? '' : 'secondary'}`} onClick={() => setTab('crear')}>Crear reto</button>
+        <button className={`btn ${tab === 'unirse' ? '' : 'secondary'}`} onClick={() => setTab('unirse')}>Unirse con código</button>
+        <button className={`btn ${tab === 'retos' ? '' : 'secondary'}`} onClick={() => setTab('retos')}>Retos con amigos</button>
+        <button className={`btn ${tab === 'buscar' ? '' : 'secondary'}`} onClick={() => setTab('buscar')}>Buscar amigos</button>
+        <button className={`btn ${tab === 'ranking' ? '' : 'secondary'}`} onClick={() => setTab('ranking')}>Ranking</button>
       </div>
 
-      {tab === 'crear' && <CreateChallenge me={me} />}
-      {tab === 'unirse' && <JoinChallenge me={me} />}
-      {tab === 'buscar' && <Friends me={me} />}
-
-      <MyChallenges me={me} />
+      {tab === 'crear'   && <CreateChallenge me={me} onCreated={() => setTab('retos')} />}
+      {tab === 'unirse'  && <JoinChallenge me={me} />}
+      {tab === 'retos'   && <MyChallenges me={me} />}
+      {tab === 'buscar'  && <Friends me={me} />}
+      {tab === 'ranking' && <RankingPlaceholder />}
     </main>
   );
 }
@@ -144,18 +131,19 @@ export default function AmigosPage() {
 /* ===========================
    Create Challenge
    =========================== */
-function CreateChallenge({ me }: { me: PublicProfile }) {
+function CreateChallenge({ me, onCreated }: { me: PublicProfile; onCreated?: () => void }) {
   const [title, setTitle] = useState('');
   const [start, setStart] = useState<string>('');
   const [end, setEnd] = useState<string>('');
   const [days, setDays] = useState<DayItem[]>([]);
   const [code, setCode] = useState<string | null>(null);
+  const [createdOpen, setCreatedOpen] = useState(false); // popup “Reto creado con éxito”
 
   // Generar días cuando cambian fechas
   useEffect(() => {
     if (start && end) {
       const dates = eachDateInclusive(start, end);
-      setDays(dates.map((d, i) => ({ date: d, title: title || 'Reto' })));
+      setDays(dates.map((d) => ({ date: d, title: title || 'Reto' })));
     } else {
       setDays([]);
     }
@@ -187,6 +175,9 @@ function CreateChallenge({ me }: { me: PublicProfile }) {
     challenges[id] = ch;
     save(LS_GROUP_CHALLENGES, challenges);
     setCode(code);
+
+    // Pop-up de éxito
+    setCreatedOpen(true);
   }
 
   return (
@@ -229,7 +220,12 @@ function CreateChallenge({ me }: { me: PublicProfile }) {
 
       <div className="flex gap-2">
         <button className="btn" onClick={create} disabled={!title || !start || !end}>Crear reto</button>
-        <button className="btn secondary" onClick={() => { setTitle(''); setStart(''); setEnd(''); setDays([]); setCode(null); }}>Limpiar</button>
+        <button
+          className="btn secondary"
+          onClick={() => { setTitle(''); setStart(''); setEnd(''); setDays([]); setCode(null); }}
+        >
+          Limpiar
+        </button>
       </div>
 
       {code && (
@@ -237,6 +233,26 @@ function CreateChallenge({ me }: { me: PublicProfile }) {
           <div className="text-xs muted">Código para compartir</div>
           <div className="text-lg font-semibold tracking-widest">{code}</div>
           <div className="text-xs mt-1">Tus amigos pueden ir a <b>Unirse con código</b> y pegarlo.</div>
+        </div>
+      )}
+
+      {/* Pop-up: Reto creado */}
+      {createdOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-2xl shadow-xl p-6 text-sm" style={{ width: 'min(90vw, 360px)' }} role="dialog" aria-modal="true">
+            <p className="font-semibold">Reto creado con éxito</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                className="btn"
+                onClick={() => {
+                  setCreatedOpen(false);
+                  onCreated?.();
+                }}
+              >
+                Aceptar
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </section>
@@ -279,35 +295,45 @@ function JoinChallenge({ me }: { me: PublicProfile }) {
 }
 
 /* ===========================
-   My Challenges (listado)
+   Retos con amigos (listado)
    =========================== */
 function MyChallenges({ me }: { me: PublicProfile }) {
   const [list, setList] = useState<Challenge[]>([]);
-  useEffect(() => {
+
+  function refresh() {
     const all = load<Record<string, Challenge>>(LS_GROUP_CHALLENGES, {});
     setList(Object.values(all).filter(c => c.members.includes(me.id)));
+  }
+
+  useEffect(() => {
+    refresh();
+    // Re-chequeo ligero cuando vuelves a la pestaña
+    const id = setInterval(refresh, 800);
+    return () => clearInterval(id);
   }, [me.id]);
 
-  if (!list.length) return null;
-
   return (
-    <section className="mt-6" style={{ border: '1px solid var(--line)', borderRadius: 'var(--radius-card)', padding: 16 }}>
-      <h3 className="font-semibold text-base mb-2">Mis retos conjuntos</h3>
-      <ul className="space-y-3">
-        {list.map(ch => (
-          <li key={ch.id} className="border rounded-xl p-3" style={{ borderColor: 'var(--line)' }}>
-            <div className="flex items-center justify-between">
-              <div className="font-semibold">{ch.title}</div>
-              <div className="text-xs muted">{ch.start} → {ch.end}</div>
-            </div>
-            <div className="text-xs mt-1">Código: <b>{ch.code}</b> · Miembros: {ch.members.length}</div>
-            <details className="mt-2">
-              <summary className="text-sm cursor-pointer">Ver / editar días</summary>
-              <EditorDays challengeId={ch.id} />
-            </details>
-          </li>
-        ))}
-      </ul>
+    <section style={{ border: '1px solid var(--line)', borderRadius: 'var(--radius-card)', padding: 16 }}>
+      <h3 className="font-semibold text-base mb-2">Retos con amigos</h3>
+      {list.length === 0 ? (
+        <p className="text-xs muted">Aún no tienes retos. Crea uno o únete con un código.</p>
+      ) : (
+        <ul className="space-y-3">
+          {list.map(ch => (
+            <li key={ch.id} className="border rounded-xl p-3" style={{ borderColor: 'var(--line)' }}>
+              <div className="flex items-center justify-between">
+                <div className="font-semibold">{ch.title}</div>
+                <div className="text-xs muted">{ch.start} → {ch.end}</div>
+              </div>
+              <div className="text-xs mt-1">Código: <b>{ch.code}</b> · Miembros: {ch.members.length}</div>
+              <details className="mt-2">
+                <summary className="text-sm cursor-pointer">Ver / editar días</summary>
+                <EditorDays challengeId={ch.id} />
+              </details>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }
@@ -392,7 +418,7 @@ function Friends({ me }: { me: PublicProfile }) {
     saveFriends(st);
     setState(st);
 
-    // Simulación: también registramos que “el otro” recibió una solicitud en su LS (demo single-device)
+    // Simulación: espejo en "el otro" (solo mismo dispositivo)
     const otherKey = LS_FRIENDS + '_' + targetId;
     const other = load<FriendsState>(otherKey, { friends: [], pendingOut: [], pendingIn: [] });
     if (!other.pendingIn.includes(me.id)) other.pendingIn.push(me.id);
@@ -482,6 +508,18 @@ function Friends({ me }: { me: PublicProfile }) {
           </ul>
         </div>
       </div>
+    </section>
+  );
+}
+
+/* ===========================
+   Ranking placeholder
+   =========================== */
+function RankingPlaceholder() {
+  return (
+    <section className="text-sm" style={{ border: '1px solid var(--line)', borderRadius: 'var(--radius-card)', padding: 16 }}>
+      <h3 className="font-semibold text-base">Ranking</h3>
+      <p className="text-xs muted mt-1">Pronto podrás ver aquí la clasificación entre tus amigos.</p>
     </section>
   );
 }
