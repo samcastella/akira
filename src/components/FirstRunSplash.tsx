@@ -4,10 +4,8 @@
 import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { LS_FIRST_RUN } from '@/lib/user';
-import { useRouter } from 'next/navigation';
 
 export default function FirstRunSplash() {
-  const router = useRouter();
   const [show, setShow] = useState(false);
 
   useEffect(() => {
@@ -16,11 +14,10 @@ export default function FirstRunSplash() {
     if (!seen) {
       setShow(true);
       localStorage.setItem(LS_FIRST_RUN, '1');
-      // Pequeña pausa y a registro
-      const t = setTimeout(() => router.replace('/registro'), 1200);
+      const t = setTimeout(() => setShow(false), 1200); // ⬅️ ya no redirige
       return () => clearTimeout(t);
     }
-  }, [router]);
+  }, []);
 
   if (!show) return null;
 
