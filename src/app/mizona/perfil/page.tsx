@@ -18,6 +18,8 @@ type Profile = {
   tiktok?: string;
   email?: string;
   telefono?: string;
+  peso?: number;     // NUEVO
+  foto?: string;     // NUEVO (dataURL/URL)
 };
 
 function loadUser(): Profile {
@@ -31,11 +33,20 @@ function loadUser(): Profile {
 export default function PerfilPage() {
   const [editing, setEditing] = useState(false);
   const [profile, setProfile] = useState<Profile>({});
+  const [savedOpen, setSavedOpen] = useState(false); // pop-up guardado
 
   useEffect(() => { setProfile(loadUser()); }, []);
 
   function handleChange<K extends keyof Profile>(k: K, v: Profile[K]) {
     setProfile(prev => ({ ...prev, [k]: v }));
+  }
+
+  function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => handleChange('foto', String(reader.result || ''));
+    reader.readAsDataURL(file);
   }
 
   function save() {
@@ -45,6 +56,7 @@ export default function PerfilPage() {
     if (typeof window !== 'undefined') {
       localStorage.setItem(LS_USER, JSON.stringify({ ...(loadUser() || {}), ...profile }));
     }
+    setSavedOpen(true); // mostrar pop-up
   }
 
   return (
@@ -64,10 +76,25 @@ export default function PerfilPage() {
       >
         {!editing ? (
           <div className="space-y-3 text-sm">
+            {/* Avatar */}
+            <div className="flex items-center gap-3">
+              <div
+                className="rounded-full overflow-hidden"
+                style={{ width: 80, height: 80, border: '1px solid var(--line)', background: '#f7f7f7' }}
+              >
+                {profile.foto ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={profile.foto} alt="Foto de perfil" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                ) : null}
+              </div>
+              <div className="muted">Tu foto de perfil</div>
+            </div>
+
             <Row label="Nombre" value={profile.nombre || '—'} />
             <Row label="Apellidos" value={profile.apellido || '—'} />
             <Row label="Edad" value={profile.edad ?? '—'} />
             <Row label="Sexo" value={profile.sexo || '—'} />
+            <Row label="Peso (kg)" value={profile.peso ?? '—'} />
             <Row label="Calorías diarias" value={profile.caloriasDiarias ?? '—'} />
             <Row label="Instagram" value={profile.instagram || '—'} link={profile.instagram?.startsWith('http') ? profile.instagram : undefined} />
             <Row label="TikTok" value={profile.tiktok || '—'} link={profile.tiktok?.startsWith('http') ? profile.tiktok : undefined} />
@@ -80,6 +107,23 @@ export default function PerfilPage() {
           </div>
         ) : (
           <form className="space-y-3 text-sm" onSubmit={(e) => { e.preventDefault(); save(); }}>
+            {/* Avatar + selector de archivo */}
+            <div className="flex items-center gap-3">
+              <div
+                className="rounded-full overflow-hidden"
+                style={{ width: 96, height: 96, border: '1px solid var(--line)', background: '#f7f7f7' }}
+              >
+                {profile.foto ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={profile.foto} alt="Foto de perfil" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                ) : null}
+              </div>
+              <div>
+                <label className="btn secondary" htmlFor="fotoInput">Subir foto</label>
+                <input id="fotoInput" type="file" accept="image/*" onChange={onPickFile} className="hidden" />
+              </div>
+            </div>
+
             <Field label="Nombre">
               <input className="input text-[16px]" value={profile.nombre || ''} onChange={e=>handleChange('nombre', e.target.value)} />
             </Field>
@@ -95,6 +139,9 @@ export default function PerfilPage() {
                 <option value="femenino">Femenino</option>
                 <option value="prefiero_no_decirlo">Prefiero no decirlo</option>
               </select>
+            </Field>
+            <Field label="Peso (kg)">
+              <input type="number" min={20} step="0.1" className="input text-[16px]" value={profile.peso ?? ''} onChange={e=>handleChange('peso', e.target.value ? Number(e.target.value) : undefined)} />
             </Field>
             <Field label="Calorías diarias">
               <input type="number" min={800} className="input text-[16px]" value={profile.caloriasDiarias ?? ''} onChange={e=>handleChange('caloriasDiarias', e.target.value ? Number(e.target.value) : undefined)} />
@@ -119,6 +166,25 @@ export default function PerfilPage() {
           </form>
         )}
       </section>
+
+      {/* Pop-up de confirmación */}
+      {savedOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50">
+          <div
+            className="bg-white rounded-2xl shadow-xl p-6 text-sm"
+            style={{ width: 'min(90vw, 360px)' }}
+            role="dialog"
+            aria-modal="true"
+          >
+            <p className="font-semibold">Tus cambios han sido guardados con éxitos</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button className="btn" onClick={() => { setSavedOpen(false); setEditing(false); }}>
+                Aceptar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

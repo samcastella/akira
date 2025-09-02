@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Check, RotateCcw, Trash2 } from 'lucide-react';
+import { Check, RotateCcw, Trash2, Camera } from 'lucide-react';
 
 /* ====== storage + tipos ====== */
 const LS_RETOS = 'akira_mizona_retos_v1';
@@ -24,6 +24,7 @@ type UserProfileLS = {
   caloriasDiarias?: number;
   instagram?: string;
   tiktok?: string;
+  foto?: string; // NUEVO: avatar dataURL/URL
 };
 
 function loadLS<T>(key: string, fallback: T): T {
@@ -125,29 +126,56 @@ export default function MiZonaPage() {
           marginBottom: 16
         }}
       >
-        <p className="text-sm" style={{ margin: 0, fontWeight: 700 }}>
-          Hola {greetingName},
-        </p>
-
-        <div className="mt-3 grid grid-cols-3 gap-8 text-sm">
-          <div>
-            <div className="muted">Edad</div>
-            <div style={{ fontWeight: 600 }}>{age}</div>
-          </div>
-          <div>
-            <div className="muted">Peso</div>
-            <div style={{ fontWeight: 600 }}>{weight}</div>
-          </div>
-          <div>
-            <div className="muted">Programas activos</div>
-            <div style={{ fontWeight: 600 }}>{activeCount}</div>
-          </div>
-        </div>
-
-        <div className="mt-4">
-          <Link href="/mizona/perfil" className="btn">
-            Ver más
+        <div className="flex items-center gap-4">
+          {/* Avatar redondo */}
+          <Link href="/mizona/perfil" className="shrink-0" title="Editar foto de perfil">
+            <div
+              className="rounded-full overflow-hidden flex items-center justify-center"
+              style={{
+                width: 64, height: 64,
+                border: '1px solid var(--line)',
+                background: '#f7f7f7',
+              }}
+            >
+              {user?.foto ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={user.foto}
+                  alt="Foto de perfil"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                />
+              ) : (
+                <Camera size={24} className="muted" />
+              )}
+            </div>
           </Link>
+
+          <div className="flex-1">
+            <p className="text-sm" style={{ margin: 0, fontWeight: 700 }}>
+              Hola {greetingName},
+            </p>
+
+            <div className="mt-3 grid grid-cols-3 gap-8 text-sm">
+              <div>
+                <div className="muted">Edad</div>
+                <div style={{ fontWeight: 600 }}>{age}</div>
+              </div>
+              <div>
+                <div className="muted">Peso</div>
+                <div style={{ fontWeight: 600 }}>{weight}</div>
+              </div>
+              <div>
+                <div className="muted">Programas activos</div>
+                <div style={{ fontWeight: 600 }}>{activeCount}</div>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <Link href="/mizona/perfil" className="btn">
+                Ver más
+              </Link>
+            </div>
+          </div>
         </div>
       </section>
 
