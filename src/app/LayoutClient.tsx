@@ -1,3 +1,4 @@
+// src/app/LayoutClient.tsx
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -5,7 +6,6 @@ import { usePathname } from 'next/navigation';
 import { loadUser, isUserComplete, LS_FIRST_RUN, LS_USER } from '@/lib/user';
 import { supabase } from '@/lib/supabaseClient';
 import RegistrationModal from '@/components/RegistrationModal';
-import OnboardingAuthModal from '@/components/OnboardingAuthModal';
 
 const LS_SEEN_AUTH = 'akira_seen_auth_v1';
 
@@ -26,7 +26,9 @@ export default function LayoutClient({
   const [authReady, setAuthReady] = useState(false);
 
   // === Modales ===
+  // showAuthModal ahora abre directamente el RegistrationModal (paso 1)
   const [showAuthModal, setShowAuthModal] = useState(false);
+  // showRegistration se usa para abrir el RegistrationModal en paso 2 tras OAuth
   const [showRegistration, setShowRegistration] = useState(false);
   const [registrationStartStep, setRegistrationStartStep] = useState<1 | 2 | 3>(1);
 
@@ -54,11 +56,11 @@ export default function LayoutClient({
       setHasSession(!!session);
 
       // Si el usuario acaba de iniciar sesión por Google,
-      // cierra el popup y abre el registro para completar datos.
+      // abrimos el registro para completar datos (paso 2).
       if (session) {
         localStorage.setItem(LS_SEEN_AUTH, '1');
         setShowAuthModal(false);
-        setRegistrationStartStep(2); // ⬅️ arrancar en Paso 2 (si tu RegistrationModal lo soporta)
+        setRegistrationStartStep(2);
         setShowRegistration(true);
       }
     });
@@ -69,7 +71,7 @@ export default function LayoutClient({
     };
   }, []);
 
-  // Decidir si enseñamos el pop-up de onboarding
+  // Decidir si enseñamos el pop-up de onboarding (ahora: RegistrationModal paso 1)
   useEffect(() => {
     if (!authReady || userOk === null) return;
 
@@ -119,29 +121,26 @@ export default function LayoutClient({
           }}
         />
 
-        {/* Pop-up onboarding (si no hay sesión y no lo hemos mostrado aún) */}
+        {/* Pop-up de onboarding → AHORA usa directamente RegistrationModal (paso 1) */}
         {!hasSession && showAuthModal && (
           <div className="relative z-50">
-            <OnboardingAuthModal
+            <RegistrationModal
+              initialStep={1}
               onClose={() => {
                 setShowAuthModal(false);
                 localStorage.setItem(LS_SEEN_AUTH, '1');
-              }}
-              onOpenRegistration={() => {
-                setShowAuthModal(false);
-                localStorage.setItem(LS_SEEN_AUTH, '1');
-                setRegistrationStartStep(1); // flujo manual: paso 1 (email + contraseña)
-                setShowRegistration(true);
               }}
             />
           </div>
         )}
 
-        {/* Modal de registro (manual o tras Google) */}
+        {/* Modal de registro (manual o tras Google en paso 2) */}
         {showRegistration && (
           <div className="relative z-50">
-            {/* Si tu RegistrationModal no tiene initialStep, elimina la prop y arrancará en 1 */}
-            <RegistrationModal onClose={handleCloseRegistration} initialStep={registrationStartStep as any} />
+            <RegistrationModal
+              onClose={handleCloseRegistration}
+              initialStep={registrationStartStep as any}
+            />
           </div>
         )}
 
