@@ -2,10 +2,10 @@
 
 import { useMemo, useState } from 'react';
 import { UserProfile, estimateCalories, saveUserMerge } from '@/lib/user';
-import { Rocket, ArrowLeft } from 'lucide-react';
+import { Rocket, ArrowLeft, CheckCircle2, Apple, Mail } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 
-type Step = 1 | 2 | 3;
+type Step = 1 | 2 | 3 | 4;
 type Sex = 'masculino' | 'femenino' | 'prefiero_no_decirlo';
 type Act = 'sedentario' | 'ligero' | 'moderado' | 'intenso';
 
@@ -20,8 +20,8 @@ type FormUser = UserProfile & {
 
 type Props = {
   onClose?: () => void;
-  initialStep?: Step;          // ⬅️ permite arrancar en el paso 2 tras OAuth
-  prefill?: Partial<FormUser>; // ⬅️ datos previos (p. ej. nombre/email de Google)
+  initialStep?: Step;          // permite arrancar en otro paso (p.ej., tras OAuth)
+  prefill?: Partial<FormUser>;
 };
 
 export default function RegistrationModal({ onClose, initialStep = 1, prefill }: Props) {
@@ -39,23 +39,23 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
+  const [err,   setErr]   = useState<string | null>(null);
+  const [info,  setInfo]  = useState<string | null>(null);
 
   function handleChange<K extends keyof FormUser>(key: K, value: FormUser[K]) {
     setUser((prev) => ({ ...prev, [key]: value }));
   }
 
   const canNext1 = useMemo(() => {
-    if (initialStep === 2) return true; // OAuth: no pedimos pass
+    if (initialStep > 1) return true; // OAuth u otros: no pedimos pass
     const okBasics = !!user.nombre?.trim() && !!user.apellido?.trim() && !!user.email?.trim();
-    const passLen = password.length >= 6;
-    const match = password === confirm;
+    const passLen  = password.length >= 6;
+    const match    = password === confirm;
     return okBasics && passLen && match;
   }, [user.nombre, user.apellido, user.email, password, confirm, initialStep]);
 
   const passError = useMemo(() => {
-    if (initialStep === 2) return '';
+    if (initialStep > 1) return '';
     if (!password && !confirm) return '';
     if (password.length < 6) return 'La contraseña debe tener al menos 6 caracteres.';
     if (password !== confirm) return 'Las contraseñas no coinciden.';
@@ -82,40 +82,46 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
     setUser((p) => ({ ...p, caloriasDiarias: tdee }));
   }
 
+  // Popup temporal para OAuth (Google/Apple)
+  function oauthSoon(provider: 'google' | 'apple') {
+    setInfo(
+      provider === 'google'
+        ? 'Pronto podrás registrarte con Google. Estamos terminando los últimos detalles 😊'
+        : 'Pronto podrás registrarte con Apple. Estamos terminando los últimos detalles 😊'
+    );
+  }
+
   async function nextFromStep1(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
     setInfo(null);
     if (!canNext1) return;
 
-    // Si venimos de OAuth (initialStep === 2) no deberíamos pasar por aquí,
-    // pero por seguridad dejamos paso 2.
-    if (initialStep === 2) {
-      setStep(2);
-      return;
-    }
+    if (initialStep > 1) { setStep(3); return; }
 
     setLoading(true);
     try {
-      const redirect = typeof window !== 'undefined'
-        ? `${window.location.origin}/auth/callback`
-        : undefined;
+      const appBase =
+        process.env.NEXT_PUBLIC_SITE_URL ||
+        (typeof window !== 'undefined' ? window.location.origin : undefined);
 
       const { data, error } = await supabase.auth.signUp({
         email: user.email!,
         password,
-        options: { emailRedirectTo: redirect }
+        options: {
+          emailRedirectTo: appBase ? `${appBase}/auth/callback` : undefined,
+          data: { nombre: user.nombre ?? '', apellido: user.apellido ?? '' },
+        },
       });
 
       if (error) {
-        // Mensaje claro cuando la API key/URL es inválida o de otro proyecto.
         const msg = /invalid api key/i.test(error.message)
           ? 'Error de configuración: la API key pública de Supabase es inválida o no corresponde con la URL del proyecto.'
           : error.message;
         throw new Error(msg);
       }
 
-      // Persistimos básicos en local
+      // Guardamos básicos localmente; no bloqueamos si no hay sesión aún
       saveUserMerge({
         nombre: user.nombre,
         apellido: user.apellido,
@@ -123,7 +129,7 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
         telefono: user.telefono,
       });
 
-      // Si tu proyecto no exige confirmación por email, habrá sesión inmediata
+      // Si ya hay sesión (proyectos sin confirmación obligatoria), crea/actualiza perfil
       if (data.session?.user) {
         const uid = data.session.user.id;
         await supabase.from('public_profiles').upsert(
@@ -137,12 +143,11 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
           },
           { onConflict: 'user_id' }
         );
-        setStep(2);
-        return;
       }
 
-      // Si exige confirmación
-      setInfo('Te hemos enviado un correo para confirmar tu cuenta. Abre el enlace y vuelve a la app para continuar.');
+      // Email de confirmación NO bloqueante
+      setInfo('Te hemos enviado un correo para confirmar tu email. Puedes verificarlo cuando quieras; no es necesario para continuar ahora.');
+      setStep(2); // → pantalla de éxito
     } catch (e: any) {
       setErr(e?.message || 'No se pudo completar el registro.');
     } finally {
@@ -150,7 +155,11 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
     }
   }
 
-  function nextFromStep2(e: React.FormEvent) {
+  function nextFromStep2() {
+    setStep(3); // → personalización
+  }
+
+  function nextFromStep3(e: React.FormEvent) {
     e.preventDefault();
     saveUserMerge({
       sexo: user.sexo,
@@ -160,7 +169,7 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
       actividad: user.actividad,
       caloriasDiarias: user.caloriasDiarias,
     });
-    setStep(3);
+    setStep(4); // → pantalla final de bienvenida/reglas
   }
 
   function finish() {
@@ -182,16 +191,27 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
             <StepDot active={step >= 1} />
             <StepDot active={step >= 2} />
             <StepDot active={step >= 3} />
+            <StepDot active={step >= 4} />
           </div>
         </div>
 
         <div className="px-6 pb-6 overflow-y-auto">
-          {/* PASO 1 — solo cuando initialStep === 1 */}
+          {/* PASO 1 — formulario básico */}
           {step === 1 && initialStep === 1 && (
             <form onSubmit={nextFromStep1} className="space-y-4">
               <div>
                 <p className="text-base font-extrabold mb-1">¡Bienvenid@!</p>
                 <p className="text-xs text-gray-600">Completa el formulario de registro para empezar.</p>
+              </div>
+
+              {/* OAuth — de momento muestra popup informativo */}
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => oauthSoon('google')} className="btn secondary inline-flex items-center gap-2">
+                  <Mail size={16} /> Continuar con Google
+                </button>
+                <button type="button" onClick={() => oauthSoon('apple')} className="btn secondary inline-flex items-center gap-2">
+                  <Apple size={16} /> Continuar con Apple
+                </button>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -274,13 +294,30 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
             </form>
           )}
 
-          {/* PASO 2 */}
+          {/* PASO 2 — éxito de registro (no bloqueante) */}
           {step === 2 && (
-            <form onSubmit={nextFromStep2} className="space-y-4">
+            <div className="py-6 space-y-4 text-center">
+              <div className="flex justify-center">
+                <CheckCircle2 size={56} />
+              </div>
+              <h3 className="text-lg font-bold">Tu registro ha sido creado con éxito</h3>
+              <p className="text-xs text-gray-600 max-w-sm mx-auto">
+                Te hemos enviado un correo para confirmar tu email.
+                Puedes verificarlo cuando quieras; <strong>no es necesario para continuar ahora</strong>.
+              </p>
+              <div className="flex justify-center">
+                <button onClick={() => setStep(3)} className="btn whitespace-nowrap">Continuar</button>
+              </div>
+            </div>
+          )}
+
+          {/* PASO 3 — personalización */}
+          {step === 3 && (
+            <form onSubmit={nextFromStep3} className="space-y-4">
               <div>
-                <p className="text-sm font-semibold">Datos para personalizar tu experiencia</p>
+                <p className="text-sm font-semibold">Vamos a personalizar tu experiencia</p>
                 <p className="text-xs text-gray-600">
-                  Usaremos estos datos en funciones como registro de ejercicios y cálculo de calorías.
+                  Estos datos pueden ayudarte a medir los progresos en algunos de nuestros programas.
                 </p>
               </div>
 
@@ -381,7 +418,7 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
                       actividad: user.actividad,
                       caloriasDiarias: user.caloriasDiarias,
                     });
-                    setStep(3);
+                    setStep(4);
                   }}
                   className="underline underline-offset-2"
                 >
@@ -406,17 +443,31 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
             </form>
           )}
 
-          {/* PASO 3 */}
-          {step === 3 && (
-            <div className="space-y-3 text-xs leading-snug">
-              <div>
-                <p className="text-sm font-bold mb-2 text-center">Bienvenid@ a Build your Habits</p>
-                <p className="text-gray-700">
-                  Nuestra app está diseñada para ayudarte a construir hábitos saludables que mejoren tu bienestar desde cero,
-                  y para dejar atrás los malos hábitos de la forma más sencilla y amable posible.
-                </p>
-              </div>
-              <div className="flex justify-center">
+          {/* PASO 4 — bienvenida + reglas */}
+          {step === 4 && (
+            <div className="space-y-4 text-sm leading-snug">
+              <p className="font-bold text-center">Bienvenid@ a Build your Habits</p>
+              <p className="text-gray-700">
+                Nuestra app está diseñada para ayudarte a construir hábitos saludables que mejoren tu bienestar desde cero,
+                y para dejar atrás los malos hábitos de la forma más sencilla y amable posible.
+              </p>
+              <p className="font-medium">Pero tenemos algunas reglas que nos guiarán en el camino:</p>
+              <ol className="list-decimal pl-5 space-y-2 text-gray-700">
+                <li>
+                  <strong>Decir siempre la verdad.</strong> Si marcas un hábito como realizado sin haberlo hecho,
+                  al único que engañas es a ti mism@.
+                </li>
+                <li>
+                  <strong>Está permitido fallar, pero nunca rendirse.</strong> Si un día no consigues un reto,
+                  tendrás otra oportunidad al día siguiente.
+                </li>
+                <li>
+                  <strong>Disfruta del proceso y celebra cada paso.</strong> La constancia es la clave, y cada avance merece orgullo.
+                </li>
+              </ol>
+              <p className="text-gray-800">✨ <strong>Recuerda: eres la suma de tus acciones</strong></p>
+
+              <div className="flex justify-center pt-2">
                 <button onClick={finish} className="btn inline-flex items-center gap-2">
                   <Rocket size={18} />
                   Vamos a por ello

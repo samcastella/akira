@@ -1,21 +1,34 @@
 // lib/supabaseClient.ts
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+let _client: SupabaseClient | null = null;
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  // Esto te ayudará a detectar si Vercel o .env.local no están cargando bien
-  // eslint-disable-next-line no-console
-  console.warn(
-    '⚠️ Faltan variables de entorno: NEXT_PUBLIC_SUPABASE_URL o NEXT_PUBLIC_SUPABASE_ANON_KEY'
-  );
+function makeClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!url || !anon) {
+    throw new Error(
+      'Supabase no configurado: faltan NEXT_PUBLIC_SUPABASE_URL y/o NEXT_PUBLIC_SUPABASE_ANON_KEY'
+    );
+  }
+
+  return createClient(url, anon, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+  });
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
+export function getSupabase(): SupabaseClient {
+  if (_client) return _client;
+  _client = makeClient();
+  return _client;
+}
+
+// Compat: permite seguir usando `import { supabase } from '@/lib/supabaseClient'`
+export const supabase = new Proxy({} as SupabaseClient, {
+  get(_t, prop) {
+    const c = getSupabase();
+    // @ts-expect-error — delegamos al cliente real
+    return c[prop];
   },
 });
