@@ -2,10 +2,10 @@
 
 import { useMemo, useState } from 'react';
 import { UserProfile, estimateCalories, saveUserMerge } from '@/lib/user';
-import { Rocket, ArrowLeft, CheckCircle2, Apple, Mail } from 'lucide-react';
+import { Rocket, ArrowLeft, CheckCircle2 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 
-type Step = 1 | 2 | 3 | 4;
+type Step = 1 | 2 | 3 | 4 | 5; // 1: métodos, 2: form, 3: éxito, 4: personalizar, 5: reglas
 type Sex = 'masculino' | 'femenino' | 'prefiero_no_decirlo';
 type Act = 'sedentario' | 'ligero' | 'moderado' | 'intenso';
 
@@ -35,32 +35,29 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
     actividad: prefill?.actividad ?? 'sedentario',
   });
 
-  // Contraseña (solo si initialStep === 1)
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [loading, setLoading] = useState(false);
-  const [err,   setErr]   = useState<string | null>(null);
-  const [info,  setInfo]  = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
 
   function handleChange<K extends keyof FormUser>(key: K, value: FormUser[K]) {
     setUser((prev) => ({ ...prev, [key]: value }));
   }
 
-  const canNext1 = useMemo(() => {
-    if (initialStep > 1) return true; // OAuth u otros: no pedimos pass
+  const canNextForm = useMemo(() => {
     const okBasics = !!user.nombre?.trim() && !!user.apellido?.trim() && !!user.email?.trim();
-    const passLen  = password.length >= 6;
-    const match    = password === confirm;
+    const passLen = password.length >= 6;
+    const match = password === confirm;
     return okBasics && passLen && match;
-  }, [user.nombre, user.apellido, user.email, password, confirm, initialStep]);
+  }, [user.nombre, user.apellido, user.email, password, confirm]);
 
   const passError = useMemo(() => {
-    if (initialStep > 1) return '';
     if (!password && !confirm) return '';
     if (password.length < 6) return 'La contraseña debe tener al menos 6 caracteres.';
     if (password !== confirm) return 'Las contraseñas no coinciden.';
     return '';
-  }, [password, confirm, initialStep]);
+  }, [password, confirm]);
 
   function handleAutoCalories() {
     try {
@@ -70,9 +67,7 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
     const { sexo, edad, estatura, peso, actividad } = user;
     if (!edad || !estatura || !peso) return;
     const base =
-      10 * (peso ?? 0) +
-      6.25 * (estatura ?? 0) -
-      5 * (edad ?? 0) +
+      10 * (peso ?? 0) + 6.25 * (estatura ?? 0) - 5 * (edad ?? 0) +
       (sexo === 'masculino' ? 5 : sexo === 'femenino' ? -161 : 0);
     const factor =
       actividad === 'ligero' ? 1.375 :
@@ -86,19 +81,17 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
   function oauthSoon(provider: 'google' | 'apple') {
     setInfo(
       provider === 'google'
-        ? 'Pronto podrás registrarte con Google. Estamos terminando los últimos detalles 😊'
+        ? 'Opción disponible próximamente.'
         : 'Pronto podrás registrarte con Apple. Estamos terminando los últimos detalles 😊'
     );
   }
 
-  async function nextFromStep1(e: React.FormEvent) {
+  // Submit del formulario (pantalla 2)
+  async function submitEmailForm(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
     setInfo(null);
-    if (!canNext1) return;
-
-    if (initialStep > 1) { setStep(3); return; }
-
+    if (!canNextForm) return;
     setLoading(true);
     try {
       const appBase =
@@ -121,7 +114,7 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
         throw new Error(msg);
       }
 
-      // Guardamos básicos localmente; no bloqueamos si no hay sesión aún
+      // Guardado local y perfil si hay sesión
       saveUserMerge({
         nombre: user.nombre,
         apellido: user.apellido,
@@ -129,7 +122,6 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
         telefono: user.telefono,
       });
 
-      // Si ya hay sesión (proyectos sin confirmación obligatoria), crea/actualiza perfil
       if (data.session?.user) {
         const uid = data.session.user.id;
         await supabase.from('public_profiles').upsert(
@@ -145,9 +137,8 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
         );
       }
 
-      // Email de confirmación NO bloqueante
       setInfo('Te hemos enviado un correo para confirmar tu email. Puedes verificarlo cuando quieras; no es necesario para continuar ahora.');
-      setStep(2); // → pantalla de éxito
+      setStep(3); // → éxito
     } catch (e: any) {
       setErr(e?.message || 'No se pudo completar el registro.');
     } finally {
@@ -155,11 +146,11 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
     }
   }
 
-  function nextFromStep2() {
-    setStep(3); // → personalización
+  function goToPersonalize() {
+    setStep(4);
   }
 
-  function nextFromStep3(e: React.FormEvent) {
+  function savePersonalizeAndNext(e: React.FormEvent) {
     e.preventDefault();
     saveUserMerge({
       sexo: user.sexo,
@@ -169,7 +160,7 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
       actividad: user.actividad,
       caloriasDiarias: user.caloriasDiarias,
     });
-    setStep(4); // → pantalla final de bienvenida/reglas
+    setStep(5);
   }
 
   function finish() {
@@ -192,26 +183,59 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
             <StepDot active={step >= 2} />
             <StepDot active={step >= 3} />
             <StepDot active={step >= 4} />
+            <StepDot active={step >= 5} />
           </div>
         </div>
 
         <div className="px-6 pb-6 overflow-y-auto">
-          {/* PASO 1 — formulario básico */}
-          {step === 1 && initialStep === 1 && (
-            <form onSubmit={nextFromStep1} className="space-y-4">
+          {/* PASO 1 — elección de método */}
+          {step === 1 && (
+            <div className="space-y-4">
               <div>
                 <p className="text-base font-extrabold mb-1">¡Bienvenid@!</p>
-                <p className="text-xs text-gray-600">Completa el formulario de registro para empezar.</p>
+                <p className="text-xs text-gray-600">Elige cómo quieres registrarte.</p>
               </div>
 
-              {/* OAuth — de momento muestra popup informativo */}
-              <div className="flex items-center gap-2">
-                <button type="button" onClick={() => oauthSoon('google')} className="btn secondary inline-flex items-center gap-2">
-                  <Mail size={16} /> Continuar con Google
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => oauthSoon('google')}
+                  className="w-full btn secondary !bg-white !text-black !border !border-gray-300 inline-flex items-center justify-center gap-2"
+                >
+                  <GoogleLogo className="h-4 w-4" />
+                  Continuar con Google
                 </button>
-                <button type="button" onClick={() => oauthSoon('apple')} className="btn secondary inline-flex items-center gap-2">
-                  <Apple size={16} /> Continuar con Apple
+
+                <button
+                  type="button"
+                  onClick={() => oauthSoon('apple')}
+                  className="w-full btn secondary !bg-black !text-white inline-flex items-center justify-center gap-2"
+                >
+                  <AppleLogo className="h-4 w-4" />
+                  Continuar con Apple
                 </button>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => setStep(2)}
+                  className="btn w-full sm:w-auto"
+                >
+                  Registrarme con email
+                </button>
+              </div>
+
+              {info && <p className="text-[11px] text-amber-700">{info}</p>}
+            </div>
+          )}
+
+          {/* PASO 2 — formulario por email (sin OAuth) */}
+          {step === 2 && (
+            <form onSubmit={submitEmailForm} className="space-y-4">
+              <div>
+                <p className="text-base font-extrabold mb-1">Regístrate con tu email</p>
+                <p className="text-xs text-gray-600">Completa el formulario para crear tu cuenta.</p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -282,10 +306,20 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
               {err && <p className="text-[11px] text-red-600">{err}</p>}
               {info && <p className="text-[11px] text-amber-700">{info}</p>}
 
-              <div className="flex gap-2 justify-end">
+              <div className="flex gap-2 justify-between flex-nowrap">
+                <button
+                  type="button"
+                  onClick={() => setStep(1)}
+                  className="btn secondary whitespace-nowrap inline-flex items-center"
+                >
+                  <ArrowLeft size={16} className="mr-1" />
+                  Atrás
+                </button>
+
+                <div className="flex-1" />
                 <button
                   type="submit"
-                  disabled={!canNext1 || !!passError || loading}
+                  disabled={!canNextForm || !!passError || loading}
                   className="btn disabled:opacity-50 whitespace-nowrap"
                 >
                   {loading ? 'Creando cuenta…' : 'Continuar'}
@@ -294,8 +328,8 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
             </form>
           )}
 
-          {/* PASO 2 — éxito de registro (no bloqueante) */}
-          {step === 2 && (
+          {/* PASO 3 — éxito de registro (no bloqueante) */}
+          {step === 3 && (
             <div className="py-6 space-y-4 text-center">
               <div className="flex justify-center">
                 <CheckCircle2 size={56} />
@@ -306,14 +340,14 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
                 Puedes verificarlo cuando quieras; <strong>no es necesario para continuar ahora</strong>.
               </p>
               <div className="flex justify-center">
-                <button onClick={() => setStep(3)} className="btn whitespace-nowrap">Continuar</button>
+                <button onClick={goToPersonalize} className="btn whitespace-nowrap">Continuar</button>
               </div>
             </div>
           )}
 
-          {/* PASO 3 — personalización */}
-          {step === 3 && (
-            <form onSubmit={nextFromStep3} className="space-y-4">
+          {/* PASO 4 — personalización (sin botón Atrás) */}
+          {step === 4 && (
+            <form onSubmit={savePersonalizeAndNext} className="space-y-4">
               <div>
                 <p className="text-sm font-semibold">Vamos a personalizar tu experiencia</p>
                 <p className="text-xs text-gray-600">
@@ -418,7 +452,7 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
                       actividad: user.actividad,
                       caloriasDiarias: user.caloriasDiarias,
                     });
-                    setStep(4);
+                    setStep(5);
                   }}
                   className="underline underline-offset-2"
                 >
@@ -426,25 +460,14 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
                 </button>
               </p>
 
-              <div className="flex gap-2 justify-between flex-nowrap">
-                {initialStep === 1 && (
-                  <button
-                    type="button"
-                    onClick={() => setStep(1)}
-                    className="btn secondary whitespace-nowrap inline-flex items-center"
-                  >
-                    <ArrowLeft size={16} className="mr-1" />
-                    Atrás
-                  </button>
-                )}
-                <div className="flex-1" />
+              <div className="flex justify-end">
                 <button type="submit" className="btn whitespace-nowrap">Guardar</button>
               </div>
             </form>
           )}
 
-          {/* PASO 4 — bienvenida + reglas */}
-          {step === 4 && (
+          {/* PASO 5 — bienvenida + reglas */}
+          {step === 5 && (
             <div className="space-y-4 text-sm leading-snug">
               <p className="font-bold text-center">Bienvenid@ a Build your Habits</p>
               <p className="text-gray-700">
@@ -488,5 +511,25 @@ function StepDot({ active }: { active: boolean }) {
       style={{ background: active ? '#000' : '#D1D5DB' }}
       aria-hidden="true"
     />
+  );
+}
+
+/* --- Logos SVG inline (Google / Apple) --- */
+function GoogleLogo({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 48 48" aria-hidden="true">
+      <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.6 31.9 29.2 35 24 35c-6.6 0-12-5.4-12-12S17.4 11 24 11c3 0 5.7 1.1 7.8 2.9l5.7-5.7C34 5.1 29.3 3 24 3 12.9 3 4 11.9 4 23s8.9 20 20 20 19-8.9 19-20c0-1.3-.1-2.2-.4-3.5z"/>
+      <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 16.5 18.9 14 24 14c3 0 5.7 1.1 7.8 2.9l5.7-5.7C34 7.1 29.3 5 24 5c-7.8 0-14.4 4.5-17.7 11z"/>
+      <path fill="#4CAF50" d="M24 43c5.1 0 9.9-1.9 13.5-5.1l-6.2-5.1C29.1 34.3 26.7 35 24 35c-5.2 0-9.6-3.1-11.3-7.5l-6.5 5C9.6 39.2 16.2 43 24 43z"/>
+      <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-1 3-3.7 5-7.3 5-4.4 0-8.1-3.6-8.1-8s3.7-8 8.1-8c2.1 0 4 .8 5.5 2.1l5.5-5.5C35.7 10.1 31.2 8 26 8c-8.8 0-16 7.2-16 16s7.2 16 16 16c8.8 0 16-7.2 16-16 0-1.3-.1-2.2-.4-3.5z"/>
+    </svg>
+  );
+}
+
+function AppleLogo({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+      <path d="M16.365 1.43c0 1.14-.47 2.233-1.23 3.03-.78.82-2.074 1.45-3.153 1.365-.137-1.1.522-2.264 1.271-3.03.81-.83 2.188-1.45 3.112-1.365zm3.4 17.062c-.603 1.396-1.33 2.787-2.402 2.806-1.056.02-1.392-.817-2.593-.817-1.2 0-1.57.795-2.61.836-1.05.04-1.85-1.28-2.46-2.67-1.34-3.06-2.37-8.646.99-10.98.88-.62 2-.95 3.16-.93 1.06.02 2.07.38 2.82.99.67.54 1.17 1.22 1.49 2 .33.8.47 1.64.42 2.48-.02.42.33.84.73.97.45.14.94-.02 1.24-.37.53-.64.95-1.4 1.22-2.22-.02 0 .62-.27 1.27.53-.45 1.32-1.02 2.58-1.55 3.41-.33.51-.54.86-.56 1.04-.03.24.21.63.22.91.02.32-.16.66-.29.98z"/>
+    </svg>
   );
 }
