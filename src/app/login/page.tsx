@@ -1,11 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import RegistrationModal from '@/components/RegistrationModal';
 
-export default function LoginPage() {
+// Evita prerender y sustos con searchParams en build
+export const dynamic = 'force-dynamic';
+
+function LoginContent() {
   const router = useRouter();
   const params = useSearchParams();
   const redirect = params.get('redirect') || '/';
@@ -27,10 +30,7 @@ export default function LoginPage() {
     })();
   }, [router, redirect]);
 
-  const canSubmit = useMemo(
-    () => !!email.trim() && password.length >= 6,
-    [email, password]
-  );
+  const canSubmit = useMemo(() => !!email.trim() && password.length >= 6, [email, password]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -113,18 +113,10 @@ export default function LoginPage() {
           {info && <p className="text-[11px] text-amber-700">{info}</p>}
 
           <div className="flex items-center justify-between gap-2">
-            <button
-              type="button"
-              onClick={() => router.back()}
-              className="btn secondary"
-            >
+            <button type="button" onClick={() => router.back()} className="btn secondary">
               Atrás
             </button>
-            <button
-              type="submit"
-              disabled={!canSubmit || loading}
-              className="btn disabled:opacity-50"
-            >
+            <button type="submit" disabled={!canSubmit || loading} className="btn disabled:opacity-50">
               {loading ? 'Entrando…' : 'Entrar'}
             </button>
           </div>
@@ -134,22 +126,22 @@ export default function LoginPage() {
           <button onClick={sendRecovery} className="underline underline-offset-2">
             He olvidado mi contraseña
           </button>
-          <button
-            className="underline underline-offset-2"
-            onClick={() => setShowReg(true)}
-          >
+          <button className="underline underline-offset-2" onClick={() => setShowReg(true)}>
             Crear cuenta
           </button>
         </div>
       </div>
 
       {/* Registro (reutilizamos tu modal actual) */}
-      {showReg && (
-        <RegistrationModal
-          initialStep={1}
-          onClose={() => setShowReg(false)}
-        />
-      )}
+      {showReg && <RegistrationModal initialStep={1} onClose={() => setShowReg(false)} />}
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="container p-4 text-sm">Cargando…</div>}>
+      <LoginContent />
+    </Suspense>
   );
 }
