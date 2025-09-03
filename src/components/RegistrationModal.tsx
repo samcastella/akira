@@ -3,11 +3,11 @@
 import { useMemo, useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabaseClient';
 import { UserProfile, estimateCalories, saveUserMerge } from '@/lib/user';
 import { Rocket, ArrowLeft, CheckCircle2 } from 'lucide-react';
-import { supabase } from '@/lib/supabaseClient';
 
-type Step = 1 | 2 | 3 | 4 | 5; // 1: métodos, 2: form, 3: éxito, 4: personalizar, 5: reglas
+type Step = 1 | 2 | 3 | 4 | 5;
 type Sex = 'masculino' | 'femenino' | 'prefiero_no_decirlo';
 type Act = 'sedentario' | 'ligero' | 'moderado' | 'intenso';
 
@@ -22,12 +22,13 @@ type FormUser = UserProfile & {
 
 type Props = {
   onClose?: () => void;
-  initialStep?: Step;          // permite arrancar en otro paso (p.ej., tras OAuth)
+  initialStep?: Step;
   prefill?: Partial<FormUser>;
 };
 
 export default function RegistrationModal({ onClose, initialStep = 1, prefill }: Props) {
   const router = useRouter();
+
   const [step, setStep] = useState<Step>(initialStep);
   const [user, setUser] = useState<FormUser>({
     nombre: prefill?.nombre ?? '',
@@ -85,7 +86,6 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
     setUser((p) => ({ ...p, caloriasDiarias: tdee }));
   }
 
-  // OAuth real (Google/Apple)
   async function signInWith(provider: 'google' | 'apple') {
     setErr(null);
     setInfo(null);
@@ -98,14 +98,13 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
         },
       });
       if (error) throw error;
-      // Supabase hará redirect; no seguimos aquí.
+      // redirige Supabase; no seguimos
     } catch (e: any) {
       setErr(e?.message || 'No se pudo iniciar el proveedor seleccionado.');
       setOauthLoading(null);
     }
   }
 
-  // Submit del formulario (pantalla 2)
   async function submitEmailForm(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
@@ -125,7 +124,6 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
           data: { nombre: user.nombre ?? '', apellido: user.apellido ?? '' },
         },
       });
-
       if (error) {
         const msg = /invalid api key/i.test(error.message)
           ? 'Error de configuración: la API key pública de Supabase es inválida o no corresponde con la URL del proyecto.'
@@ -133,7 +131,6 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
         throw new Error(msg);
       }
 
-      // Guardado local y perfil si hay sesión
       saveUserMerge({
         nombre: user.nombre,
         apellido: user.apellido,
@@ -157,7 +154,7 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
       }
 
       setInfo('Te hemos enviado un correo para confirmar tu email. Puedes verificarlo cuando quieras; no es necesario para continuar ahora.');
-      setStep(3); // → éxito
+      setStep(3);
     } catch (e: any) {
       setErr(e?.message || 'No se pudo completar el registro.');
     } finally {
@@ -224,7 +221,6 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
         </div>
 
         <div className="px-6 pb-6 overflow-y-auto">
-          {/* PASO 1 — elección de método */}
           {step === 1 && (
             <div className="space-y-4">
               <div>
@@ -232,8 +228,8 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
                 <p className="text-xs text-gray-600">Elige cómo quieres registrarte.</p>
               </div>
 
+              {/* Botones OAuth */}
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                {/* Google */}
                 <button
                   type="button"
                   onClick={() => signInWith('google')}
@@ -244,7 +240,6 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
                   {oauthLoading === 'google' ? 'Abriendo Google…' : 'Continuar con Google'}
                 </button>
 
-                {/* Apple */}
                 <button
                   type="button"
                   onClick={() => signInWith('apple')}
@@ -256,21 +251,13 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
                 </button>
               </div>
 
+              {/* CTA email + Ya tengo cuenta */}
               <div className="pt-2 grid gap-2 sm:grid-cols-2">
-                <button
-                  type="button"
-                  onClick={() => setStep(2)}
-                  className="btn w-full"
-                >
-                  Registrarme con email
+                <button type="button" onClick={() => setStep(2)} className="btn w-full">
+                  Regístrate ahora
                 </button>
 
-                {/* Ya tengo cuenta → /login */}
-                <button
-                  type="button"
-                  onClick={goLogin}
-                  className="btn secondary w-full"
-                >
+                <button type="button" onClick={goLogin} className="btn secondary w-full">
                   Ya tengo cuenta
                 </button>
               </div>
@@ -280,7 +267,6 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
             </div>
           )}
 
-          {/* PASO 2 — formulario por email */}
           {step === 2 && (
             <form onSubmit={submitEmailForm} className="space-y-4">
               <div>
@@ -378,7 +364,6 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
             </form>
           )}
 
-          {/* PASO 3 — éxito */}
           {step === 3 && (
             <div className="py-6 space-y-4 text-center">
               <div className="flex justify-center">
@@ -395,7 +380,6 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
             </div>
           )}
 
-          {/* PASO 4 — personalización */}
           {step === 4 && (
             <form onSubmit={savePersonalizeAndNext} className="space-y-4">
               <div>
@@ -479,11 +463,7 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
                         handleChange('caloriasDiarias', e.target.value ? Number(e.target.value) : undefined)
                       }
                     />
-                    <button
-                      type="button"
-                      onClick={handleAutoCalories}
-                      className="btn secondary whitespace-nowrap"
-                    >
+                    <button type="button" onClick={handleAutoCalories} className="btn secondary whitespace-nowrap">
                       Calcular
                     </button>
                   </div>
@@ -516,7 +496,6 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
             </form>
           )}
 
-          {/* PASO 5 — bienvenida + reglas */}
           {step === 5 && (
             <div className="space-y-4 text-sm leading-snug">
               <p className="font-bold text-center">Bienvenid@ a Build your Habits</p>
@@ -526,17 +505,9 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
               </p>
               <p className="font-medium">Pero tenemos algunas reglas que nos guiarán en el camino:</p>
               <ol className="list-decimal pl-5 space-y-2 text-gray-700">
-                <li>
-                  <strong>Decir siempre la verdad.</strong> Si marcas un hábito como realizado sin haberlo hecho,
-                  al único que engañas es a ti mism@.
-                </li>
-                <li>
-                  <strong>Está permitido fallar, pero nunca rendirse.</strong> Si un día no consigues un reto,
-                  tendrás otra oportunidad al día siguiente.
-                </li>
-                <li>
-                  <strong>Disfruta del proceso y celebra cada paso.</strong> La constancia es la clave, y cada avance merece orgullo.
-                </li>
+                <li><strong>Decir siempre la verdad.</strong> Si marcas un hábito como realizado sin haberlo hecho, al único que engañas es a ti mism@.</li>
+                <li><strong>Está permitido fallar, pero nunca rendirse.</strong> Si un día no consigues un reto, tendrás otra oportunidad al día siguiente.</li>
+                <li><strong>Disfruta del proceso y celebra cada paso.</strong> La constancia es la clave, y cada avance merece orgullo.</li>
               </ol>
               <p className="text-gray-800">✨ <strong>Recuerda: eres la suma de tus acciones</strong></p>
 
@@ -564,7 +535,7 @@ function StepDot({ active }: { active: boolean }) {
   );
 }
 
-/* --- Logos SVG inline (Google / Apple) --- */
+/* Logos */
 function GoogleLogo({ className = '' }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 48 48" aria-hidden="true">

@@ -24,10 +24,15 @@ function LoginContent() {
 
   // Si ya hay sesión, redirige
   useEffect(() => {
+    let alive = true;
     (async () => {
       const { data } = await supabase.auth.getSession();
-      if (data.session) router.replace(redirect);
+      if (!alive) return;
+      if (data.session) router.replace(redirect || '/');
     })();
+    return () => {
+      alive = false;
+    };
   }, [router, redirect]);
 
   const canSubmit = useMemo(() => !!email.trim() && password.length >= 6, [email, password]);
@@ -47,7 +52,7 @@ function LoginContent() {
           : error.message;
         throw new Error(msg);
       }
-      router.replace(redirect);
+      router.replace(redirect || '/');
     } catch (e: any) {
       setErr(e?.message || 'No se pudo iniciar sesión.');
     } finally {
@@ -126,14 +131,23 @@ function LoginContent() {
           <button onClick={sendRecovery} className="underline underline-offset-2">
             He olvidado mi contraseña
           </button>
-          <button className="underline underline-offset-2" onClick={() => setShowReg(true)}>
+          <button
+            className="underline underline-offset-2"
+            onClick={() => setShowReg(true)}
+          >
             Crear cuenta
           </button>
         </div>
       </div>
 
-      {/* Registro (reutilizamos tu modal actual) */}
-      {showReg && <RegistrationModal initialStep={1} onClose={() => setShowReg(false)} />}
+      {/* Registro */}
+      {showReg && (
+        <RegistrationModal
+          initialStep={1}
+          prefill={{ email }}          // 👈 prefijamos el email que escribió el usuario
+          onClose={() => setShowReg(false)}
+        />
+      )}
     </main>
   );
 }
