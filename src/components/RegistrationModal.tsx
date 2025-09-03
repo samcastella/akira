@@ -42,13 +42,8 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [loading, setLoading] = useState(false);
-  const [oauthLoading, setOauthLoading] = useState<'google' | 'apple' | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
-
-  const site =
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    (typeof window !== 'undefined' ? window.location.origin : undefined);
 
   function handleChange<K extends keyof FormUser>(key: K, value: FormUser[K]) {
     setUser((prev) => ({ ...prev, [key]: value }));
@@ -86,23 +81,10 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
     setUser((p) => ({ ...p, caloriasDiarias: tdee }));
   }
 
-  async function signInWith(provider: 'google' | 'apple') {
-    setErr(null);
-    setInfo(null);
-    try {
-      setOauthLoading(provider);
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider,
-        options: {
-          redirectTo: site ? `${site}/auth/callback` : undefined,
-        },
-      });
-      if (error) throw error;
-      // redirige Supabase; no seguimos
-    } catch (e: any) {
-      setErr(e?.message || 'No se pudo iniciar el proveedor seleccionado.');
-      setOauthLoading(null);
-    }
+  // ——— OAuth desactivado temporalmente ———
+  function oauthSoon() {
+    setInfo('Opción todavía no disponible');
+    try { alert('Opción todavía no disponible'); } catch {}
   }
 
   async function submitEmailForm(e: React.FormEvent) {
@@ -197,15 +179,15 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
         aria-modal="true"
         aria-labelledby="reg-title"
       >
-        {/* Cabecera con imagen (Intro.png en /public) */}
-        <div className="relative w-full h-[150px] sm:h-[180px] bg-white">
+        {/* Cabecera con imagen a sangre */}
+        <div className="relative w-full h-[160px] sm:h-[200px]">
           <Image
             src="/Intro.png"
             alt=""
             fill
             priority
             sizes="(max-width: 768px) 100vw, 640px"
-            className="object-contain p-4"
+            className="object-cover"
           />
         </div>
 
@@ -228,26 +210,24 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
                 <p className="text-xs text-gray-600">Elige cómo quieres registrarte.</p>
               </div>
 
-              {/* Botones OAuth */}
+              {/* Botones OAuth → muestran aviso */}
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => signInWith('google')}
-                  disabled={!!oauthLoading}
+                  onClick={oauthSoon}
                   className="w-full btn secondary !bg-white !text-black !border !border-gray-300 inline-flex items-center justify-center gap-2"
                 >
                   <GoogleLogo className="h-4 w-4" />
-                  {oauthLoading === 'google' ? 'Abriendo Google…' : 'Continuar con Google'}
+                  Continuar con Google
                 </button>
 
                 <button
                   type="button"
-                  onClick={() => signInWith('apple')}
-                  disabled={!!oauthLoading}
+                  onClick={oauthSoon}
                   className="w-full btn secondary !bg-black !text-white inline-flex items-center justify-center gap-2"
                 >
                   <AppleLogo className="h-4 w-4" />
-                  {oauthLoading === 'apple' ? 'Abriendo Apple…' : 'Continuar con Apple'}
+                  Continuar con Apple
                 </button>
               </div>
 
@@ -548,9 +528,10 @@ function GoogleLogo({ className = '' }: { className?: string }) {
 }
 
 function AppleLogo({ className = '' }: { className?: string }) {
+  // Path simplificado (evita trazos raros)
   return (
     <svg className={className} viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
-      <path d="M16.365 1.43c0 1.14-.47 2.233-1.23 3.03-.78.82-2.074 1.45-3.153 1.365-.137-1.1.522-2.264 1.271-3.03.81-.83 2.188-1.45 3.112-1.365zm3.4 17.062c-.603 1.396-1.33 2.787-2.402 2.806-1.056.02-1.392-.817-2.593-.817-1.2 0-1.57.795-2.61.836-1.05.04-1.85-1.28-2.46-2.67-1.34-3.06-2.37-8.646.99-10.98.88-.62 2-.95 3.16-.93 1.06.02 2.07.38 2.82.99.67.54 1.17 1.22 1.49 2 .33.8.47 1.64.42 2.48-.02.42.33.84.73.97.45.14.94-.02 1.24-.37.53-.64.95-1.4 1.22-2.22-.02 0 .62-.27 1.27.53-.45 1.32-1.02 2.58-1.55 3.41-.33.51-.54.86-.56 1.04-.03.24.21.63.22.91.02.32-.16.66-.29.98z"/>
+      <path d="M19.665 13.872c-.044-3.65 2.982-5.402 3.124-5.482-1.707-2.494-4.361-2.838-5.299-2.872-2.256-.231-4.403 1.317-5.546 1.317-1.162 0-2.921-1.287-4.8-1.25-2.462.036-4.748 1.431-6.009 3.632-2.565 4.446-.655 11.01 1.84 14.61 1.217 1.747 2.66 3.7 4.57 3.63 1.845-.07 2.54-1.175 4.776-1.175 2.218 0 2.86 1.175 4.8 1.136 1.98-.033 3.24-1.786 4.45-3.54 1.4-2.048 1.98-4.02 2.02-4.127-.044-.02-3.89-1.488-3.93-5.88zM16.9 4.33c.97-1.18 1.62-2.83 1.44-4.48-1.39.06-3.06.93-4.06 2.1-.89 1.02-1.66 2.68-1.45 4.28 1.52.12 3.09-.77 4.07-1.9z"/>
     </svg>
   );
 }

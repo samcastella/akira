@@ -18,6 +18,11 @@ export default function LayoutClient({
 }) {
   const pathname = usePathname();
 
+  // Rutas de autenticación donde no debe aplicarse el gating/splash
+  const isAuthRoute =
+    pathname === '/login' ||
+    pathname.startsWith('/auth'); // /auth/callback, etc.
+
   // === Estado de perfil local (gating por completar datos) ===
   const [userOk, setUserOk] = useState<boolean | null>(null);
 
@@ -26,9 +31,9 @@ export default function LayoutClient({
   const [authReady, setAuthReady] = useState(false);
 
   // === Modales ===
-  // showAuthModal ahora abre directamente el RegistrationModal (paso 1)
+  // showAuthModal abre directamente RegistrationModal (paso 1)
   const [showAuthModal, setShowAuthModal] = useState(false);
-  // showRegistration se usa para abrir el RegistrationModal en paso 2 tras OAuth
+  // showRegistration se usa para abrir RegistrationModal en paso 2 tras OAuth (si lo activas en el futuro)
   const [showRegistration, setShowRegistration] = useState(false);
   const [registrationStartStep, setRegistrationStartStep] = useState<1 | 2 | 3>(1);
 
@@ -55,7 +60,7 @@ export default function LayoutClient({
     const { data: sub } = supabase.auth.onAuthStateChange((_evt, session) => {
       setHasSession(!!session);
 
-      // Si el usuario acaba de iniciar sesión por Google,
+      // Si el usuario acaba de iniciar sesión por proveedor externo,
       // abrimos el registro para completar datos (paso 2).
       if (session) {
         localStorage.setItem(LS_SEEN_AUTH, '1');
@@ -71,11 +76,17 @@ export default function LayoutClient({
     };
   }, []);
 
-  // Decidir si enseñamos el pop-up de onboarding (ahora: RegistrationModal paso 1)
+  // Decidir si enseñamos el pop-up de onboarding (RegistrationModal paso 1)
   useEffect(() => {
     if (!authReady || userOk === null) return;
 
-    // Si ya tiene sesión o su perfil ya está completo, no mostramos el pop-up.
+    // En rutas de auth no mostramos el modal nunca
+    if (isAuthRoute) {
+      setShowAuthModal(false);
+      return;
+    }
+
+    // Si ya tiene sesión o su perfil está completo, no mostramos el pop-up.
     if (hasSession || userOk) {
       setShowAuthModal(false);
       return;
@@ -83,11 +94,11 @@ export default function LayoutClient({
 
     const seen = typeof window !== 'undefined' ? localStorage.getItem(LS_SEEN_AUTH) : '1';
     if (!seen) setShowAuthModal(true);
-  }, [authReady, hasSession, userOk]);
+  }, [authReady, hasSession, userOk, isAuthRoute]);
 
-  // Mientras el perfil NO esté listo, ocultamos app y mostramos gating (splash + modal)
-  const gating = userOk === false;
-  const hideNav = gating || pathname === '/bienvenida';
+  // Mientras el perfil NO esté listo, ocultamos app y mostramos gating (splash + modal), excepto en /login y /auth/*
+  const gating = userOk === false && !isAuthRoute;
+  const hideNav = (gating || pathname === '/bienvenida') && !isAuthRoute;
 
   function handleCloseRegistration() {
     setShowRegistration(false);
@@ -121,7 +132,7 @@ export default function LayoutClient({
           }}
         />
 
-        {/* Pop-up de onboarding → AHORA usa directamente RegistrationModal (paso 1) */}
+        {/* Pop-up de onboarding → RegistrationModal (paso 1) */}
         {!hasSession && showAuthModal && (
           <div className="relative z-50">
             <RegistrationModal
@@ -134,7 +145,7 @@ export default function LayoutClient({
           </div>
         )}
 
-        {/* Modal de registro (manual o tras Google en paso 2) */}
+        {/* Modal de registro (manual o tras proveedor en paso 2) */}
         {showRegistration && (
           <div className="relative z-50">
             <RegistrationModal
@@ -158,7 +169,7 @@ export default function LayoutClient({
     );
   }
 
-  // App normal cuando el perfil está completo
+  // App normal cuando el perfil está completo (o estamos en rutas de auth)
   return (
     <>
       <div
