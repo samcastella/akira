@@ -1,6 +1,8 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import { UserProfile, estimateCalories, saveUserMerge } from '@/lib/user';
 import { Rocket, ArrowLeft, CheckCircle2 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
@@ -25,6 +27,7 @@ type Props = {
 };
 
 export default function RegistrationModal({ onClose, initialStep = 1, prefill }: Props) {
+  const router = useRouter();
   const [step, setStep] = useState<Step>(initialStep);
   const [user, setUser] = useState<FormUser>({
     nombre: prefill?.nombre ?? '',
@@ -38,8 +41,13 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [loading, setLoading] = useState(false);
+  const [oauthLoading, setOauthLoading] = useState<'google' | 'apple' | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+
+  const site =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    (typeof window !== 'undefined' ? window.location.origin : undefined);
 
   function handleChange<K extends keyof FormUser>(key: K, value: FormUser[K]) {
     setUser((prev) => ({ ...prev, [key]: value }));
@@ -77,13 +85,24 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
     setUser((p) => ({ ...p, caloriasDiarias: tdee }));
   }
 
-  // Popup temporal para OAuth (Google/Apple)
-  function oauthSoon(provider: 'google' | 'apple') {
-    setInfo(
-      provider === 'google'
-        ? 'Opción disponible próximamente.'
-        : 'Pronto podrás registrarte con Apple. Estamos terminando los últimos detalles 😊'
-    );
+  // OAuth real (Google/Apple)
+  async function signInWith(provider: 'google' | 'apple') {
+    setErr(null);
+    setInfo(null);
+    try {
+      setOauthLoading(provider);
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: site ? `${site}/auth/callback` : undefined,
+        },
+      });
+      if (error) throw error;
+      // Supabase hará redirect; no seguimos aquí.
+    } catch (e: any) {
+      setErr(e?.message || 'No se pudo iniciar el proveedor seleccionado.');
+      setOauthLoading(null);
+    }
   }
 
   // Submit del formulario (pantalla 2)
@@ -168,14 +187,31 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
     onClose?.();
   }
 
+  function goLogin() {
+    onClose?.();
+    router.push('/login');
+  }
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60">
       <div
-        className="bg-white w-[70vw] max-w-2xl mx-4 rounded-2xl shadow-xl text-sm flex flex-col max-h-[85svh]"
+        className="bg-white w-[70vw] max-w-2xl mx-4 rounded-2xl shadow-xl text-sm flex flex-col max-h-[85svh] overflow-hidden"
         role="dialog"
         aria-modal="true"
         aria-labelledby="reg-title"
       >
+        {/* Cabecera con imagen (Intro.png en /public) */}
+        <div className="relative w-full h-[150px] sm:h-[180px] bg-white">
+          <Image
+            src="/Intro.png"
+            alt=""
+            fill
+            priority
+            sizes="(max-width: 768px) 100vw, 640px"
+            className="object-contain p-4"
+          />
+        </div>
+
         <div className="p-6 pb-3 flex items-center justify-between">
           <h2 id="reg-title" className="text-base font-bold">Registro</h2>
           <div className="flex items-center gap-2 text-[10px]">
@@ -192,45 +228,59 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
           {step === 1 && (
             <div className="space-y-4">
               <div>
-                <p className="text-base font-extrabold mb-1">¡Bienvenid@!</p>
+                <p className="text-base font-extrabold mb-1">¡Bienvenid@ a Build your Habits!</p>
                 <p className="text-xs text-gray-600">Elige cómo quieres registrarte.</p>
               </div>
 
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                {/* Google */}
                 <button
                   type="button"
-                  onClick={() => oauthSoon('google')}
+                  onClick={() => signInWith('google')}
+                  disabled={!!oauthLoading}
                   className="w-full btn secondary !bg-white !text-black !border !border-gray-300 inline-flex items-center justify-center gap-2"
                 >
                   <GoogleLogo className="h-4 w-4" />
-                  Continuar con Google
+                  {oauthLoading === 'google' ? 'Abriendo Google…' : 'Continuar con Google'}
                 </button>
 
+                {/* Apple */}
                 <button
                   type="button"
-                  onClick={() => oauthSoon('apple')}
+                  onClick={() => signInWith('apple')}
+                  disabled={!!oauthLoading}
                   className="w-full btn secondary !bg-black !text-white inline-flex items-center justify-center gap-2"
                 >
                   <AppleLogo className="h-4 w-4" />
-                  Continuar con Apple
+                  {oauthLoading === 'apple' ? 'Abriendo Apple…' : 'Continuar con Apple'}
                 </button>
               </div>
 
-              <div className="pt-2">
+              <div className="pt-2 grid gap-2 sm:grid-cols-2">
                 <button
                   type="button"
                   onClick={() => setStep(2)}
-                  className="btn w-full sm:w-auto"
+                  className="btn w-full"
                 >
                   Registrarme con email
                 </button>
+
+                {/* Ya tengo cuenta → /login */}
+                <button
+                  type="button"
+                  onClick={goLogin}
+                  className="btn secondary w-full"
+                >
+                  Ya tengo cuenta
+                </button>
               </div>
 
+              {err && <p className="text-[11px] text-red-600">{err}</p>}
               {info && <p className="text-[11px] text-amber-700">{info}</p>}
             </div>
           )}
 
-          {/* PASO 2 — formulario por email (sin OAuth) */}
+          {/* PASO 2 — formulario por email */}
           {step === 2 && (
             <form onSubmit={submitEmailForm} className="space-y-4">
               <div>
@@ -328,7 +378,7 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
             </form>
           )}
 
-          {/* PASO 3 — éxito de registro (no bloqueante) */}
+          {/* PASO 3 — éxito */}
           {step === 3 && (
             <div className="py-6 space-y-4 text-center">
               <div className="flex justify-center">
@@ -345,7 +395,7 @@ export default function RegistrationModal({ onClose, initialStep = 1, prefill }:
             </div>
           )}
 
-          {/* PASO 4 — personalización (sin botón Atrás) */}
+          {/* PASO 4 — personalización */}
           {step === 4 && (
             <form onSubmit={savePersonalizeAndNext} className="space-y-4">
               <div>
