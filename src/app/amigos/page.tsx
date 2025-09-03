@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
+import RequireAuth from '@/components/auth/RequireAuth';
 
 /* ===========================
    Tipos
@@ -65,18 +66,16 @@ function stripAt(s: string) {
 }
 
 /* ===========================
-   Página Mis Amigos
+   Página Amigos (protegida)
    =========================== */
 export default function AmigosPage() {
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
   const [tab, setTab] = useState<'crear' | 'unirse' | 'retos' | 'buscar' | 'ranking'>('crear');
 
-  // Requiere sesión (muy simple)
+  // Obtener userId sin redirecciones manuales (RequireAuth se encarga)
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      const uid = data.session?.user.id ?? null;
-      setSessionUserId(uid);
-      if (!uid) window.location.href = '/login';
+    supabase.auth.getUser().then(({ data }) => {
+      setSessionUserId(data.user?.id ?? null);
     });
   }, []);
 
@@ -103,49 +102,49 @@ export default function AmigosPage() {
     } catch {}
   }, [sessionUserId]);
 
-  if (!sessionUserId) {
-    return (
-      <main className="container" style={{ paddingTop: 24, paddingBottom: 24 }}>
-        <h2 className="page-title">Mis amigos</h2>
-        <p className="text-sm muted">Redirigiendo a inicio de sesión…</p>
-      </main>
-    );
-  }
-
   return (
-    <main className="container" style={{ paddingTop: 24, paddingBottom: 24 }}>
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="page-title">Mis amigos</h2>
-        <Link href="/" className="btn secondary">
-          Volver
-        </Link>
-      </div>
+    <RequireAuth redirectTo="/login?redirect=/amigos">
+      {!sessionUserId ? (
+        <main className="container" style={{ paddingTop: 24, paddingBottom: 24 }}>
+          <h2 className="page-title">Mis amigos</h2>
+          <p className="text-sm muted">Cargando tu sesión…</p>
+        </main>
+      ) : (
+        <main className="container" style={{ paddingTop: 24, paddingBottom: 24 }}>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="page-title">Mis amigos</h2>
+            <Link href="/" className="btn secondary">
+              Volver
+            </Link>
+          </div>
 
-      {/* Tabs */}
-      <div className="flex gap-2 mb-4 flex-wrap">
-        <button className={`btn ${tab === 'crear' ? '' : 'secondary'}`} onClick={() => setTab('crear')}>
-          Crear reto
-        </button>
-        <button className={`btn ${tab === 'unirse' ? '' : 'secondary'}`} onClick={() => setTab('unirse')}>
-          Unirse con código
-        </button>
-        <button className={`btn ${tab === 'retos' ? '' : 'secondary'}`} onClick={() => setTab('retos')}>
-          Retos con amigos
-        </button>
-        <button className={`btn ${tab === 'buscar' ? '' : 'secondary'}`} onClick={() => setTab('buscar')}>
-          Buscar amigos
-        </button>
-        <button className={`btn ${tab === 'ranking' ? '' : 'secondary'}`} onClick={() => setTab('ranking')}>
-          Ranking
-        </button>
-      </div>
+          {/* Tabs */}
+          <div className="flex gap-2 mb-4 flex-wrap">
+            <button className={`btn ${tab === 'crear' ? '' : 'secondary'}`} onClick={() => setTab('crear')}>
+              Crear reto
+            </button>
+            <button className={`btn ${tab === 'unirse' ? '' : 'secondary'}`} onClick={() => setTab('unirse')}>
+              Unirse con código
+            </button>
+            <button className={`btn ${tab === 'retos' ? '' : 'secondary'}`} onClick={() => setTab('retos')}>
+              Retos con amigos
+            </button>
+            <button className={`btn ${tab === 'buscar' ? '' : 'secondary'}`} onClick={() => setTab('buscar')}>
+              Buscar amigos
+            </button>
+            <button className={`btn ${tab === 'ranking' ? '' : 'secondary'}`} onClick={() => setTab('ranking')}>
+              Ranking
+            </button>
+          </div>
 
-      {tab === 'crear' && <CreateChallenge userId={sessionUserId} onCreated={() => setTab('retos')} />}
-      {tab === 'unirse' && <JoinChallenge />}
-      {tab === 'retos' && <MyChallenges userId={sessionUserId} />}
-      {tab === 'buscar' && <Friends userId={sessionUserId} />}
-      {tab === 'ranking' && <RankingPlaceholder />}
-    </main>
+          {tab === 'crear' && <CreateChallenge userId={sessionUserId} onCreated={() => setTab('retos')} />}
+          {tab === 'unirse' && <JoinChallenge />}
+          {tab === 'retos' && <MyChallenges userId={sessionUserId} />}
+          {tab === 'buscar' && <Friends userId={sessionUserId} />}
+          {tab === 'ranking' && <RankingPlaceholder />}
+        </main>
+      )}
+    </RequireAuth>
   );
 }
 

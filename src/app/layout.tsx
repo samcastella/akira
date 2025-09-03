@@ -3,7 +3,8 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import BottomNav from "@/components/BottomNav";
-import LayoutClient from "./LayoutClient"; // ⬅️ nuevo import
+import LayoutClient from "./LayoutClient";
+import { SupabaseSessionProvider } from "@/components/providers/SupabaseSessionProvider";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
@@ -34,9 +35,11 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <link rel="icon" href="/favicon.ico" />
       </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        <LayoutClient bottomNav={<BottomNav />}>
-          {children}
-        </LayoutClient>
+        <SupabaseSessionProvider>
+          <LayoutClient bottomNav={<BottomNav />}>
+            {children}
+          </LayoutClient>
+        </SupabaseSessionProvider>
       </body>
     </html>
   );
