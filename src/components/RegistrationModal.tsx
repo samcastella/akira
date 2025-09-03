@@ -12,24 +12,30 @@ type Act = 'sedentario' | 'ligero' | 'moderado' | 'intenso';
 type FormUser = UserProfile & {
   sexo?: Sex;
   edad?: number;
-  estatura?: number;  // cm
-  peso?: number;      // kg
+  estatura?: number;
+  peso?: number;
   actividad?: Act;
   caloriasDiarias?: number;
 };
 
-export default function RegistrationModal({ onClose }: { onClose?: () => void }) {
-  const [step, setStep] = useState<Step>(1);
+type Props = {
+  onClose?: () => void;
+  initialStep?: Step;          // ⬅️ permite arrancar en el paso 2 tras OAuth
+  prefill?: Partial<FormUser>; // ⬅️ datos previos (p. ej. nombre/email de Google)
+};
+
+export default function RegistrationModal({ onClose, initialStep = 1, prefill }: Props) {
+  const [step, setStep] = useState<Step>(initialStep);
   const [user, setUser] = useState<FormUser>({
-    nombre: '',
-    apellido: '',
-    email: '',
-    telefono: '',
-    sexo: 'prefiero_no_decirlo',
-    actividad: 'sedentario',
+    nombre: prefill?.nombre ?? '',
+    apellido: prefill?.apellido ?? '',
+    email: prefill?.email ?? '',
+    telefono: prefill?.telefono ?? '',
+    sexo: prefill?.sexo ?? 'prefiero_no_decirlo',
+    actividad: prefill?.actividad ?? 'sedentario',
   });
 
-  // Nuevos estados para auth
+  // Contraseña (solo si initialStep === 1)
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [loading, setLoading] = useState(false);
@@ -41,18 +47,20 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
   }
 
   const canNext1 = useMemo(() => {
+    if (initialStep === 2) return true; // OAuth: no pedimos pass
     const okBasics = !!user.nombre?.trim() && !!user.apellido?.trim() && !!user.email?.trim();
-    const passLen = password.length >= 6; // puedes subirlo a 8 si quieres
+    const passLen = password.length >= 6;
     const match = password === confirm;
     return okBasics && passLen && match;
-  }, [user.nombre, user.apellido, user.email, password, confirm]);
+  }, [user.nombre, user.apellido, user.email, password, confirm, initialStep]);
 
   const passError = useMemo(() => {
+    if (initialStep === 2) return '';
     if (!password && !confirm) return '';
     if (password.length < 6) return 'La contraseña debe tener al menos 6 caracteres.';
     if (password !== confirm) return 'Las contraseñas no coinciden.';
     return '';
-  }, [password, confirm]);
+  }, [password, confirm, initialStep]);
 
   function handleAutoCalories() {
     try {
@@ -61,7 +69,11 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
     } catch {}
     const { sexo, edad, estatura, peso, actividad } = user;
     if (!edad || !estatura || !peso) return;
-    const base = 10 * peso + 6.25 * estatura - 5 * edad + (sexo === 'masculino' ? 5 : sexo === 'femenino' ? -161 : 0);
+    const base =
+      10 * (peso ?? 0) +
+      6.25 * (estatura ?? 0) -
+      5 * (edad ?? 0) +
+      (sexo === 'masculino' ? 5 : sexo === 'femenino' ? -161 : 0);
     const factor =
       actividad === 'ligero' ? 1.375 :
       actividad === 'moderado' ? 1.55 :
@@ -76,17 +88,34 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
     setInfo(null);
     if (!canNext1) return;
 
+    // Si venimos de OAuth (initialStep === 2) no deberíamos pasar por aquí,
+    // pero por seguridad dejamos paso 2.
+    if (initialStep === 2) {
+      setStep(2);
+      return;
+    }
+
     setLoading(true);
     try {
-      // 1) Registro con Supabase (email + password)
+      const redirect = typeof window !== 'undefined'
+        ? `${window.location.origin}/auth/callback`
+        : undefined;
+
       const { data, error } = await supabase.auth.signUp({
         email: user.email!,
         password,
-        options: { emailRedirectTo: window.location.origin }
+        options: { emailRedirectTo: redirect }
       });
-      if (error) throw error;
 
-      // 2) Guardar datos básicos en local para el resto de la app
+      if (error) {
+        // Mensaje claro cuando la API key/URL es inválida o de otro proyecto.
+        const msg = /invalid api key/i.test(error.message)
+          ? 'Error de configuración: la API key pública de Supabase es inválida o no corresponde con la URL del proyecto.'
+          : error.message;
+        throw new Error(msg);
+      }
+
+      // Persistimos básicos en local
       saveUserMerge({
         nombre: user.nombre,
         apellido: user.apellido,
@@ -94,23 +123,25 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
         telefono: user.telefono,
       });
 
-      // 3) Si hay sesión inmediata (confirmación desactivada) → upsert perfil y pasar al paso 2
+      // Si tu proyecto no exige confirmación por email, habrá sesión inmediata
       if (data.session?.user) {
         const uid = data.session.user.id;
-        await supabase.from('public_profiles').upsert({
-          user_id: uid,
-          nombre: user.nombre || null,
-          apellido: user.apellido || null,
-          sexo: user.sexo || null,
-          instagram: null,
-          tiktok: null,
-        }, { onConflict: 'user_id' });
-
+        await supabase.from('public_profiles').upsert(
+          {
+            user_id: uid,
+            nombre: user.nombre || null,
+            apellido: user.apellido || null,
+            sexo: user.sexo || null,
+            instagram: null,
+            tiktok: null,
+          },
+          { onConflict: 'user_id' }
+        );
         setStep(2);
         return;
       }
 
-      // 4) Si la confirmación por email está activada
+      // Si exige confirmación
       setInfo('Te hemos enviado un correo para confirmar tu cuenta. Abre el enlace y vuelve a la app para continuar.');
     } catch (e: any) {
       setErr(e?.message || 'No se pudo completar el registro.');
@@ -155,8 +186,8 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
         </div>
 
         <div className="px-6 pb-6 overflow-y-auto">
-          {/* PASO 1 */}
-          {step === 1 && (
+          {/* PASO 1 — solo cuando initialStep === 1 */}
+          {step === 1 && initialStep === 1 && (
             <form onSubmit={nextFromStep1} className="space-y-4">
               <div>
                 <p className="text-base font-extrabold mb-1">¡Bienvenid@!</p>
@@ -167,20 +198,18 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
                 <label className="block text-xs">
                   <span className="font-medium">Nombre</span>
                   <input
-                    type="text"
+                    className="mt-1 input text-[16px]"
                     value={user.nombre ?? ''}
                     onChange={(e) => handleChange('nombre', e.target.value)}
-                    className="mt-1 input text-[16px]"
                     required
                   />
                 </label>
                 <label className="block text-xs">
                   <span className="font-medium">Apellido</span>
                   <input
-                    type="text"
+                    className="mt-1 input text-[16px]"
                     value={user.apellido ?? ''}
                     onChange={(e) => handleChange('apellido', e.target.value)}
-                    className="mt-1 input text-[16px]"
                     required
                   />
                 </label>
@@ -190,9 +219,9 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
                 <span className="font-medium">Email</span>
                 <input
                   type="email"
+                  className="mt-1 input text-[16px]"
                   value={user.email ?? ''}
                   onChange={(e) => handleChange('email', e.target.value)}
-                  className="mt-1 input text-[16px]"
                   required
                 />
               </label>
@@ -202,9 +231,9 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
                   <span className="font-medium">Contraseña</span>
                   <input
                     type="password"
+                    className="mt-1 input text-[16px]"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="mt-1 input text-[16px]"
                     required
                   />
                 </label>
@@ -212,9 +241,9 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
                   <span className="font-medium">Repetir contraseña</span>
                   <input
                     type="password"
+                    className="mt-1 input text-[16px]"
                     value={confirm}
                     onChange={(e) => setConfirm(e.target.value)}
-                    className="mt-1 input text-[16px]"
                     required
                   />
                 </label>
@@ -224,10 +253,9 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
               <label className="block text-xs">
                 <span className="font-medium">Teléfono (opcional)</span>
                 <input
-                  type="tel"
+                  className="mt-1 input text-[16px]"
                   value={user.telefono ?? ''}
                   onChange={(e) => handleChange('telefono', e.target.value)}
-                  className="mt-1 input text-[16px]"
                 />
               </label>
 
@@ -275,9 +303,9 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
                   <input
                     type="number"
                     min={5}
+                    className="mt-1 input text-[16px]"
                     value={user.edad ?? ''}
                     onChange={(e) => handleChange('edad', e.target.value ? Number(e.target.value) : undefined)}
-                    className="mt-1 input text-[16px]"
                   />
                 </label>
 
@@ -286,9 +314,9 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
                   <input
                     type="number"
                     min={80}
+                    className="mt-1 input text-[16px]"
                     value={user.estatura ?? ''}
                     onChange={(e) => handleChange('estatura', e.target.value ? Number(e.target.value) : undefined)}
-                    className="mt-1 input text-[16px]"
                   />
                 </label>
 
@@ -298,9 +326,9 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
                     type="number"
                     min={20}
                     step="0.1"
+                    className="mt-1 input text-[16px]"
                     value={user.peso ?? ''}
                     onChange={(e) => handleChange('peso', e.target.value ? Number(e.target.value) : undefined)}
-                    className="mt-1 input text-[16px]"
                   />
                 </label>
 
@@ -324,11 +352,11 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
                     <input
                       type="number"
                       min={800}
+                      className="input text-[16px]"
                       value={user.caloriasDiarias ?? ''}
                       onChange={(e) =>
                         handleChange('caloriasDiarias', e.target.value ? Number(e.target.value) : undefined)
                       }
-                      className="input text-[16px]"
                     />
                     <button
                       type="button"
@@ -338,11 +366,9 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
                       Calcular
                     </button>
                   </div>
-                  <p className="text-[11px] text-gray-500 mt-1">Puedes calcular automáticamente o introducirlo manualmente.</p>
                 </label>
               </div>
 
-              {/* Enlace para omitir el paso */}
               <p className="text-xs text-gray-600 text-center mt-2">
                 <button
                   type="button"
@@ -363,24 +389,19 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
                 </button>
               </p>
 
-              {/* Botonera */}
               <div className="flex gap-2 justify-between flex-nowrap">
-                <button
-                  type="button"
-                  onClick={() => setStep(1)}
-                  className="btn secondary whitespace-nowrap inline-flex items-center"
-                >
-                  <ArrowLeft size={16} className="mr-1" />
-                  Atrás
-                </button>
-                <div className="flex gap-2 flex-nowrap">
+                {initialStep === 1 && (
                   <button
-                    type="submit"
-                    className="btn whitespace-nowrap"
+                    type="button"
+                    onClick={() => setStep(1)}
+                    className="btn secondary whitespace-nowrap inline-flex items-center"
                   >
-                    Guardar
+                    <ArrowLeft size={16} className="mr-1" />
+                    Atrás
                   </button>
-                </div>
+                )}
+                <div className="flex-1" />
+                <button type="submit" className="btn whitespace-nowrap">Guardar</button>
               </div>
             </form>
           )}
@@ -391,32 +412,12 @@ export default function RegistrationModal({ onClose }: { onClose?: () => void })
               <div>
                 <p className="text-sm font-bold mb-2 text-center">Bienvenid@ a Build your Habits</p>
                 <p className="text-gray-700">
-                  Nuestra app está diseñada para ayudarte a construir hábitos saludables que mejoren tu bienestar desde
-                  cero, y para dejar atrás los malos hábitos de la forma más sencilla y amable posible.
+                  Nuestra app está diseñada para ayudarte a construir hábitos saludables que mejoren tu bienestar desde cero,
+                  y para dejar atrás los malos hábitos de la forma más sencilla y amable posible.
                 </p>
-                <p className="text-gray-700">Pero tenemos algunas reglas que nos guiarán en el camino:</p>
-                <ol className="list-decimal ml-6 space-y-1.5 text-gray-800">
-                  <li>
-                    <strong>Decir siempre la verdad.</strong> Si marcas un hábito como realizado sin haberlo hecho, al único
-                    que engañas es a ti mism@.
-                  </li>
-                  <li>
-                    <strong>Está permitido fallar, pero nunca rendirse.</strong> Si un día no consigues un reto, tendrás
-                    otra oportunidad al día siguiente.
-                  </li>
-                  <li>
-                    <strong>Disfruta del proceso y celebra cada paso.</strong> La constancia es la clave, y cada avance
-                    merece orgullo.
-                  </li>
-                </ol>
-                <p className="mt-2 italic text-gray-700">✨ Recuerda: eres la suma de tus acciones.</p>
               </div>
-
               <div className="flex justify-center">
-                <button
-                  onClick={finish}
-                  className="btn inline-flex items-center gap-2"
-                >
+                <button onClick={finish} className="btn inline-flex items-center gap-2">
                   <Rocket size={18} />
                   Vamos a por ello
                 </button>

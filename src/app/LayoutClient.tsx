@@ -3,7 +3,11 @@
 import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { loadUser, isUserComplete, LS_FIRST_RUN, LS_USER } from '@/lib/user';
+import { supabase } from '@/lib/supabaseClient';
 import RegistrationModal from '@/components/RegistrationModal';
+import OnboardingAuthModal from '@/components/OnboardingAuthModal';
+
+const LS_SEEN_AUTH = 'akira_seen_auth_v1';
 
 export default function LayoutClient({
   children,
@@ -14,26 +18,80 @@ export default function LayoutClient({
 }) {
   const pathname = usePathname();
 
-  // null = todavía no sabemos; true/false = estado real
+  // === Estado de perfil local (gating por completar datos) ===
   const [userOk, setUserOk] = useState<boolean | null>(null);
-  const [showModal, setShowModal] = useState(false);
 
+  // === Estado de auth (sesión Supabase) ===
+  const [hasSession, setHasSession] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
+
+  // === Modales ===
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showRegistration, setShowRegistration] = useState(false);
+  const [registrationStartStep, setRegistrationStartStep] = useState<1 | 2 | 3>(1);
+
+  // Cargar perfil local
   useEffect(() => {
     const u = loadUser();
     const ok = isUserComplete(u);
     setUserOk(ok);
-    setShowModal(!ok);
   }, []);
 
-  // Mientras el usuario NO esté listo, mostramos splash+modal y ocultamos todo lo demás
+  // Cargar sesión + suscripción a cambios de auth
+  useEffect(() => {
+    let cancelled = false;
+
+    async function initAuth() {
+      const { data } = await supabase.auth.getSession();
+      if (!cancelled) {
+        setHasSession(!!data.session);
+        setAuthReady(true);
+      }
+    }
+    initAuth();
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_evt, session) => {
+      setHasSession(!!session);
+
+      // Si el usuario acaba de iniciar sesión por Google,
+      // cierra el popup y abre el registro para completar datos.
+      if (session) {
+        localStorage.setItem(LS_SEEN_AUTH, '1');
+        setShowAuthModal(false);
+        setRegistrationStartStep(2); // ⬅️ arrancar en Paso 2 (si tu RegistrationModal lo soporta)
+        setShowRegistration(true);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      sub.subscription.unsubscribe();
+    };
+  }, []);
+
+  // Decidir si enseñamos el pop-up de onboarding
+  useEffect(() => {
+    if (!authReady || userOk === null) return;
+
+    // Si ya tiene sesión o su perfil ya está completo, no mostramos el pop-up.
+    if (hasSession || userOk) {
+      setShowAuthModal(false);
+      return;
+    }
+
+    const seen = typeof window !== 'undefined' ? localStorage.getItem(LS_SEEN_AUTH) : '1';
+    if (!seen) setShowAuthModal(true);
+  }, [authReady, hasSession, userOk]);
+
+  // Mientras el perfil NO esté listo, ocultamos app y mostramos gating (splash + modal)
   const gating = userOk === false;
   const hideNav = gating || pathname === '/bienvenida';
 
-  // Cuando el modal se cierra (después de guardar y navegar a /bienvenida),
-  // permitimos ya renderizar children.
-  function handleCloseModal() {
-    setShowModal(false);
-    setUserOk(true);
+  function handleCloseRegistration() {
+    setShowRegistration(false);
+    // Si ya completó datos, desbloqueamos la app:
+    const ok = isUserComplete(loadUser());
+    if (ok) setUserOk(true);
   }
 
   // === Botón de reset SOLO en desarrollo (útil para probar en móvil) ===
@@ -42,6 +100,7 @@ export default function LayoutClient({
     try {
       localStorage.removeItem(LS_FIRST_RUN);
       localStorage.removeItem(LS_USER);
+      localStorage.removeItem(LS_SEEN_AUTH);
     } catch {}
     location.reload();
   }
@@ -49,7 +108,7 @@ export default function LayoutClient({
   if (gating) {
     return (
       <>
-        {/* Fondo splash a pantalla completa */}
+        {/* Fondo splash */}
         <div
           className="fixed inset-0 z-40"
           style={{
@@ -60,14 +119,33 @@ export default function LayoutClient({
           }}
         />
 
-        {/* Modal de registro encima del splash */}
-        {showModal && (
+        {/* Pop-up onboarding (si no hay sesión y no lo hemos mostrado aún) */}
+        {!hasSession && showAuthModal && (
           <div className="relative z-50">
-            <RegistrationModal onClose={handleCloseModal} />
+            <OnboardingAuthModal
+              onClose={() => {
+                setShowAuthModal(false);
+                localStorage.setItem(LS_SEEN_AUTH, '1');
+              }}
+              onOpenRegistration={() => {
+                setShowAuthModal(false);
+                localStorage.setItem(LS_SEEN_AUTH, '1');
+                setRegistrationStartStep(1); // flujo manual: paso 1 (email + contraseña)
+                setShowRegistration(true);
+              }}
+            />
           </div>
         )}
 
-        {/* Botón dev reset (visible también durante el gating) */}
+        {/* Modal de registro (manual o tras Google) */}
+        {showRegistration && (
+          <div className="relative z-50">
+            {/* Si tu RegistrationModal no tiene initialStep, elimina la prop y arrancará en 1 */}
+            <RegistrationModal onClose={handleCloseRegistration} initialStep={registrationStartStep as any} />
+          </div>
+        )}
+
+        {/* Botón dev reset */}
         {isDev && (
           <button
             onClick={handleDevReset}
@@ -81,7 +159,7 @@ export default function LayoutClient({
     );
   }
 
-  // Estado conocido y usuario OK → render normal de la app
+  // App normal cuando el perfil está completo
   return (
     <>
       <div
@@ -96,7 +174,6 @@ export default function LayoutClient({
 
       {!hideNav && bottomNav}
 
-      {/* Botón dev reset (solo en desarrollo) */}
       {isDev && (
         <button
           onClick={handleDevReset}
