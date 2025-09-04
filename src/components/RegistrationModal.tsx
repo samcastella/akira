@@ -436,7 +436,7 @@ export default function RegistrationModal({
           nombre: profile?.nombre ?? user.nombre ?? '',
           apellido: profile?.apellido ?? user.apellido ?? '',
           sexo: (profile?.sexo as Sex | undefined) ?? user.sexo,
-          username: finalUsername ?? normalizedUsernameLocal || undefined,
+          username: (finalUsername ?? normalizedUsernameLocal) || undefined,
         });
       } else {
         // Caso raro: sin uid pero login OK
