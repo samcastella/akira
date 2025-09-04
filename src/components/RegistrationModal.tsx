@@ -66,6 +66,9 @@ export default function RegistrationModal({
   const [showPassConfirm, setShowPassConfirm] = useState(false);
 
   const [loading, setLoading] = useState(false);
+  const [savingPersonalize, setSavingPersonalize] = useState(false);
+  const [finishing, setFinishing] = useState(false);
+
   const [err, setErr] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
 
@@ -79,7 +82,7 @@ export default function RegistrationModal({
     peso: false,
   });
 
-  // 1) Reset scroll al cambiar de paso o modo
+  // 1) Reset scroll al cambiar de paso o modo + limpiar mensajes
   useEffect(() => {
     try {
       scrollRef.current?.scrollTo({ top: 0, behavior: 'auto' });
@@ -148,6 +151,7 @@ export default function RegistrationModal({
         return setUser((p) => ({ ...p, caloriasDiarias: est }));
       }
     } catch {}
+
     const { edad, estatura, peso } = user;
     // Marca faltantes si no hay datos
     const nextMissing = {
@@ -349,25 +353,40 @@ export default function RegistrationModal({
 
   function savePersonalizeAndNext(e: React.FormEvent) {
     e.preventDefault();
-    saveUserMerge({
-      sexo: user.sexo,
-      edad: user.edad,
-      estatura: user.estatura,
-      peso: user.peso,
-      actividad: user.actividad,
-      caloriasDiarias: user.caloriasDiarias,
-    });
-    setStep(5);
+    if (savingPersonalize) return;
+    setSavingPersonalize(true);
+    try {
+      saveUserMerge({
+        sexo: user.sexo,
+        edad: user.edad,
+        estatura: user.estatura,
+        peso: user.peso,
+        actividad: user.actividad,
+        caloriasDiarias: user.caloriasDiarias,
+      });
+      setStep(5);
+    } finally {
+      setSavingPersonalize(false);
+    }
   }
 
   function finish() {
-    saveUserMerge({ username: user.username } as any);
-    saveUserMerge(user as any);
+    if (finishing) return;
+    setFinishing(true);
     try {
-      localStorage.setItem(LS_SEEN_AUTH, '1');
-    } catch {}
-    router.replace(redirectTo || '/');
-    onClose?.();
+      // Guardamos todo por si faltaba algo
+      saveUserMerge({ username: user.username } as any);
+      saveUserMerge(user as any);
+      try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
+      // Cerramos el modal primero para que no se quede el overlay
+      onClose?.();
+      // Y navegamos justo después
+      setTimeout(() => {
+        router.replace(redirectTo || '/');
+      }, 0);
+    } finally {
+      setFinishing(false);
+    }
   }
 
   // Cambia a modo Login SIN navegar fuera (misma estética)
@@ -829,7 +848,9 @@ export default function RegistrationModal({
                   </p>
 
                   <div className="flex justify-end">
-                    <button type="submit" className="btn whitespace-nowrap">Guardar</button>
+                    <button type="submit" disabled={savingPersonalize} className="btn whitespace-nowrap">
+                      {savingPersonalize ? 'Guardando…' : 'Guardar'}
+                    </button>
                   </div>
                 </form>
               )}
@@ -849,9 +870,13 @@ export default function RegistrationModal({
                   <p className="text-gray-800">✨ <strong>Recuerda: eres la suma de tus acciones</strong></p>
 
                   <div className="flex justify-center pt-2">
-                    <button onClick={finish} className="btn inline-flex items-center gap-2">
+                    <button
+                      onClick={finish}
+                      disabled={finishing}
+                      className="btn inline-flex items-center gap-2 disabled:opacity-50"
+                    >
                       <Rocket size={18} />
-                      Vamos a por ello
+                      {finishing ? 'Cargando…' : 'Vamos a por ello'}
                     </button>
                   </div>
                 </div>

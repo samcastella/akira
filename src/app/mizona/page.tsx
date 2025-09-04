@@ -6,25 +6,26 @@ import { Check, RotateCcw, Trash2, Camera } from 'lucide-react';
 
 /* ====== storage + tipos ====== */
 const LS_RETOS = 'akira_mizona_retos_v1';
-const LS_USER  = 'akira_user_v1';              // donde RegistrationModal guarda con saveUserMerge
+const LS_USER  = 'akira_user_v1';                    // donde RegistrationModal guarda con saveUserMerge
 const LS_ACTIVE_PROGRAMS = 'akira_programs_active_v1'; // array de keys de programas activos
 
 type Reto = { id: string; text: string; createdAt: number; due: string; done: boolean; permanent?: boolean };
 
 type UserProfileLS = {
+  username?: string;
   nombre?: string;
   apellido?: string;
   email?: string;
   telefono?: string;
   sexo?: 'masculino' | 'femenino' | 'prefiero_no_decirlo';
   edad?: number;
-  estatura?: number;
-  peso?: number;
+  estatura?: number;           // cm
+  peso?: number;               // kg
   actividad?: 'sedentario' | 'ligero' | 'moderado' | 'intenso';
-  caloriasDiarias?: number;
+  caloriasDiarias?: number;    // kcal/día
   instagram?: string;
   tiktok?: string;
-  foto?: string; // NUEVO: avatar dataURL/URL
+  foto?: string;               // avatar dataURL/URL
 };
 
 function loadLS<T>(key: string, fallback: T): T {
@@ -40,17 +41,43 @@ const todayKey = () => new Date().toISOString().slice(0,10);
 const fmtDate = (d: string | number) =>
   new Date(d).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }).replace('.', '');
 
+/* Pequeños formateadores */
+const fmtMaybe = (v: any, suffix = '') => (v === undefined || v === null || v === '' ? '—' : `${v}${suffix}`);
+const fmtKg = (v?: number) => (typeof v === 'number' ? `${v} kg` : '—');
+const fmtCm = (v?: number) => (typeof v === 'number' ? `${v} cm` : '—');
+const fmtKcal = (v?: number) => (typeof v === 'number' ? `${v} kcal` : '—');
+
 /* ====== página ====== */
 export default function MiZonaPage() {
   const [retos, setRetos] = useState<Reto[]>(() => loadLS<Reto[]>(LS_RETOS, []));
   const [user, setUser]   = useState<UserProfileLS>(() => loadLS<UserProfileLS>(LS_USER, {}));
   const [activePrograms, setActivePrograms] = useState<string[]>(() => loadLS<string[]>(LS_ACTIVE_PROGRAMS, []));
 
+  /* Persiste cambios de retos */
   useEffect(() => { saveLS(LS_RETOS, retos); }, [retos]);
+
+  /* Refresco inicial + sincronización si el perfil cambia en otra vista/solapa */
   useEffect(() => {
-    // refresco por si el usuario vuelve desde Registro/Perfil
-    setUser(loadLS<UserProfileLS>(LS_USER, {}));
-    setActivePrograms(loadLS<string[]>(LS_ACTIVE_PROGRAMS, []));
+    const sync = () => {
+      setUser(loadLS<UserProfileLS>(LS_USER, {}));
+      setActivePrograms(loadLS<string[]>(LS_ACTIVE_PROGRAMS, []));
+    };
+    sync(); // primer render
+
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === LS_USER || e.key === LS_ACTIVE_PROGRAMS) sync();
+    };
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('focus', sync);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') sync();
+    });
+
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('focus', sync);
+      document.removeEventListener('visibilitychange', () => {});
+    };
   }, []);
 
   const today = todayKey();
@@ -107,9 +134,15 @@ export default function MiZonaPage() {
     setRetos(prev => prev.filter(r => r.id !== id));
   }
 
-  const greetingName = user?.nombre?.trim() ? user.nombre : 'usuario/a';
-  const age = user?.edad ?? '—';
-  const weight = user?.peso ?? '—';
+  const greetingName = user?.nombre?.trim()
+    ? user.nombre
+    : (user?.username?.trim() ? `@${user.username}` : 'usuario/a');
+
+  const age = fmtMaybe(user?.edad);
+  const weight = fmtKg(user?.peso);
+  const height = fmtCm(user?.estatura);
+  const kcal = fmtKcal(user?.caloriasDiarias);
+  const actividad = user?.actividad ? user.actividad : '—';
   const activeCount = activePrograms?.length ?? 0;
 
   return (
@@ -155,7 +188,8 @@ export default function MiZonaPage() {
               Hola {greetingName},
             </p>
 
-            <div className="mt-3 grid grid-cols-3 gap-8 text-sm">
+            {/* Datos rápidos */}
+            <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-8 text-sm">
               <div>
                 <div className="muted">Edad</div>
                 <div style={{ fontWeight: 600 }}>{age}</div>
@@ -163,6 +197,18 @@ export default function MiZonaPage() {
               <div>
                 <div className="muted">Peso</div>
                 <div style={{ fontWeight: 600 }}>{weight}</div>
+              </div>
+              <div>
+                <div className="muted">Estatura</div>
+                <div style={{ fontWeight: 600 }}>{height}</div>
+              </div>
+              <div>
+                <div className="muted">Actividad</div>
+                <div style={{ fontWeight: 600 }}>{actividad}</div>
+              </div>
+              <div>
+                <div className="muted">Kcal diarias</div>
+                <div style={{ fontWeight: 600 }}>{kcal}</div>
               </div>
               <div>
                 <div className="muted">Programas activos</div>
