@@ -13,19 +13,7 @@ type Step = 1 | 2 | 3 | 4 | 5;
 type Sex = 'masculino' | 'femenino' | 'prefiero_no_decirlo';
 type Act = 'sedentario' | 'ligero' | 'moderado' | 'intenso';
 
-type FormUser = UserProfile & {
-  username?: string;
-  sexo?: Sex;
-  /** seguimos soportando edad por compatibilidad, pero ya no se pide en el UI */
-  edad?: number;
-  /** NUEVO: fecha de nacimiento en ISO yyyy-mm-dd */
-  fechaNacimiento?: string;
-  estatura?: number;
-  peso?: number;
-  actividad?: Act;
-  caloriasDiarias?: number;
-  telefono?: string;
-};
+type FormUser = UserProfile;
 
 type Mode = 'register' | 'login';
 
@@ -208,7 +196,7 @@ export default function RegistrationModal({
       caloriasDiarias: user.caloriasDiarias,
       ...(extra ?? {}),
     };
-    saveUserMerge(merged as any);
+    saveUserMerge(merged);
 
     (async () => {
       try {
@@ -228,7 +216,7 @@ export default function RegistrationModal({
             peso: user.peso ?? null,
             calorias_diarias: (merged.caloriasDiarias ?? user.caloriasDiarias) ?? null,
             fecha_nacimiento: user.fechaNacimiento ?? null,
-            telefono: (user.telefono || null),
+            telefono: user.telefono ?? null,
           })
           .eq('user_id', uid);
       } catch {
@@ -239,7 +227,7 @@ export default function RegistrationModal({
 
   function handleAutoCalories() {
     try {
-      const est = estimateCalories?.(user as UserProfile);
+      const est = estimateCalories?.(user);
       if (est) {
         setMissing({ fechaNacimiento: false, estatura: false, peso: false });
         setUser((p) => {
@@ -254,7 +242,7 @@ export default function RegistrationModal({
     const derivedAge = user.edad ?? ageFromDOB(user.fechaNacimiento);
 
     const nextMissing = {
-      fechaNacimiento: derivedAge == null, // si no podemos calcular edad, marcamos falta DOB
+      fechaNacimiento: derivedAge == null,
       estatura: !user.estatura && user.estatura !== 0,
       peso: !user.peso && user.peso !== 0,
     };
@@ -343,7 +331,7 @@ export default function RegistrationModal({
         apellido: user.apellido,
         email: normalizedEmail,
         telefono: (user.telefono || '').trim() || undefined,
-      } as any);
+      });
 
       // Perfil público (best-effort) — incluye username y teléfono
       if (data.session?.user) {
@@ -445,7 +433,7 @@ export default function RegistrationModal({
             finalUsername = normalizedUsernameLocal;
           }
 
-          // Si no existía fila, creamos básicos (sin .catch)
+          // Si no existía fila, creamos básicos
           if (!profile) {
             const { error: upsertBasicsErr2 } = await supabase
               .from('public_profiles')
@@ -469,7 +457,7 @@ export default function RegistrationModal({
           telefono: profile?.telefono ?? user.telefono,
           // campos de personalización
           fechaNacimiento: profile?.fecha_nacimiento ?? user.fechaNacimiento,
-          edad: profile?.edad ?? user.edad, // por compatibilidad, no se muestra
+          edad: profile?.edad ?? user.edad, // compat
           estatura: profile?.estatura ?? user.estatura,
           peso: profile?.peso ?? user.peso,
           caloriasDiarias: profile?.calorias_diarias ?? user.caloriasDiarias,
@@ -530,8 +518,8 @@ export default function RegistrationModal({
   function finish() {
     if (finishing) return;
     setFinishing(true);
-    saveUserMerge({ username: user.username } as any);
-    saveUserMerge(user as any);
+    saveUserMerge({ username: user.username });
+    saveUserMerge(user);
     try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
     onClose?.();
     setTimeout(() => { router.replace(redirectTo || '/'); }, 0);
@@ -568,7 +556,6 @@ export default function RegistrationModal({
   }
 
   // límites de la fecha (no menores de 5 años)
-  const todayISO = new Date().toISOString().slice(0, 10);
   const minISO = '1900-01-01';
   const fiveYearsAgo = new Date();
   fiveYearsAgo.setFullYear(fiveYearsAgo.getFullYear() - 5);
@@ -873,7 +860,6 @@ export default function RegistrationModal({
                         max={maxISO}
                         onChange={(e) => {
                           handleChange('fechaNacimiento', e.target.value || undefined);
-                          // mantenemos edad sólo como derivado (no se muestra)
                           const derived = ageFromDOB(e.target.value || undefined);
                           handleChange('edad', derived);
                           setMissing((m) => ({ ...m, fechaNacimiento: false }));
