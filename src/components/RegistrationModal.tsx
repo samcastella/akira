@@ -86,9 +86,23 @@ export default function RegistrationModal({
     peso: false,
   });
 
+  // ---------- Username availability state ----------
+  const [usernameStatus, setUsernameStatus] =
+    useState<'idle' | 'checking' | 'free' | 'taken' | 'error'>('idle');
+
+  // Helpers
+  function handleChange<K extends keyof FormUser>(key: K, value: FormUser[K]) {
+    setUser((prev) => ({ ...prev, [key]: value }));
+  }
+  const normalizedEmail = (user.email || '').trim().toLowerCase();
+  const normalizeUsername = (u: string) =>
+    u.trim().replace(/^@+/, '').toLowerCase().replace(/\s+/g, '');
+
   // 1) Reset scroll + limpiar mensajes y volver a ocultar contraseñas al cambiar de paso o modo
   useEffect(() => {
-    try { scrollRef.current?.scrollTo({ top: 0, behavior: 'auto' }); } catch {}
+    try {
+      scrollRef.current?.scrollTo({ top: 0, behavior: 'auto' });
+    } catch {}
     setErr(null);
     setInfo(null);
     setShowPass(false);
@@ -105,22 +119,54 @@ export default function RegistrationModal({
     };
   }, []);
 
-  function handleChange<K extends keyof FormUser>(key: K, value: FormUser[K]) {
-    setUser((prev) => ({ ...prev, [key]: value }));
-  }
+  // 3) Comprobación debounced del username en public_profiles
+  useEffect(() => {
+    if (mode !== 'register' || step !== 2) return;
 
-  const normalizedEmail = (user.email || '').trim().toLowerCase();
+    const raw = user.username ?? '';
+    const val = normalizeUsername(raw);
 
+    if (!val) {
+      setUsernameStatus('idle');
+      return;
+    }
+
+    setUsernameStatus('checking');
+    const t = setTimeout(async () => {
+      try {
+        const { data, error } = await supabase
+          .from('public_profiles')
+          .select('user_id')
+          .eq('username', val)
+          .limit(1)
+          .maybeSingle();
+
+        if (error && !/No rows/i.test(error.message)) {
+          setUsernameStatus('error');
+          return;
+        }
+        setUsernameStatus(data ? 'taken' : 'free');
+      } catch {
+        setUsernameStatus('error');
+      }
+    }, 400);
+
+    return () => clearTimeout(t);
+  }, [user.username, mode, step]);
+
+  // Validación del paso 2
   const canNextForm = useMemo(() => {
     const okBasics =
       !!user.username?.trim() &&
       !!user.nombre?.trim() &&
       !!user.apellido?.trim() &&
-      !!normalizedEmail;
+      !!normalizedEmail &&
+      usernameStatus !== 'taken';
+
     const passLen = password.length >= 6;
     const match = password === confirm;
     return okBasics && passLen && match;
-  }, [user.username, user.nombre, user.apellido, normalizedEmail, password, confirm]);
+  }, [user.username, user.nombre, user.apellido, normalizedEmail, password, confirm, usernameStatus]);
 
   const passError = useMemo(() => {
     if (!password && !confirm) return '';
@@ -189,7 +235,9 @@ export default function RegistrationModal({
   function oauthSoon() {
     setErr(null);
     setInfo('Opción todavía no disponible');
-    try { alert('Opción todavía no disponible'); } catch {}
+    try {
+      alert('Opción todavía no disponible');
+    } catch {}
     window.setTimeout(() => setInfo(null), 2500);
   }
 
@@ -199,38 +247,12 @@ export default function RegistrationModal({
     setErr(null);
     setInfo(null);
 
-    // No seguimos si faltan básicos o hay error de password
-    if (!canNextForm || passError) return;
+    // No seguimos si faltan básicos, hay error de password o username ocupado
+    if (!canNextForm || passError || usernameStatus === 'taken') return;
 
     setLoading(true);
     try {
-      // Normalizamos username (minúsculas, sin @, sin espacios)
-      const normalizedUsername = (user.username || '')
-        .trim()
-        .replace(/^@+/, '')
-        .toLowerCase()
-        .replace(/\s+/g, '');
-
-      // ⬇️ Verificación de username único en public_profiles
-      if (normalizedUsername) {
-        const { data: existingUser, error: usernameErr } = await supabase
-          .from('public_profiles')
-          .select('user_id')
-          .eq('username', normalizedUsername)
-          .limit(1)
-          .maybeSingle();
-
-        if (usernameErr && !/column .*username.* does not exist/i.test(usernameErr.message)) {
-          setErr('No se pudo verificar el nombre de usuario. Inténtalo de nuevo.');
-          setLoading(false);
-          return;
-        }
-        if (existingUser) {
-          setErr('Este nombre de usuario ya está registrado.');
-          setLoading(false);
-          return;
-        }
-      }
+      const normalizedUsername = normalizeUsername(user.username || '');
 
       const appBase =
         process.env.NEXT_PUBLIC_SITE_URL ||
@@ -255,7 +277,6 @@ export default function RegistrationModal({
 
       if (alreadyExists) {
         setErr('Este email ya está registrado. Inicia sesión o recupera tu contraseña.');
-        // pasamos a login con el email ya rellenado
         setMode('login');
         setUser((u) => ({ ...u, email: normalizedEmail }));
         setPassword('');
@@ -263,12 +284,9 @@ export default function RegistrationModal({
         return;
       }
 
-      if (error) {
-        throw new Error(error.message || 'No se pudo crear la cuenta.');
-      }
+      if (error) throw new Error(error.message || 'No se pudo crear la cuenta.');
 
-      // === Registro correcto ===
-      // Guardamos básicos locales normalizados
+      // Guardar básicos locales
       saveUserMerge({
         username: normalizedUsername || undefined,
         nombre: user.nombre,
@@ -277,10 +295,10 @@ export default function RegistrationModal({
         telefono: (user.telefono || '').trim() || undefined,
       } as any);
 
-      // Perfil público (best-effort) — incluye username si existe
+      // Perfil público (best-effort) — incluye username
       if (data.session?.user) {
         const uid = data.session.user.id;
-        await supabase
+        const { error: upsertErr } = await supabase
           .from('public_profiles')
           .upsert(
             {
@@ -288,12 +306,21 @@ export default function RegistrationModal({
               nombre: user.nombre || null,
               apellido: user.apellido || null,
               sexo: user.sexo || null,
-              username: normalizedUsername || null, // ⬅️ añadido
+              username: normalizedUsername || null,
               instagram: null,
               tiktok: null,
             },
             { onConflict: 'user_id' }
           );
+
+        // Si por carrera el índice único salta
+        if (upsertErr && /duplicate|unique|23505/i.test(upsertErr.message)) {
+          setErr('Ese nombre de usuario acaba de ser registrado por otra persona. Elige otro.');
+          setMode('register');
+          setStep(2);
+          setLoading(false);
+          return;
+        }
       }
 
       setInfo(
@@ -337,7 +364,7 @@ export default function RegistrationModal({
       if (uid) {
         const { data: profile } = await supabase
           .from('public_profiles')
-          .select('nombre, apellido, sexo')
+          .select('nombre, apellido, sexo, username')
           .eq('user_id', uid)
           .maybeSingle();
 
@@ -346,12 +373,15 @@ export default function RegistrationModal({
           nombre: profile?.nombre ?? user.nombre ?? '',
           apellido: profile?.apellido ?? user.apellido ?? '',
           sexo: (profile?.sexo as Sex | undefined) ?? user.sexo,
+          username: profile?.username ?? user.username,
         });
       } else {
         saveUserMerge({ email });
       }
 
-      try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
+      try {
+        localStorage.setItem(LS_SEEN_AUTH, '1');
+      } catch {}
       router.replace(redirectTo || '/');
       onClose?.();
     } catch (e: any) {
@@ -407,9 +437,13 @@ export default function RegistrationModal({
     setFinishing(true);
     saveUserMerge({ username: user.username } as any);
     saveUserMerge(user as any);
-    try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
+    try {
+      localStorage.setItem(LS_SEEN_AUTH, '1');
+    } catch {}
     onClose?.();
-    setTimeout(() => { router.replace(redirectTo || '/'); }, 0);
+    setTimeout(() => {
+      router.replace(redirectTo || '/');
+    }, 0);
   }
 
   function goLogin() {
@@ -422,21 +456,29 @@ export default function RegistrationModal({
 
   // === Toggles iOS-safe (fuerzan el atributo type del input) ===
   function toggleShowPass() {
-    setShowPass(prev => {
+    setShowPass((prev) => {
       const next = !prev;
       requestAnimationFrame(() => {
         const el = passRef.current;
-        if (el) { try { el.setAttribute('type', next ? 'text' : 'password'); } catch {} }
+        if (el) {
+          try {
+            el.setAttribute('type', next ? 'text' : 'password');
+          } catch {}
+        }
       });
       return next;
     });
   }
   function toggleShowPassConfirm() {
-    setShowPassConfirm(prev => {
+    setShowPassConfirm((prev) => {
       const next = !prev;
       requestAnimationFrame(() => {
         const el = confirmRef.current;
-        if (el) { try { el.setAttribute('type', next ? 'text' : 'password'); } catch {} }
+        if (el) {
+          try {
+            el.setAttribute('type', next ? 'text' : 'password');
+          } catch {}
+        }
       });
       return next;
     });
@@ -489,7 +531,10 @@ export default function RegistrationModal({
             <div className="space-y-4">
               <div>
                 <p className="text-base font-extrabold mb-1">¡Bienvenid@ de nuevo!</p>
-                <p className="text-xs text-gray-600">Ya tienes una cuenta creada con este mail. Entra con tu cuenta para continuar o solicita recuperar al contraseña.</p>
+                <p className="text-xs text-gray-600">
+                  Ya tienes una cuenta creada con este mail. Entra con tu cuenta para continuar o
+                  solicita recuperar al contraseña.
+                </p>
               </div>
 
               {/* OAuth → pop-up "no disponible" */}
@@ -559,7 +604,7 @@ export default function RegistrationModal({
                 {err && <p className="text-[11px] text-red-600">{err}</p>}
                 {info && <p className="text-[11px] text-amber-700">{info}</p>}
 
-                {/* ⬇️ Botonera con “Atrás” en una sola línea */}
+                {/* Botonera con “Atrás” en una sola línea */}
                 <div className="flex items-center justify-between gap-2">
                   <button
                     type="button"
@@ -641,6 +686,20 @@ export default function RegistrationModal({
                       onChange={(e) => handleChange('username', e.target.value)}
                       required
                     />
+                    <div className="mt-1" aria-live="polite">
+                      {usernameStatus === 'taken' && (
+                        <p className="text-[11px] text-red-600">Este nombre de usuario ya está registrado.</p>
+                      )}
+                      {usernameStatus === 'checking' && (
+                        <p className="text-[11px] text-gray-500">Comprobando…</p>
+                      )}
+                      {usernameStatus === 'free' && !!(user.username || '').trim() && (
+                        <p className="text-[11px] text-green-600 inline-flex items-center gap-1">
+                          <CheckCircle2 size={12} />
+                          Este nombre de usuario está libre
+                        </p>
+                      )}
+                    </div>
                   </label>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -781,11 +840,13 @@ export default function RegistrationModal({
                   </div>
                   <h3 className="text-lg font-bold">Tu registro ha sido creado con éxito</h3>
                   <p className="text-xs text-gray-600 max-w-sm mx-auto">
-                    Te hemos enviado un correo para confirmar tu email.
-                    Puedes verificarlo cuando quieras; <strong>no es necesario para continuar ahora</strong>.
+                    Te hemos enviado un correo para confirmar tu email. Puedes verificarlo cuando quieras;{' '}
+                    <strong>no es necesario para continuar ahora</strong>.
                   </p>
                   <div className="flex justify-center">
-                    <button onClick={goToPersonalize} className="btn whitespace-nowrap">Continuar</button>
+                    <button onClick={goToPersonalize} className="btn whitespace-nowrap">
+                      Continuar
+                    </button>
                   </div>
                 </div>
               )}
@@ -916,23 +977,28 @@ export default function RegistrationModal({
               {step === 5 && (
                 <div className="space-y-4 text-sm leading-snug">
                   <p className="font-bold text-center">Bienvenid@ a Build your Habits</p>
-                  <p className="text-gray-700">
-                    {copy.auth.welcomeIntro}
-                  </p>
+                  <p className="text-gray-700">{copy.auth.welcomeIntro}</p>
                   <p className="font-medium">Pero tenemos algunas reglas que nos guiarán en el camino:</p>
                   <ol className="list-decimal pl-5 space-y-2 text-gray-700">
-                    <li><strong>Decir siempre la verdad.</strong> Si marcas un hábito como realizado sin haberlo hecho, al único que engañas es a ti mism@.</li>
-                    <li><strong>Está permitido fallar, pero nunca rendirse.</strong> Si un día no consigues un reto, tendrás otra oportunidad al día siguiente.</li>
-                    <li><strong>Disfruta del proceso y celebra cada paso.</strong> La constancia es la clave, y cada avance merece orgullo.</li>
+                    <li>
+                      <strong>Decir siempre la verdad.</strong> Si marcas un hábito como realizado sin haberlo hecho, al
+                      único que engañas es a ti mism@.
+                    </li>
+                    <li>
+                      <strong>Está permitido fallar, pero nunca rendirse.</strong> Si un día no consigues un reto,
+                      tendrás otra oportunidad al día siguiente.
+                    </li>
+                    <li>
+                      <strong>Disfruta del proceso y celebra cada paso.</strong> La constancia es la clave, y cada
+                      avance merece orgullo.
+                    </li>
                   </ol>
-                  <p className="text-gray-800">✨ <strong>Recuerda: eres la suma de tus acciones</strong></p>
+                  <p className="text-gray-800">
+                    ✨ <strong>Recuerda: eres la suma de tus acciones</strong>
+                  </p>
 
                   <div className="flex justify-center pt-2">
-                    <button
-                      onClick={finish}
-                      disabled={finishing}
-                      className="btn inline-flex items-center gap-2 disabled:opacity-50"
-                    >
+                    <button onClick={finish} disabled={finishing} className="btn inline-flex items-center gap-2 disabled:opacity-50">
                       <Rocket size={18} />
                       {finishing ? 'Cargando…' : 'Vamos a por ello'}
                     </button>
@@ -949,10 +1015,6 @@ export default function RegistrationModal({
 
 function StepDot({ active }: { active: boolean }) {
   return (
-    <span
-      className="inline-block h-2.5 w-2.5 rounded-full"
-      style={{ background: active ? '#000' : '#D1D5DB' }}
-      aria-hidden="true"
-    />
+    <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: active ? '#000' : '#D1D5DB' }} aria-hidden="true" />
   );
 }
