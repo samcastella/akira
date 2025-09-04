@@ -1,17 +1,15 @@
-// src/app/auth/callback/page.tsx
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { Eye, EyeOff } from 'lucide-react';
 
-// Evita prerender
 export const dynamic = 'force-dynamic';
 
 type Phase = 'checking' | 'reset' | 'done' | 'error';
 
-export default function AuthCallbackPage() {
+function CallbackInner() {
   const router = useRouter();
   const params = useSearchParams();
 
@@ -25,7 +23,6 @@ export default function AuthCallbackPage() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Leer "type" de hash (#type=recovery) o query (?type=recovery)
   const linkType = useMemo(() => {
     let t = params.get('type') || undefined;
     if (typeof window !== 'undefined' && !t && window.location.hash) {
@@ -37,29 +34,21 @@ export default function AuthCallbackPage() {
 
   useEffect(() => {
     let alive = true;
-
     (async () => {
       try {
-        // 1) ¿ya hay sesión?
         let { data: sdata } = await supabase.auth.getSession();
-
-        // 2) Si no, intentar intercambio de código (para enlaces con ?code=)
         if (!sdata.session && typeof window !== 'undefined') {
           try {
             await supabase.auth.exchangeCodeForSession(window.location.href);
             ({ data: sdata } = await supabase.auth.getSession());
-          } catch {
-            // ignoramos: algunos enlaces usan tokens en hash y ya inician sesión
-          }
+          } catch {}
         }
-
         if (!alive) return;
 
         if (linkType === 'recovery' || sdata.session) {
-          setPhase('reset'); // mostramos el formulario de nueva contraseña
+          setPhase('reset');
           setInfo('Introduce tu nueva contraseña.');
         } else {
-          // Enlace de verificación/login: puedes redirigir a inicio o login
           setPhase('done');
           router.replace('/');
         }
@@ -69,10 +58,7 @@ export default function AuthCallbackPage() {
         setPhase('error');
       }
     })();
-
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, [linkType, router]);
 
   const passError = useMemo(() => {
@@ -93,7 +79,6 @@ export default function AuthCallbackPage() {
       const { error } = await supabase.auth.updateUser({ password });
       if (error) throw error;
 
-      // Cerramos sesión para que vuelva a entrar con la nueva contraseña
       const { data } = await supabase.auth.getUser();
       const email = data.user?.email || '';
       await supabase.auth.signOut();
@@ -109,7 +94,6 @@ export default function AuthCallbackPage() {
 
   return (
     <main className="min-h-[100svh]">
-      {/* Fondo splash para coherencia visual */}
       <div
         className="fixed inset-0 z-10"
         style={{
@@ -119,19 +103,14 @@ export default function AuthCallbackPage() {
           backgroundRepeat: 'no-repeat',
         }}
       />
-
       <div className="relative z-20 min-h-[100svh] flex items-center justify-center px-4">
         <div className="bg-white w-full max-w-md rounded-2xl shadow p-6">
-          {phase === 'checking' && (
-            <div className="text-sm">Comprobando enlace…</div>
-          )}
+          {phase === 'checking' && <div className="text-sm">Comprobando enlace…</div>}
 
           {phase === 'reset' && (
             <>
               <h1 className="text-lg font-bold mb-2">Restablecer contraseña</h1>
-              <p className="text-xs text-gray-600 mb-4">
-                Estás autenticad@ temporalmente para cambiar tu contraseña.
-              </p>
+              <p className="text-xs text-gray-600 mb-4">Estás autenticad@ temporalmente para cambiar tu contraseña.</p>
 
               <form onSubmit={submitNewPassword} className="space-y-3">
                 <label className="block text-xs">
@@ -181,11 +160,7 @@ export default function AuthCallbackPage() {
                 {info && <p className="text-[11px] text-amber-700">{info}</p>}
 
                 <div className="flex items-center justify-end gap-2">
-                  <button
-                    type="submit"
-                    disabled={!!passError || loading}
-                    className="btn disabled:opacity-50"
-                  >
+                  <button type="submit" disabled={!!passError || loading} className="btn disabled:opacity-50">
                     {loading ? 'Actualizando…' : 'Guardar nueva contraseña'}
                   </button>
                 </div>
@@ -193,11 +168,7 @@ export default function AuthCallbackPage() {
             </>
           )}
 
-          {phase === 'done' && (
-            <div className="text-sm">
-              Redirigiendo…
-            </div>
-          )}
+          {phase === 'done' && <div className="text-sm">Redirigiendo…</div>}
 
           {phase === 'error' && (
             <>
@@ -214,5 +185,13 @@ export default function AuthCallbackPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={<div className="min-h-[100svh] flex items-center justify-center">Cargando…</div>}>
+      <CallbackInner />
+    </Suspense>
   );
 }
