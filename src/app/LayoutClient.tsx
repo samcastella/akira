@@ -31,10 +31,8 @@ export default function LayoutClient({
   const [authReady, setAuthReady] = useState(false);
 
   // === Modales ===
-  // showAuthModal abre directamente RegistrationModal (paso 1)
-  const [showAuthModal, setShowAuthModal] = useState(false);
-  // showRegistration se usa para abrir RegistrationModal en paso 2 tras OAuth (Google/Apple)
-  const [showRegistration, setShowRegistration] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);            // paso 1
+  const [showRegistration, setShowRegistration] = useState(false);      // paso 2 tras OAuth
   const [registrationStartStep, setRegistrationStartStep] = useState<1 | 2 | 3>(1);
 
   // Cargar perfil local
@@ -64,8 +62,7 @@ export default function LayoutClient({
       try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
       setShowAuthModal(false);
 
-      // Solo abrimos el registro para completar datos si el proveedor es OAuth
-      // (no para email/contraseña)
+      // Solo abrir completar datos si el proveedor es OAuth (no email/pass)
       const provider = (session?.user?.app_metadata as any)?.provider as string | undefined;
       const isOAuth = provider && provider !== 'email' && provider !== 'phone';
 
@@ -73,7 +70,6 @@ export default function LayoutClient({
         setRegistrationStartStep(2);
         setShowRegistration(true);
       } else {
-        // Si es email/contraseña o no hay provider, aseguramos que NO abrimos el modal
         setShowRegistration(false);
       }
     });
@@ -91,21 +87,31 @@ export default function LayoutClient({
     // En rutas de auth no mostramos el modal nunca
     if (isAuthRoute) {
       setShowAuthModal(false);
+      setShowRegistration(false);
       return;
     }
 
-    // Si ya tiene sesión o su perfil está completo, no mostramos el pop-up.
-    if (hasSession || userOk) {
+    // Si el perfil ya está completo, no mostramos nada
+    if (userOk) {
       setShowAuthModal(false);
+      setShowRegistration(false);
       return;
     }
 
-    const seen = typeof window !== 'undefined' ? localStorage.getItem(LS_SEEN_AUTH) : '1';
-    if (!seen) setShowAuthModal(true);
-  }, [authReady, hasSession, userOk, isAuthRoute]);
+    // PERFIL INCOMPLETO:
+    // - Sin sesión: mostrar SIEMPRE el modal de onboarding (ignoramos LS_SEEN_AUTH)
+    // - Con sesión: no gatemos la app ni abrimos modal (salvo OAuth en onAuthStateChange)
+    if (!hasSession) {
+      setShowAuthModal(true);   // <- clave del fix
+      return;
+    }
+
+    // hasSession && !userOk: no abrir nada aquí
+    setShowAuthModal(false);
+  }, [authReady, userOk, hasSession, isAuthRoute]);
 
   // Mientras el perfil NO esté listo, ocultamos app y mostramos gating (splash + modal),
-  // excepto en /login y /auth/* — y ahora también si YA hay sesión (no gatear con sesión)
+  // excepto en /login y /auth/* — y también si YA hay sesión (no gatear con sesión)
   const gating = userOk === false && !isAuthRoute && !hasSession;
 
   // Ocultamos la BottomNav también en rutas de auth
@@ -113,7 +119,6 @@ export default function LayoutClient({
 
   function handleCloseRegistration() {
     setShowRegistration(false);
-    // Si ya completó datos, desbloqueamos la app:
     const ok = isUserComplete(loadUser());
     if (ok) setUserOk(true);
   }
