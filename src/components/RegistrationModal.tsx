@@ -126,7 +126,6 @@ export default function RegistrationModal({
   }, [password, confirm]);
 
   function persistBodyMetrics(extra?: Partial<FormUser>) {
-    // Guardado inmediato para que “Mi zona” vea los datos sin esperar al paso 5
     saveUserMerge({
       sexo: user.sexo,
       edad: user.edad,
@@ -352,7 +351,6 @@ export default function RegistrationModal({
     if (savingPersonalize) return;
     setSavingPersonalize(true);
     try {
-      // Persistimos todo lo del paso 4
       persistBodyMetrics();
       setStep(5);
     } finally {
@@ -363,18 +361,13 @@ export default function RegistrationModal({
   function finish() {
     if (finishing) return;
     setFinishing(true);
-
-    // Guardamos todo por si faltaba algo
     saveUserMerge({ username: user.username } as any);
     saveUserMerge(user as any);
     try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
-
     onClose?.();
     setTimeout(() => { router.replace(redirectTo || '/'); }, 0);
-    // no reactivamos el botón para evitar dobles clics
   }
 
-  // Cambia a modo Login SIN navegar fuera (misma estética)
   function goLogin() {
     setMode('login');
     setErr(null);
@@ -408,7 +401,7 @@ export default function RegistrationModal({
             {mode === 'login' ? 'Iniciar sesión' : 'Registro'}
           </h2>
 
-          {/* Puntos de paso solo en registro */}
+        {/* Puntos de paso solo en registro */}
           {mode === 'register' && (
             <div className="flex items-center gap-2 text-[10px]">
               <StepDot active={step >= 1} />
@@ -613,17 +606,37 @@ export default function RegistrationModal({
                   </label>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {/* Contraseña (doble input para evitar bug iOS) */}
                     <label className="block text-xs">
                       <span className="font-medium">Contraseña</span>
                       <div className="relative">
-                        <input
-                          type={showPass ? 'text' : 'password'}
-                          autoComplete="new-password"
-                          className="mt-1 input text-[16px] w-full pr-10"
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                          required
-                        />
+                        {showPass ? (
+                          <input
+                            type="text"
+                            name="new-password"
+                            autoComplete="new-password"
+                            autoCapitalize="none"
+                            autoCorrect="off"
+                            spellCheck={false}
+                            className="mt-1 input text-[16px] w-full pr-10"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            required
+                          />
+                        ) : (
+                          <input
+                            type="password"
+                            name="new-password"
+                            autoComplete="new-password"
+                            autoCapitalize="none"
+                            autoCorrect="off"
+                            spellCheck={false}
+                            className="mt-1 input text-[16px] w-full pr-10"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            required
+                          />
+                        )}
                         <button
                           type="button"
                           aria-pressed={showPass}
@@ -635,17 +648,38 @@ export default function RegistrationModal({
                         </button>
                       </div>
                     </label>
+
+                    {/* Repetir contraseña (doble input) */}
                     <label className="block text-xs">
                       <span className="font-medium">Repetir contraseña</span>
                       <div className="relative">
-                        <input
-                          type={showPassConfirm ? 'text' : 'password'}
-                          autoComplete="new-password"
-                          className="mt-1 input text-[16px] w-full pr-10"
-                          value={confirm}
-                          onChange={(e) => setConfirm(e.target.value)}
-                          required
-                        />
+                        {showPassConfirm ? (
+                          <input
+                            type="text"
+                            name="new-password-confirm"
+                            autoComplete="new-password"
+                            autoCapitalize="none"
+                            autoCorrect="off"
+                            spellCheck={false}
+                            className="mt-1 input text-[16px] w-full pr-10"
+                            value={confirm}
+                            onChange={(e) => setConfirm(e.target.value)}
+                            required
+                          />
+                        ) : (
+                          <input
+                            type="password"
+                            name="new-password-confirm"
+                            autoComplete="new-password"
+                            autoCapitalize="none"
+                            autoCorrect="off"
+                            spellCheck={false}
+                            className="mt-1 input text-[16px] w-full pr-10"
+                            value={confirm}
+                            onChange={(e) => setConfirm(e.target.value)}
+                            required
+                          />
+                        )}
                         <button
                           type="button"
                           aria-pressed={showPassConfirm}
@@ -658,6 +692,7 @@ export default function RegistrationModal({
                       </div>
                     </label>
                   </div>
+
                   {passError && <p className="text-[11px] text-red-600">{passError}</p>}
 
                   <label className="block text-xs">
