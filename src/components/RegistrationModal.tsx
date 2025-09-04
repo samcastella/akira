@@ -445,15 +445,17 @@ export default function RegistrationModal({
             finalUsername = normalizedUsernameLocal;
           }
 
-          // Si no existía fila, creamos básicos
+          // Si no existía fila, creamos básicos (sin .catch)
           if (!profile) {
-            await supabase
+            const { error: upsertBasicsErr2 } = await supabase
               .from('public_profiles')
               .upsert(
                 { user_id: uid, nombre: user.nombre || null, apellido: user.apellido || null, sexo: user.sexo || null },
                 { onConflict: 'user_id' }
-              )
-              .catch(() => {});
+              );
+            if (upsertBasicsErr2) {
+              console.warn('public_profiles basics upsert error:', upsertBasicsErr2);
+            }
           }
         }
 
