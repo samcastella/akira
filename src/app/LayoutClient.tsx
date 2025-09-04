@@ -1,4 +1,3 @@
-// src/app/LayoutClient.tsx
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -72,6 +71,10 @@ export default function LayoutClient({
       } else {
         setShowRegistration(false);
       }
+
+      // Tras cualquier login, re-evaluamos el perfil local por si se completó
+      const ok = isUserComplete(loadUser());
+      if (ok) setUserOk(true);
     });
 
     return () => {
@@ -100,9 +103,9 @@ export default function LayoutClient({
 
     // PERFIL INCOMPLETO:
     // - Sin sesión: mostrar SIEMPRE el modal de onboarding (ignoramos LS_SEEN_AUTH)
-    // - Con sesión: no gatemos la app ni abrimos modal (salvo OAuth en onAuthStateChange)
+    // - Con sesión: no gateamos la app ni abrimos modal (salvo OAuth en onAuthStateChange)
     if (!hasSession) {
-      setShowAuthModal(true);   // <- clave del fix
+      setShowAuthModal(true);
       return;
     }
 

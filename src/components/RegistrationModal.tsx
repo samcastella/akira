@@ -143,12 +143,30 @@ export default function RegistrationModal({
     return '';
   }, [password, confirm]);
 
+  function persistBodyMetrics(extra?: Partial<FormUser>) {
+    // Guardado inmediato para que “Mi zona” vea los datos sin esperar al paso 5
+    saveUserMerge({
+      sexo: user.sexo,
+      edad: user.edad,
+      estatura: user.estatura,
+      peso: user.peso,
+      actividad: user.actividad,
+      caloriasDiarias: user.caloriasDiarias,
+      ...(extra ?? {}),
+    } as any);
+  }
+
   function handleAutoCalories() {
     try {
       const est = estimateCalories?.(user as UserProfile);
       if (est) {
         setMissing({ edad: false, estatura: false, peso: false });
-        return setUser((p) => ({ ...p, caloriasDiarias: est }));
+        setUser((p) => {
+          const next = { ...p, caloriasDiarias: est };
+          persistBodyMetrics({ caloriasDiarias: est });
+          return next;
+        });
+        return;
       }
     } catch {}
 
@@ -162,7 +180,7 @@ export default function RegistrationModal({
     setMissing(nextMissing);
     if (nextMissing.edad || nextMissing.estatura || nextMissing.peso) return;
 
-    // Cálculo manual (por si no entra en estimateCalories)
+    // Cálculo manual
     const base =
       10 * (user.peso ?? 0) +
       6.25 * (user.estatura ?? 0) -
@@ -177,7 +195,11 @@ export default function RegistrationModal({
         ? 1.725
         : 1.2;
     const tdee = Math.round(base * factor);
-    setUser((p) => ({ ...p, caloriasDiarias: tdee }));
+    setUser((p) => {
+      const next = { ...p, caloriasDiarias: tdee };
+      persistBodyMetrics({ caloriasDiarias: tdee });
+      return next;
+    });
   }
 
   // ——— OAuth desactivado temporalmente ———
@@ -288,7 +310,7 @@ export default function RegistrationModal({
         throw new Error(friendly);
       }
 
-      // 🔹 Cargar perfil público y guardarlo en local para “Mi Zona”
+      // Cargar perfil público y guardarlo en local para “Mi Zona”
       const { data: udata } = await supabase.auth.getUser();
       const uid = udata.user?.id;
       const email = udata.user?.email || normalizedEmail;
@@ -356,14 +378,8 @@ export default function RegistrationModal({
     if (savingPersonalize) return;
     setSavingPersonalize(true);
     try {
-      saveUserMerge({
-        sexo: user.sexo,
-        edad: user.edad,
-        estatura: user.estatura,
-        peso: user.peso,
-        actividad: user.actividad,
-        caloriasDiarias: user.caloriasDiarias,
-      });
+      // Persistimos todo lo del paso 4
+      persistBodyMetrics();
       setStep(5);
     } finally {
       setSavingPersonalize(false);
@@ -373,20 +389,22 @@ export default function RegistrationModal({
   function finish() {
     if (finishing) return;
     setFinishing(true);
-    try {
-      // Guardamos todo por si faltaba algo
-      saveUserMerge({ username: user.username } as any);
-      saveUserMerge(user as any);
-      try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
-      // Cerramos el modal primero para que no se quede el overlay
-      onClose?.();
-      // Y navegamos justo después
-      setTimeout(() => {
-        router.replace(redirectTo || '/');
-      }, 0);
-    } finally {
-      setFinishing(false);
-    }
+
+    // Guardamos todo por si faltaba algo
+    saveUserMerge({ username: user.username } as any);
+    saveUserMerge(user as any);
+    try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
+
+    // Cerrar el modal primero para que no quede overlay
+    onClose?.();
+
+    // Navegar en el siguiente tick
+    setTimeout(() => {
+      router.replace(redirectTo || '/');
+    }, 0);
+
+    // IMPORTANTE: no reactivamos el botón; dejamos `finishing` en true
+    // para evitar dobles clics mientras la navegación se realiza.
   }
 
   // Cambia a modo Login SIN navegar fuera (misma estética)
@@ -831,14 +849,7 @@ export default function RegistrationModal({
                     <button
                       type="button"
                       onClick={() => {
-                        saveUserMerge({
-                          sexo: user.sexo,
-                          edad: user.edad,
-                          estatura: user.estatura,
-                          peso: user.peso,
-                          actividad: user.actividad,
-                          caloriasDiarias: user.caloriasDiarias,
-                        });
+                        persistBodyMetrics();
                         setStep(5);
                       }}
                       className="underline underline-offset-2"
