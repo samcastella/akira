@@ -2,13 +2,12 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { saveUserMerge } from '@/lib/user';
-
-const LS_USER = 'akira_user_v1';
+import { loadUser, saveUserMerge } from '@/lib/user';
 
 type Sex = 'masculino' | 'femenino' | 'prefiero_no_decirlo';
 
 type Profile = {
+  username?: string;
   nombre?: string;
   apellido?: string;
   edad?: number;
@@ -22,20 +21,11 @@ type Profile = {
   foto?: string; // dataURL/URL
 };
 
-function loadUser(): Profile {
-  if (typeof window === 'undefined') return {};
-  try {
-    const raw = localStorage.getItem(LS_USER);
-    return raw ? (JSON.parse(raw) as Profile) : {};
-  } catch {
-    return {};
-  }
-}
-
 /* ===== Helpers Instagram ===== */
 function normalizeInstagramLink(val?: string) {
   if (!val) return undefined;
   const trimmed = val.trim();
+  if (!trimmed) return undefined;
   // Si ya trae http(s) lo dejamos
   if (/^https?:\/\//i.test(trimmed)) return trimmed;
   // Si viene @usuario o solo usuario
@@ -56,14 +46,14 @@ export default function PerfilPage() {
   const [savedOpen, setSavedOpen] = useState(false); // pop-up guardado
 
   useEffect(() => {
-    setProfile(loadUser());
+    setProfile(loadUser() as Profile);
   }, []);
 
   function handleChange<K extends keyof Profile>(k: K, v: Profile[K]) {
     setProfile((prev) => ({ ...prev, [k]: v }));
   }
 
-  // === NUEVO: redimensionar a máx 200 px antes de guardar ===
+  // === Redimensionar a máx 200 px antes de guardar ===
   async function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -73,16 +63,22 @@ export default function PerfilPage() {
     handleChange('foto', resized);
   }
 
-  function save() {
-    saveUserMerge(profile);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(
-        LS_USER,
-        JSON.stringify({ ...(loadUser() || {}), ...profile })
-      );
-    }
-    setSavedOpen(true); // mostrar pop-up
-  }
+  async function save() {
+  // Normalización suave
+  const payload: Profile = {
+    ...profile,
+    email: profile.email?.trim().toLowerCase(),
+    instagram: normalizeInstagramLink(profile.instagram),
+    tiktok: profile.tiktok?.trim() || undefined,
+    username: profile.username?.trim() || undefined,
+  };
+
+  // Guardamos y usamos el retorno para refrescar UI sin leer de nuevo
+  const updated = saveUserMerge(payload as any);
+  setProfile(updated as Profile);
+  setSavedOpen(true); // pop-up de confirmación
+}
+
 
   return (
     <main className="container" style={{ paddingTop: 24, paddingBottom: 24 }}>
@@ -126,6 +122,7 @@ export default function PerfilPage() {
               <div className="muted">Tu foto de perfil</div>
             </div>
 
+            <Row label="Usuario" value={profile.username || '—'} />
             <Row label="Nombre" value={profile.nombre || '—'} />
             <Row label="Apellidos" value={profile.apellido || '—'} />
             <Row label="Edad" value={profile.edad ?? '—'} />
@@ -159,7 +156,7 @@ export default function PerfilPage() {
             className="space-y-3 text-sm"
             onSubmit={(e) => {
               e.preventDefault();
-              save();
+              void save();
             }}
           >
             {/* Avatar + selector de archivo */}
@@ -195,6 +192,15 @@ export default function PerfilPage() {
                 />
               </div>
             </div>
+
+            <Field label="Nombre de usuario">
+              <input
+                className="input text-[16px]"
+                placeholder="tu_usuario"
+                value={profile.username || ''}
+                onChange={(e) => handleChange('username', e.target.value)}
+              />
+            </Field>
 
             <Field label="Nombre">
               <input
@@ -322,7 +328,6 @@ export default function PerfilPage() {
             aria-modal="true"
           >
             <p className="font-semibold">
-              {/* Corregido: éxito (singular) */}
               Tus cambios han sido guardados con éxito
             </p>
             <div className="mt-4 flex justify-end gap-2">

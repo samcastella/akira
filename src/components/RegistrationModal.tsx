@@ -194,78 +194,98 @@ export default function RegistrationModal({
   }
 
   // ——— Registro por email ———
-  async function submitEmailForm(e: React.FormEvent) {
-    e.preventDefault();
-    setErr(null);
-    setInfo(null);
-    if (!canNextForm) return;
-    setLoading(true);
-    try {
-      const appBase =
-        process.env.NEXT_PUBLIC_SITE_URL ||
-        (typeof window !== 'undefined' ? window.location.origin : undefined);
+async function submitEmailForm(e: React.FormEvent) {
+  e.preventDefault();
+  setErr(null);
+  setInfo(null);
 
-      const { data, error } = await supabase.auth.signUp({
-        email: normalizedEmail,
-        password,
-        options: {
-          emailRedirectTo: appBase ? `${appBase}/auth/callback` : undefined,
-          data: { nombre: user.nombre ?? '', apellido: user.apellido ?? '' },
-        },
-      });
+  // No seguimos si faltan básicos o hay error de password
+  if (!canNextForm || passError) return;
 
-      // Supabase: si el email ya existe, identities = []
-      const alreadyExists =
-        !error &&
+  setLoading(true);
+  try {
+    // Normalizamos username aquí (minúsculas, sin @, sin espacios)
+    const normalizedUsername = (user.username || '')
+      .trim()
+      .replace(/^@+/, '')
+      .toLowerCase()
+      .replace(/\s+/g, '');
+
+    const appBase =
+      process.env.NEXT_PUBLIC_SITE_URL ||
+      (typeof window !== 'undefined' ? window.location.origin : undefined);
+
+    const { data, error } = await supabase.auth.signUp({
+      email: normalizedEmail,
+      password,
+      options: {
+        emailRedirectTo: appBase ? `${appBase}/auth/callback` : undefined,
+        data: { nombre: user.nombre ?? '', apellido: user.apellido ?? '' },
+      },
+    });
+
+    // === Detección robusta de “email ya registrado” ===
+    const alreadyExists =
+      (!error &&
         data?.user &&
         Array.isArray((data.user as any).identities) &&
-        (data.user as any).identities.length === 0;
+        (data.user as any).identities.length === 0) ||
+      // algunos proyectos devuelven 422 / mensaje "User already registered"
+      (!!error && /already\s*registered|exists|duplic/i.test(error.message));
 
-      if (error || alreadyExists) {
-        const msg = error?.message || 'Este email ya está registrado. Inicia sesión con tu contraseña.';
-        setErr(msg);
-        setMode('login');
-        setUser((u) => ({ ...u, email: normalizedEmail }));
-        setPassword('');
-        setConfirm('');
-        return;
-      }
-
-      // Guardar datos básicos locales
-      saveUserMerge({
-        username: user.username,
-        nombre: user.nombre,
-        apellido: user.apellido,
-        email: normalizedEmail,
-        telefono: (user.telefono || '').trim() || undefined,
-      } as any);
-
-      // Perfil público (best-effort)
-      if (data.session?.user) {
-        const uid = data.session.user.id;
-        await supabase
-          .from('public_profiles')
-          .upsert(
-            {
-              user_id: uid,
-              nombre: user.nombre || null,
-              apellido: user.apellido || null,
-              sexo: user.sexo || null,
-              instagram: null,
-              tiktok: null,
-            },
-            { onConflict: 'user_id' }
-          );
-      }
-
-      setInfo('Te hemos enviado un correo para confirmar tu email. Puedes verificarlo cuando quieras; no es necesario para continuar ahora.');
-      setStep(3);
-    } catch (e: any) {
-      setErr(e?.message || 'No se pudo completar el registro.');
-    } finally {
-      setLoading(false);
+    if (alreadyExists) {
+      setErr('Este email ya está registrado. Inicia sesión o recupera tu contraseña.');
+      // pasamos a login con el email ya rellenado
+      setMode('login');
+      setUser((u) => ({ ...u, email: normalizedEmail }));
+      setPassword('');
+      setConfirm('');
+      return;
     }
+
+    if (error) {
+      throw new Error(error.message || 'No se pudo crear la cuenta.');
+    }
+
+    // === Registro correcto ===
+    // Guardamos básicos locales normalizados
+    saveUserMerge({
+      username: normalizedUsername || undefined,
+      nombre: user.nombre,
+      apellido: user.apellido,
+      email: normalizedEmail,
+      telefono: (user.telefono || '').trim() || undefined,
+    } as any);
+
+    // Perfil público (best-effort)
+    if (data.session?.user) {
+      const uid = data.session.user.id;
+      await supabase
+        .from('public_profiles')
+        .upsert(
+          {
+            user_id: uid,
+            nombre: user.nombre || null,
+            apellido: user.apellido || null,
+            sexo: user.sexo || null,
+            instagram: null,
+            tiktok: null,
+          },
+          { onConflict: 'user_id' }
+        );
+    }
+
+    setInfo(
+      'Te hemos enviado un correo para confirmar tu email. Puedes verificarlo cuando quieras; no es necesario para continuar ahora.'
+    );
+    setStep(3);
+  } catch (e: any) {
+    setErr(e?.message || 'No se pudo completar el registro.');
+  } finally {
+    setLoading(false);
   }
+}
+
 
   // ——— Login por email ———
   const canLogin = useMemo(() => !!normalizedEmail && password.length >= 6, [normalizedEmail, password]);

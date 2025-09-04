@@ -33,7 +33,6 @@ export function normalizeEmail(email: string | undefined | null): string {
 export function normalizeUsername(u?: string | null): string | undefined {
   if (!u) return undefined;
   const cleaned = u.trim().replace(/^@+/, '').toLowerCase();
-  // Opcional: elimina espacios internos
   return cleaned.replace(/\s+/g, '');
 }
 
@@ -73,20 +72,27 @@ export function loadUser(): UserProfile | null {
   }
 }
 
-/** Guarda el usuario COMPLETO, sobreescribiendo lo anterior. */
-export function saveUser(u: UserProfile) {
-  if (typeof window === 'undefined') return;
+/** Guarda el usuario COMPLETO, sobreescribiendo lo anterior. Devuelve el usuario normalizado. */
+export function saveUser(u: UserProfile): UserProfile {
+  if (typeof window === 'undefined') return { ...u, ...sanitizeUser(u) } as UserProfile;
   const normalized = { ...u, ...sanitizeUser(u) } as UserProfile;
   localStorage.setItem(LS_USER, JSON.stringify(normalized));
+  return normalized;
 }
 
-/** Mezcla y guarda solo los campos que lleguen (no borra lo demás). */
-export function saveUserMerge(partial: Partial<UserProfile>) {
-  if (typeof window === 'undefined') return;
+/** Mezcla y guarda solo los campos que lleguen (no borra lo demás). Devuelve el usuario resultante. */
+export function saveUserMerge(partial: Partial<UserProfile>): UserProfile {
+  if (typeof window === 'undefined') {
+    // En SSR devolvemos el merge teórico sin tocar storage
+    const prev = {} as UserProfile;
+    const norm = sanitizeUser(partial);
+    return { ...prev, ...norm } as UserProfile;
+  }
   const prev = loadUser() ?? ({} as UserProfile);
   const norm = sanitizeUser(partial);
   const merged = { ...prev, ...norm } as UserProfile;
   localStorage.setItem(LS_USER, JSON.stringify(merged));
+  return merged;
 }
 
 /** Elimina el usuario (útil en pruebas). */
