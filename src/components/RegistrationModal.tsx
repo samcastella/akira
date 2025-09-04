@@ -41,8 +41,9 @@ export default function RegistrationModal({
   prefill,
   initialMode = 'register',
   redirectTo = '/',
-}: Props): JSX.Element {
+}: Props) {
   const router = useRouter();
+
 
   // i18n
   const locale = detectLocale();
