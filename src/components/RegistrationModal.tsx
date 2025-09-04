@@ -82,40 +82,22 @@ export default function RegistrationModal({
     peso: false,
   });
 
-  // 1) Reset scroll al cambiar de paso o modo + limpiar mensajes
+  // 1) Reset scroll + limpiar mensajes y volver a ocultar contraseñas al cambiar de paso o modo
   useEffect(() => {
-    try {
-      scrollRef.current?.scrollTo({ top: 0, behavior: 'auto' });
-    } catch {}
+    try { scrollRef.current?.scrollTo({ top: 0, behavior: 'auto' }); } catch {}
     setErr(null);
     setInfo(null);
+    setShowPass(false);
+    setShowPassConfirm(false);
   }, [mode, step]);
 
-  // 2) Lock del scroll del body mientras el modal está abierto
+  // 2) Lock del scroll del body (simple) mientras el modal está abierto
   useEffect(() => {
     const body = document.body;
-    const prev = {
-      overflow: body.style.overflow,
-      position: body.style.position,
-      top: body.style.top,
-      width: body.style.width,
-      touchAction: (body.style as any).touchAction as string | undefined,
-    };
-    const scrollY = window.scrollY;
+    const prevOverflow = body.style.overflow;
     body.style.overflow = 'hidden';
-    body.style.position = 'fixed';
-    body.style.top = `-${scrollY}px`;
-    body.style.width = '100%';
-    (body.style as any).touchAction = 'none';
-
     return () => {
-      body.style.overflow = prev.overflow;
-      body.style.position = prev.position;
-      body.style.top = prev.top;
-      body.style.width = prev.width;
-      (body.style as any).touchAction = prev.touchAction ?? '';
-      const y = -(parseInt(prev.top || '0', 10)) || scrollY;
-      window.scrollTo(0, y);
+      body.style.overflow = prevOverflow;
     };
   }, []);
 
@@ -171,7 +153,6 @@ export default function RegistrationModal({
     } catch {}
 
     const { edad, estatura, peso } = user;
-    // Marca faltantes si no hay datos
     const nextMissing = {
       edad: !edad && edad !== 0,
       estatura: !estatura && estatura !== 0,
@@ -180,7 +161,6 @@ export default function RegistrationModal({
     setMissing(nextMissing);
     if (nextMissing.edad || nextMissing.estatura || nextMissing.peso) return;
 
-    // Cálculo manual
     const base =
       10 * (user.peso ?? 0) +
       6.25 * (user.estatura ?? 0) -
@@ -206,9 +186,7 @@ export default function RegistrationModal({
   function oauthSoon() {
     setErr(null);
     setInfo('Opción todavía no disponible');
-    try {
-      alert('Opción todavía no disponible');
-    } catch {}
+    try { alert('Opción todavía no disponible'); } catch {}
     window.setTimeout(() => setInfo(null), 2500);
   }
 
@@ -277,9 +255,7 @@ export default function RegistrationModal({
           );
       }
 
-      setInfo(
-        'Te hemos enviado un correo para confirmar tu email. Puedes verificarlo cuando quieras; no es necesario para continuar ahora.'
-      );
+      setInfo('Te hemos enviado un correo para confirmar tu email. Puedes verificarlo cuando quieras; no es necesario para continuar ahora.');
       setStep(3);
     } catch (e: any) {
       setErr(e?.message || 'No se pudo completar el registro.');
@@ -332,9 +308,7 @@ export default function RegistrationModal({
         saveUserMerge({ email });
       }
 
-      try {
-        localStorage.setItem(LS_SEEN_AUTH, '1');
-      } catch {}
+      try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
       router.replace(redirectTo || '/');
       onClose?.();
     } catch (e: any) {
@@ -395,16 +369,9 @@ export default function RegistrationModal({
     saveUserMerge(user as any);
     try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
 
-    // Cerrar el modal primero para que no quede overlay
     onClose?.();
-
-    // Navegar en el siguiente tick
-    setTimeout(() => {
-      router.replace(redirectTo || '/');
-    }, 0);
-
-    // IMPORTANTE: no reactivamos el botón; dejamos `finishing` en true
-    // para evitar dobles clics mientras la navegación se realiza.
+    setTimeout(() => { router.replace(redirectTo || '/'); }, 0);
+    // no reactivamos el botón para evitar dobles clics
   }
 
   // Cambia a modo Login SIN navegar fuera (misma estética)
@@ -456,7 +423,7 @@ export default function RegistrationModal({
         <div
           ref={scrollRef}
           className="px-6 pb-6 overflow-y-auto"
-          style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' as any }}
+          style={{ overscrollBehavior: 'contain' }}
         >
           {/* ======== LOGIN MODE ======== */}
           {mode === 'login' && (

@@ -423,3 +423,8 @@ body.modal-open {
   position: fixed;
   width: 100%;
 }
+/* Bloquea el scroll del body mientras hay un modal abierto (si lo usas) */
+body.modal-open {
+  /* Antes tenía: position: fixed; width:100%;  <-- esto rompe <select> en iOS dentro de modales */
+  overflow: hidden; /* suficiente y seguro para iOS */
+}
