@@ -469,7 +469,7 @@ async function submitEmailForm(e: React.FormEvent) {
             <div className="space-y-4">
               <div>
                 <p className="text-base font-extrabold mb-1">¡Bienvenid@ de nuevo!</p>
-                <p className="text-xs text-gray-600">Entra con tu cuenta para continuar.</p>
+                <p className="text-xs text-gray-600">Ya tienes una cuenta creada con este mail. Entra con tu cuenta para continuar o solicita recuperar al contraseña.</p>
               </div>
 
               {/* OAuth → pop-up "no disponible" */}
