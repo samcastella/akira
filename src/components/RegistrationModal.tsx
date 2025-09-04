@@ -41,7 +41,7 @@ export default function RegistrationModal({
   prefill,
   initialMode = 'register',
   redirectTo = '/',
-}: Props) {
+}: Props): JSX.Element {
   const router = useRouter();
 
   // i18n
@@ -211,31 +211,31 @@ export default function RegistrationModal({
     if (nextMissing.edad || nextMissing.estatura || nextMissing.peso) return;
 
     const sexAdj =
-  user.sexo === 'masculino' ? 5 :
-  user.sexo === 'femenino'  ? -161 : 0;
+      user.sexo === 'masculino' ? 5 :
+      user.sexo === 'femenino'  ? -161 : 0;
 
-const base =
-  10 * (user.peso ?? 0) +
-  6.25 * (user.estatura ?? 0) -
-  5 * (user.edad ?? 0) +
-  sexAdj;
+    const base =
+      10 * (user.peso ?? 0) +
+      6.25 * (user.estatura ?? 0) -
+      5 * (user.edad ?? 0) +
+      sexAdj;
 
-const activityFactor: Record<Act, number> = {
-  sedentario: 1.2,
-  ligero: 1.375,
-  moderado: 1.55,
-  intenso: 1.725,
-};
+    const activityFactor: Record<Act, number> = {
+      sedentario: 1.2,
+      ligero: 1.375,
+      moderado: 1.55,
+      intenso: 1.725,
+    };
 
-const factor = activityFactor[(user.actividad ?? 'sedentario') as Act];
+    const factor = activityFactor[(user.actividad ?? 'sedentario') as Act];
 
-const tdee = Math.round(base * factor);
-setUser((p) => {
-  const next = { ...p, caloriasDiarias: tdee };
-  persistBodyMetrics({ caloriasDiarias: tdee });
-  return next;
-});
-
+    const tdee = Math.round(base * factor);
+    setUser((p) => {
+      const next = { ...p, caloriasDiarias: tdee };
+      persistBodyMetrics({ caloriasDiarias: tdee });
+      return next;
+    });
+  } // ⬅️ CIERRE que faltaba
 
   // ——— OAuth desactivado temporalmente ———
   function oauthSoon() {
@@ -901,8 +901,8 @@ setUser((p) => {
                   </div>
                   <h3 className="text-lg font-bold">Tu registro ha sido creado con éxito</h3>
                   <p className="text-xs text-gray-600 max-w-sm mx-auto">
-                    Te hemos enviado un correo para confirmar tu email. Puedes verificarlo cuando quieras;{' '}
-                    <strong>no es necesario para continuar ahora</strong>.
+                    Te hemos enviado un correo para confirmar tu email. Puedes verificarlo cuando quieras{' '}
+                    <strong>— no es necesario para continuar ahora</strong>.
                   </p>
                   <div className="flex justify-center">
                     <button onClick={goToPersonalize} className="btn whitespace-nowrap">
@@ -1076,6 +1076,10 @@ setUser((p) => {
 
 function StepDot({ active }: { active: boolean }) {
   return (
-    <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: active ? '#000' : '#D1D5DB' }} aria-hidden="true" />
+    <span
+      className="inline-block h-2.5 w-2.5 rounded-full"
+      style={{ background: active ? '#000' : '#D1D5DB' }}
+      aria-hidden="true"
+    />
   );
 }
