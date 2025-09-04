@@ -428,3 +428,7 @@ body.modal-open {
   /* Antes tenía: position: fixed; width:100%;  <-- esto rompe <select> en iOS dentro de modales */
   overflow: hidden; /* suficiente y seguro para iOS */
 }
+/* iOS/Safari: asegura puntos en inputs password */
+input[type="password"] {
+  -webkit-text-security: disc;
+}

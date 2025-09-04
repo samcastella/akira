@@ -75,6 +75,10 @@ export default function RegistrationModal({
   // === Scroll fixes ===
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Refs a inputs de contraseña (fix iOS/Safari)
+  const passRef = useRef<HTMLInputElement>(null);
+  const confirmRef = useRef<HTMLInputElement>(null);
+
   // Validación para “Calcular” (faltan datos)
   const [missing, setMissing] = useState<{ edad: boolean; estatura: boolean; peso: boolean }>({
     edad: false,
@@ -376,6 +380,28 @@ export default function RegistrationModal({
     setConfirm('');
   }
 
+  // === Toggles iOS-safe (fuerzan el atributo type del input) ===
+  function toggleShowPass() {
+    setShowPass(prev => {
+      const next = !prev;
+      requestAnimationFrame(() => {
+        const el = passRef.current;
+        if (el) { try { el.setAttribute('type', next ? 'text' : 'password'); } catch {} }
+      });
+      return next;
+    });
+  }
+  function toggleShowPassConfirm() {
+    setShowPassConfirm(prev => {
+      const next = !prev;
+      requestAnimationFrame(() => {
+        const el = confirmRef.current;
+        if (el) { try { el.setAttribute('type', next ? 'text' : 'password'); } catch {} }
+      });
+      return next;
+    });
+  }
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60">
       <div
@@ -606,41 +632,28 @@ export default function RegistrationModal({
                   </label>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {/* Contraseña (doble input para evitar bug iOS) */}
+                    {/* Contraseña (iOS-safe con ref + key) */}
                     <label className="block text-xs">
                       <span className="font-medium">Contraseña</span>
                       <div className="relative">
-                        {showPass ? (
-                          <input
-                            type="text"
-                            name="new-password"
-                            autoComplete="new-password"
-                            autoCapitalize="none"
-                            autoCorrect="off"
-                            spellCheck={false}
-                            className="mt-1 input text-[16px] w-full pr-10"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            required
-                          />
-                        ) : (
-                          <input
-                            type="password"
-                            name="new-password"
-                            autoComplete="new-password"
-                            autoCapitalize="none"
-                            autoCorrect="off"
-                            spellCheck={false}
-                            className="mt-1 input text-[16px] w-full pr-10"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            required
-                          />
-                        )}
+                        <input
+                          key={`pass-${showPass ? 't' : 'p'}`}
+                          ref={passRef}
+                          type={showPass ? 'text' : 'password'}
+                          name="new-password"
+                          autoComplete="new-password"
+                          autoCapitalize="off"
+                          autoCorrect="off"
+                          spellCheck={false}
+                          className="mt-1 input text-[16px] w-full pr-10"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          required
+                        />
                         <button
                           type="button"
                           aria-pressed={showPass}
-                          onClick={() => setShowPass((v) => !v)}
+                          onClick={toggleShowPass}
                           className="absolute right-2 top-1/2 -translate-y-1/2 p-1 opacity-70 hover:opacity-100"
                           aria-label={showPass ? 'Ocultar contraseña' : 'Mostrar contraseña'}
                         >
@@ -649,41 +662,28 @@ export default function RegistrationModal({
                       </div>
                     </label>
 
-                    {/* Repetir contraseña (doble input) */}
+                    {/* Repetir contraseña (iOS-safe con ref + key) */}
                     <label className="block text-xs">
                       <span className="font-medium">Repetir contraseña</span>
                       <div className="relative">
-                        {showPassConfirm ? (
-                          <input
-                            type="text"
-                            name="new-password-confirm"
-                            autoComplete="new-password"
-                            autoCapitalize="none"
-                            autoCorrect="off"
-                            spellCheck={false}
-                            className="mt-1 input text-[16px] w-full pr-10"
-                            value={confirm}
-                            onChange={(e) => setConfirm(e.target.value)}
-                            required
-                          />
-                        ) : (
-                          <input
-                            type="password"
-                            name="new-password-confirm"
-                            autoComplete="new-password"
-                            autoCapitalize="none"
-                            autoCorrect="off"
-                            spellCheck={false}
-                            className="mt-1 input text-[16px] w-full pr-10"
-                            value={confirm}
-                            onChange={(e) => setConfirm(e.target.value)}
-                            required
-                          />
-                        )}
+                        <input
+                          key={`passc-${showPassConfirm ? 't' : 'p'}`}
+                          ref={confirmRef}
+                          type={showPassConfirm ? 'text' : 'password'}
+                          name="new-password-confirm"
+                          autoComplete="new-password"
+                          autoCapitalize="off"
+                          autoCorrect="off"
+                          spellCheck={false}
+                          className="mt-1 input text-[16px] w-full pr-10"
+                          value={confirm}
+                          onChange={(e) => setConfirm(e.target.value)}
+                          required
+                        />
                         <button
                           type="button"
                           aria-pressed={showPassConfirm}
-                          onClick={() => setShowPassConfirm((v) => !v)}
+                          onClick={toggleShowPassConfirm}
                           className="absolute right-2 top-1/2 -translate-y-1/2 p-1 opacity-70 hover:opacity-100"
                           aria-label={showPassConfirm ? 'Ocultar contraseña' : 'Mostrar contraseña'}
                         >
