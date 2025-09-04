@@ -16,11 +16,15 @@ type Act = 'sedentario' | 'ligero' | 'moderado' | 'intenso';
 type FormUser = UserProfile & {
   username?: string;
   sexo?: Sex;
+  /** seguimos soportando edad por compatibilidad, pero ya no se pide en el UI */
   edad?: number;
+  /** NUEVO: fecha de nacimiento en ISO yyyy-mm-dd */
+  fechaNacimiento?: string;
   estatura?: number;
   peso?: number;
   actividad?: Act;
   caloriasDiarias?: number;
+  telefono?: string;
 };
 
 type Mode = 'register' | 'login';
@@ -35,6 +39,18 @@ type Props = {
 
 const LS_SEEN_AUTH = 'akira_seen_auth_v1';
 
+/** calcula edad (años) a partir de yyyy-mm-dd */
+function ageFromDOB(dob?: string): number | undefined {
+  if (!dob) return undefined;
+  const d = new Date(dob);
+  if (isNaN(+d)) return undefined;
+  const today = new Date();
+  let age = today.getFullYear() - d.getFullYear();
+  const m = today.getMonth() - d.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < d.getDate())) age--;
+  return age >= 0 ? age : undefined;
+}
+
 export default function RegistrationModal({
   onClose,
   initialStep = 1,
@@ -43,7 +59,6 @@ export default function RegistrationModal({
   redirectTo = '/',
 }: Props) {
   const router = useRouter();
-
 
   // i18n
   const locale = detectLocale();
@@ -59,6 +74,11 @@ export default function RegistrationModal({
     telefono: prefill?.telefono ?? '',
     sexo: prefill?.sexo ?? 'prefiero_no_decirlo',
     actividad: prefill?.actividad ?? 'sedentario',
+    fechaNacimiento: prefill?.fechaNacimiento,
+    edad: prefill?.edad, // backward-compat
+    estatura: prefill?.estatura,
+    peso: prefill?.peso,
+    caloriasDiarias: prefill?.caloriasDiarias,
   });
 
   const [password, setPassword] = useState('');
@@ -81,8 +101,8 @@ export default function RegistrationModal({
   const confirmRef = useRef<HTMLInputElement>(null);
 
   // Validación para “Calcular” (faltan datos)
-  const [missing, setMissing] = useState<{ edad: boolean; estatura: boolean; peso: boolean }>({
-    edad: false,
+  const [missing, setMissing] = useState<{ fechaNacimiento: boolean; estatura: boolean; peso: boolean }>({
+    fechaNacimiento: false,
     estatura: false,
     peso: false,
   });
@@ -176,23 +196,52 @@ export default function RegistrationModal({
     return '';
   }, [password, confirm]);
 
+  /** Guarda métricas en local y, best-effort, en Supabase */
   function persistBodyMetrics(extra?: Partial<FormUser>) {
-    saveUserMerge({
+    const merged: Partial<FormUser> = {
       sexo: user.sexo,
-      edad: user.edad,
+      fechaNacimiento: user.fechaNacimiento,
+      edad: user.edad, // por compatibilidad
       estatura: user.estatura,
       peso: user.peso,
       actividad: user.actividad,
       caloriasDiarias: user.caloriasDiarias,
       ...(extra ?? {}),
-    } as any);
+    };
+    saveUserMerge(merged as any);
+
+    (async () => {
+      try {
+        const { data: u } = await supabase.auth.getUser();
+        const uid = u.user?.id;
+        if (!uid) return;
+
+        // edad derivada para guardar (sin enseñarla en UI)
+        const derivedAge = merged.edad ?? ageFromDOB(merged.fechaNacimiento);
+
+        await supabase
+          .from('public_profiles')
+          .update({
+            sexo: user.sexo ?? null,
+            edad: derivedAge ?? null,
+            estatura: user.estatura ?? null,
+            peso: user.peso ?? null,
+            calorias_diarias: (merged.caloriasDiarias ?? user.caloriasDiarias) ?? null,
+            fecha_nacimiento: user.fechaNacimiento ?? null,
+            telefono: (user.telefono || null),
+          })
+          .eq('user_id', uid);
+      } catch {
+        // noop
+      }
+    })();
   }
 
   function handleAutoCalories() {
     try {
       const est = estimateCalories?.(user as UserProfile);
       if (est) {
-        setMissing({ edad: false, estatura: false, peso: false });
+        setMissing({ fechaNacimiento: false, estatura: false, peso: false });
         setUser((p) => {
           const next = { ...p, caloriasDiarias: est };
           persistBodyMetrics({ caloriasDiarias: est });
@@ -202,23 +251,22 @@ export default function RegistrationModal({
       }
     } catch {}
 
-    const { edad, estatura, peso } = user;
+    const derivedAge = user.edad ?? ageFromDOB(user.fechaNacimiento);
+
     const nextMissing = {
-      edad: !edad && edad !== 0,
-      estatura: !estatura && estatura !== 0,
-      peso: !peso && peso !== 0,
+      fechaNacimiento: derivedAge == null, // si no podemos calcular edad, marcamos falta DOB
+      estatura: !user.estatura && user.estatura !== 0,
+      peso: !user.peso && user.peso !== 0,
     };
     setMissing(nextMissing);
-    if (nextMissing.edad || nextMissing.estatura || nextMissing.peso) return;
+    if (nextMissing.fechaNacimiento || nextMissing.estatura || nextMissing.peso) return;
 
-    const sexAdj =
-      user.sexo === 'masculino' ? 5 :
-      user.sexo === 'femenino'  ? -161 : 0;
+    const sexAdj = user.sexo === 'masculino' ? 5 : user.sexo === 'femenino' ? -161 : 0;
 
     const base =
       10 * (user.peso ?? 0) +
       6.25 * (user.estatura ?? 0) -
-      5 * (user.edad ?? 0) +
+      5 * (derivedAge ?? 0) +
       sexAdj;
 
     const activityFactor: Record<Act, number> = {
@@ -236,15 +284,13 @@ export default function RegistrationModal({
       persistBodyMetrics({ caloriasDiarias: tdee });
       return next;
     });
-  } // ⬅️ CIERRE que faltaba
+  }
 
   // ——— OAuth desactivado temporalmente ———
   function oauthSoon() {
     setErr(null);
     setInfo('Opción todavía no disponible');
-    try {
-      alert('Opción todavía no disponible');
-    } catch {}
+    try { alert('Opción todavía no disponible'); } catch {}
     window.setTimeout(() => setInfo(null), 2500);
   }
 
@@ -253,8 +299,6 @@ export default function RegistrationModal({
     e.preventDefault();
     setErr(null);
     setInfo(null);
-
-    // No seguimos si faltan básicos, hay error de password o username ocupado
     if (!canNextForm || passError || usernameStatus === 'taken') return;
 
     setLoading(true);
@@ -274,7 +318,6 @@ export default function RegistrationModal({
         },
       });
 
-      // === Detección robusta de “email ya registrado” ===
       const alreadyExists =
         (!error &&
           data?.user &&
@@ -302,7 +345,7 @@ export default function RegistrationModal({
         telefono: (user.telefono || '').trim() || undefined,
       } as any);
 
-      // Perfil público (best-effort) — incluye username
+      // Perfil público (best-effort) — incluye username y teléfono
       if (data.session?.user) {
         const uid = data.session.user.id;
         const { error: upsertErr } = await supabase
@@ -314,13 +357,13 @@ export default function RegistrationModal({
               apellido: user.apellido || null,
               sexo: user.sexo || null,
               username: normalizedUsername || null,
+              telefono: (user.telefono || '').trim() || null,
               instagram: null,
               tiktok: null,
             },
             { onConflict: 'user_id' }
           );
 
-        // Si por carrera el índice único salta
         if (upsertErr && /duplicate|unique|23505/i.test(upsertErr.message)) {
           setErr('Ese nombre de usuario acaba de ser registrado por otra persona. Elige otro.');
           setMode('register');
@@ -330,9 +373,7 @@ export default function RegistrationModal({
         }
       }
 
-      setInfo(
-        'Te hemos enviado un correo para confirmar tu email. Puedes verificarlo cuando quieras; no es necesario para continuar ahora.'
-      );
+      setInfo('Te hemos enviado un correo para confirmar tu email. Puedes verificarlo cuando quieras; no es necesario para continuar ahora.');
       setStep(3);
     } catch (e: any) {
       setErr(e?.message || 'No se pudo completar el registro.');
@@ -368,7 +409,6 @@ export default function RegistrationModal({
       const uid = udata.user?.id;
       const email = udata.user?.email || normalizedEmail;
 
-      // Normaliza el username local (por si lo teníamos guardado del registro)
       const normalizedUsernameLocal = (user.username || '')
         .trim()
         .replace(/^@+/, '')
@@ -378,16 +418,14 @@ export default function RegistrationModal({
       let finalUsername: string | undefined = undefined;
 
       if (uid) {
-        // Leemos también username
+        // Traemos todo lo que necesitamos
         const { data: profile, error: profErr } = await supabase
           .from('public_profiles')
-          .select('nombre, apellido, sexo, username')
+          .select('nombre, apellido, sexo, username, telefono, edad, estatura, peso, calorias_diarias, fecha_nacimiento')
           .eq('user_id', uid)
           .maybeSingle();
 
-        if (profErr) {
-          console.warn('profile fetch error', profErr);
-        }
+        if (profErr) console.warn('profile fetch error', profErr);
 
         finalUsername = (profile?.username as string | null) || undefined;
 
@@ -395,10 +433,7 @@ export default function RegistrationModal({
         if (!finalUsername && normalizedUsernameLocal) {
           const { error: upErr } = await supabase
             .from('public_profiles')
-            .upsert(
-              { user_id: uid, username: normalizedUsernameLocal },
-              { onConflict: 'user_id' }
-            );
+            .upsert({ user_id: uid, username: normalizedUsernameLocal }, { onConflict: 'user_id' });
 
           if (upErr) {
             if (String((upErr as any).code) === '23505') {
@@ -410,36 +445,34 @@ export default function RegistrationModal({
             finalUsername = normalizedUsernameLocal;
           }
 
-          // Si no existía fila aún, también podemos upsert básicos
+          // Si no existía fila, creamos básicos
           if (!profile) {
-            const { error: upsertBasicsErr } = await supabase
+            await supabase
               .from('public_profiles')
               .upsert(
-                {
-                  user_id: uid,
-                  nombre: user.nombre || null,
-                  apellido: user.apellido || null,
-                  sexo: user.sexo || null,
-                },
+                { user_id: uid, nombre: user.nombre || null, apellido: user.apellido || null, sexo: user.sexo || null },
                 { onConflict: 'user_id' }
-              );
-
-            if (upsertBasicsErr) {
-              console.warn('public_profiles basics upsert error:', upsertBasicsErr);
-            }
+              )
+              .catch(() => {});
           }
         }
 
-        // Guardamos en local todo lo que tengamos
+        // Guardamos en local TODO
         saveUserMerge({
           email,
           nombre: profile?.nombre ?? user.nombre ?? '',
           apellido: profile?.apellido ?? user.apellido ?? '',
           sexo: (profile?.sexo as Sex | undefined) ?? user.sexo,
           username: (finalUsername ?? normalizedUsernameLocal) || undefined,
+          telefono: profile?.telefono ?? user.telefono,
+          // campos de personalización
+          fechaNacimiento: profile?.fecha_nacimiento ?? user.fechaNacimiento,
+          edad: profile?.edad ?? user.edad, // por compatibilidad, no se muestra
+          estatura: profile?.estatura ?? user.estatura,
+          peso: profile?.peso ?? user.peso,
+          caloriasDiarias: profile?.calorias_diarias ?? user.caloriasDiarias,
         });
       } else {
-        // Caso raro: sin uid pero login OK
         saveUserMerge({ email });
       }
 
@@ -478,9 +511,7 @@ export default function RegistrationModal({
     }
   }
 
-  function goToPersonalize() {
-    setStep(4);
-  }
+  function goToPersonalize() { setStep(4); }
 
   function savePersonalizeAndNext(e: React.FormEvent) {
     e.preventDefault();
@@ -499,13 +530,9 @@ export default function RegistrationModal({
     setFinishing(true);
     saveUserMerge({ username: user.username } as any);
     saveUserMerge(user as any);
-    try {
-      localStorage.setItem(LS_SEEN_AUTH, '1');
-    } catch {}
+    try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
     onClose?.();
-    setTimeout(() => {
-      router.replace(redirectTo || '/');
-    }, 0);
+    setTimeout(() => { router.replace(redirectTo || '/'); }, 0);
   }
 
   function goLogin() {
@@ -516,17 +543,13 @@ export default function RegistrationModal({
     setConfirm('');
   }
 
-  // === Toggles iOS-safe (fuerzan el atributo type del input) ===
+  // === Toggles iOS-safe ===
   function toggleShowPass() {
     setShowPass((prev) => {
       const next = !prev;
       requestAnimationFrame(() => {
         const el = passRef.current;
-        if (el) {
-          try {
-            el.setAttribute('type', next ? 'text' : 'password');
-          } catch {}
-        }
+        if (el) try { el.setAttribute('type', next ? 'text' : 'password'); } catch {}
       });
       return next;
     });
@@ -536,15 +559,18 @@ export default function RegistrationModal({
       const next = !prev;
       requestAnimationFrame(() => {
         const el = confirmRef.current;
-        if (el) {
-          try {
-            el.setAttribute('type', next ? 'text' : 'password');
-          } catch {}
-        }
+        if (el) try { el.setAttribute('type', next ? 'text' : 'password'); } catch {}
       });
       return next;
     });
   }
+
+  // límites de la fecha (no menores de 5 años)
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const minISO = '1900-01-01';
+  const fiveYearsAgo = new Date();
+  fiveYearsAgo.setFullYear(fiveYearsAgo.getFullYear() - 5);
+  const maxISO = fiveYearsAgo.toISOString().slice(0, 10);
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60">
@@ -554,7 +580,7 @@ export default function RegistrationModal({
         aria-modal="true"
         aria-labelledby="reg-title"
       >
-        {/* Cabecera con imagen a sangre */}
+        {/* Cabecera */}
         <div className="relative w-full h-[160px] sm:h-[200px]">
           <Image
             src="/Intro.png"
@@ -571,7 +597,6 @@ export default function RegistrationModal({
             {mode === 'login' ? 'Iniciar sesión' : 'Registro'}
           </h2>
 
-          {/* Puntos de paso solo en registro */}
           {mode === 'register' && (
             <div className="flex items-center gap-2 text-[10px]">
               <StepDot active={step >= 1} />
@@ -583,11 +608,7 @@ export default function RegistrationModal({
           )}
         </div>
 
-        <div
-          ref={scrollRef}
-          className="px-6 pb-6 overflow-y-auto"
-          style={{ overscrollBehavior: 'contain' }}
-        >
+        <div ref={scrollRef} className="px-6 pb-6 overflow-y-auto" style={{ overscrollBehavior: 'contain' }}>
           {/* ======== LOGIN MODE ======== */}
           {mode === 'login' && (
             <div className="space-y-4">
@@ -599,22 +620,13 @@ export default function RegistrationModal({
                 </p>
               </div>
 
-              {/* OAuth → pop-up "no disponible" */}
+              {/* OAuth → pop-up */}
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                <button
-                  type="button"
-                  onClick={oauthSoon}
-                  className="w-full btn secondary !bg-white !text-black !border !border-gray-300 inline-flex items-center justify-center gap-2"
-                >
+                <button type="button" onClick={oauthSoon} className="w-full btn secondary !bg-white !text-black !border !border-gray-300 inline-flex items-center justify-center gap-2">
                   <Image src="/google.png" alt="" width={16} height={16} className="shrink-0" />
                   Entrar con Google
                 </button>
-
-                <button
-                  type="button"
-                  onClick={oauthSoon}
-                  className="w-full btn secondary !bg-black !text-white inline-flex items-center justify-center gap-2"
-                >
+                <button type="button" onClick={oauthSoon} className="w-full btn secondary !bg-black !text-white inline-flex items-center justify-center gap-2">
                   <Image src="/apple.png" alt="" width={16} height={16} className="shrink-0" />
                   Entrar con Apple
                 </button>
@@ -654,11 +666,7 @@ export default function RegistrationModal({
                       {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
                     </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={sendRecovery}
-                    className="mt-1 text-[11px] underline underline-offset-2"
-                  >
+                  <button type="button" onClick={sendRecovery} className="mt-1 text-[11px] underline underline-offset-2">
                     He olvidado mi contraseña
                   </button>
                 </label>
@@ -666,13 +674,8 @@ export default function RegistrationModal({
                 {err && <p className="text-[11px] text-red-600">{err}</p>}
                 {info && <p className="text-[11px] text-amber-700">{info}</p>}
 
-                {/* Botonera con “Atrás” en una sola línea */}
                 <div className="flex items-center justify-between gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setMode('register')}
-                    className="btn secondary inline-flex items-center whitespace-nowrap"
-                  >
+                  <button type="button" onClick={() => setMode('register')} className="btn secondary inline-flex items-center whitespace-nowrap">
                     <ArrowLeft size={16} className="mr-1" />
                     Atrás
                   </button>
@@ -694,34 +697,22 @@ export default function RegistrationModal({
                     <p className="text-xs text-gray-600">Elige cómo quieres registrarte.</p>
                   </div>
 
-                  {/* Botones OAuth → aviso */}
                   <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={oauthSoon}
-                      className="w-full btn secondary !bg-white !text-black !border !border-gray-300 inline-flex items-center justify-center gap-2"
-                    >
+                    <button type="button" onClick={oauthSoon} className="w-full btn secondary !bg-white !text-black !border !border-gray-300 inline-flex items-center justify-center gap-2">
                       <Image src="/google.png" alt="" width={16} height={16} className="shrink-0" />
                       Continuar con Google
                     </button>
-
-                    <button
-                      type="button"
-                      onClick={oauthSoon}
-                      className="w-full btn secondary !bg-black !text-white inline-flex items-center justify-center gap-2"
-                    >
+                    <button type="button" onClick={oauthSoon} className="w-full btn secondary !bg-black !text-white inline-flex items-center justify-center gap-2">
                       <Image src="/apple.png" alt="" width={16} height={16} className="shrink-0" />
                       Continuar con Apple
                     </button>
                   </div>
 
-                  {/* CTA email + Ya tengo cuenta */}
                   <div className="pt-2 grid gap-2 sm:grid-cols-2">
                     <button type="button" onClick={() => setStep(2)} className="btn w-full">
                       Regístrate ahora
                     </button>
-
-                    <button type="button" onClick={goLogin} className="btn secondary w-full">
+                    <button type="button" onClick={() => setMode('login')} className="btn secondary w-full">
                       Ya tengo cuenta
                     </button>
                   </div>
@@ -738,7 +729,7 @@ export default function RegistrationModal({
                     <p className="text-xs text-gray-600">Completa el formulario para crear tu cuenta.</p>
                   </div>
 
-                  {/* Nombre de usuario */}
+                  {/* Username */}
                   <label className="block text-xs">
                     <span className="font-medium">Nombre de usuario</span>
                     <input
@@ -749,16 +740,11 @@ export default function RegistrationModal({
                       required
                     />
                     <div className="mt-1" aria-live="polite">
-                      {usernameStatus === 'taken' && (
-                        <p className="text-[11px] text-red-600">Este nombre de usuario ya está registrado.</p>
-                      )}
-                      {usernameStatus === 'checking' && (
-                        <p className="text-[11px] text-gray-500">Comprobando…</p>
-                      )}
+                      {usernameStatus === 'taken' && <p className="text-[11px] text-red-600">Este nombre de usuario ya está registrado.</p>}
+                      {usernameStatus === 'checking' && <p className="text-[11px] text-gray-500">Comprobando…</p>}
                       {usernameStatus === 'free' && !!(user.username || '').trim() && (
                         <p className="text-[11px] text-green-600 inline-flex items-center gap-1">
-                          <CheckCircle2 size={12} />
-                          Este nombre de usuario está libre
+                          <CheckCircle2 size={12} /> Este nombre de usuario está libre
                         </p>
                       )}
                     </div>
@@ -767,38 +753,20 @@ export default function RegistrationModal({
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <label className="block text-xs">
                       <span className="font-medium">Nombre</span>
-                      <input
-                        className="mt-1 input text-[16px]"
-                        value={user.nombre ?? ''}
-                        onChange={(e) => handleChange('nombre', e.target.value)}
-                        required
-                      />
+                      <input className="mt-1 input text-[16px]" value={user.nombre ?? ''} onChange={(e) => handleChange('nombre', e.target.value)} required />
                     </label>
                     <label className="block text-xs">
                       <span className="font-medium">Apellido</span>
-                      <input
-                        className="mt-1 input text-[16px]"
-                        value={user.apellido ?? ''}
-                        onChange={(e) => handleChange('apellido', e.target.value)}
-                        required
-                      />
+                      <input className="mt-1 input text-[16px]" value={user.apellido ?? ''} onChange={(e) => handleChange('apellido', e.target.value)} required />
                     </label>
                   </div>
 
                   <label className="block text-xs">
                     <span className="font-medium">Email</span>
-                    <input
-                      type="email"
-                      autoComplete="email"
-                      className="mt-1 input text-[16px]"
-                      value={user.email ?? ''}
-                      onChange={(e) => handleChange('email', e.target.value)}
-                      required
-                    />
+                    <input type="email" autoComplete="email" className="mt-1 input text-[16px]" value={user.email ?? ''} onChange={(e) => handleChange('email', e.target.value)} required />
                   </label>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {/* Contraseña (iOS-safe con ref + key) */}
                     <label className="block text-xs">
                       <span className="font-medium">Contraseña</span>
                       <div className="relative">
@@ -808,27 +776,17 @@ export default function RegistrationModal({
                           type={showPass ? 'text' : 'password'}
                           name="new-password"
                           autoComplete="new-password"
-                          autoCapitalize="off"
-                          autoCorrect="off"
-                          spellCheck={false}
                           className="mt-1 input text-[16px] w-full pr-10"
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
                           required
                         />
-                        <button
-                          type="button"
-                          aria-pressed={showPass}
-                          onClick={toggleShowPass}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 opacity-70 hover:opacity-100"
-                          aria-label={showPass ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-                        >
+                        <button type="button" aria-pressed={showPass} onClick={toggleShowPass} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 opacity-70 hover:opacity-100" aria-label={showPass ? 'Ocultar contraseña' : 'Mostrar contraseña'}>
                           {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
                         </button>
                       </div>
                     </label>
 
-                    {/* Repetir contraseña (iOS-safe con ref + key) */}
                     <label className="block text-xs">
                       <span className="font-medium">Repetir contraseña</span>
                       <div className="relative">
@@ -838,21 +796,12 @@ export default function RegistrationModal({
                           type={showPassConfirm ? 'text' : 'password'}
                           name="new-password-confirm"
                           autoComplete="new-password"
-                          autoCapitalize="off"
-                          autoCorrect="off"
-                          spellCheck={false}
                           className="mt-1 input text-[16px] w-full pr-10"
                           value={confirm}
                           onChange={(e) => setConfirm(e.target.value)}
                           required
                         />
-                        <button
-                          type="button"
-                          aria-pressed={showPassConfirm}
-                          onClick={toggleShowPassConfirm}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 opacity-70 hover:opacity-100"
-                          aria-label={showPassConfirm ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-                        >
+                        <button type="button" aria-pressed={showPassConfirm} onClick={toggleShowPassConfirm} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 opacity-70 hover:opacity-100" aria-label={showPassConfirm ? 'Ocultar contraseña' : 'Mostrar contraseña'}>
                           {showPassConfirm ? <EyeOff size={18} /> : <Eye size={18} />}
                         </button>
                       </div>
@@ -863,32 +812,18 @@ export default function RegistrationModal({
 
                   <label className="block text-xs">
                     <span className="font-medium">Teléfono (opcional)</span>
-                    <input
-                      className="mt-1 input text-[16px]"
-                      value={user.telefono ?? ''}
-                      onChange={(e) => handleChange('telefono', e.target.value)}
-                    />
+                    <input className="mt-1 input text-[16px]" value={user.telefono ?? ''} onChange={(e) => handleChange('telefono', e.target.value)} />
                   </label>
 
                   {err && <p className="text-[11px] text-red-600">{err}</p>}
                   {info && <p className="text-[11px] text-amber-700">{info}</p>}
 
                   <div className="flex gap-2 justify-between flex-nowrap">
-                    <button
-                      type="button"
-                      onClick={() => setStep(1)}
-                      className="btn secondary whitespace-nowrap inline-flex items-center"
-                    >
-                      <ArrowLeft size={16} className="mr-1" />
-                      Atrás
+                    <button type="button" onClick={() => setStep(1)} className="btn secondary whitespace-nowrap inline-flex items-center">
+                      <ArrowLeft size={16} className="mr-1" /> Atrás
                     </button>
-
                     <div className="flex-1" />
-                    <button
-                      type="submit"
-                      disabled={!canNextForm || !!passError || loading}
-                      className="btn disabled:opacity-50 whitespace-nowrap"
-                    >
+                    <button type="submit" disabled={!canNextForm || !!passError || loading} className="btn disabled:opacity-50 whitespace-nowrap">
                       {loading ? 'Creando cuenta…' : 'Continuar'}
                     </button>
                   </div>
@@ -897,18 +832,13 @@ export default function RegistrationModal({
 
               {step === 3 && (
                 <div className="py-6 space-y-4 text-center">
-                  <div className="flex justify-center">
-                    <CheckCircle2 size={56} />
-                  </div>
+                  <div className="flex justify-center"><CheckCircle2 size={56} /></div>
                   <h3 className="text-lg font-bold">Tu registro ha sido creado con éxito</h3>
                   <p className="text-xs text-gray-600 max-w-sm mx-auto">
-                    Te hemos enviado un correo para confirmar tu email. Puedes verificarlo cuando quieras{' '}
-                    <strong>— no es necesario para continuar ahora</strong>.
+                    Te hemos enviado un correo para confirmar tu email. Puedes verificarlo cuando quieras <strong>— no es necesario para continuar ahora</strong>.
                   </p>
                   <div className="flex justify-center">
-                    <button onClick={goToPersonalize} className="btn whitespace-nowrap">
-                      Continuar
-                    </button>
+                    <button onClick={goToPersonalize} className="btn whitespace-nowrap">Continuar</button>
                   </div>
                 </div>
               )}
@@ -917,38 +847,37 @@ export default function RegistrationModal({
                 <form onSubmit={savePersonalizeAndNext} className="space-y-4">
                   <div>
                     <p className="text-sm font-semibold">Vamos a personalizar tu experiencia</p>
-                    <p className="text-xs text-gray-600">
-                      Estos datos pueden ayudarte a medir los progresos en algunos de nuestros programas.
-                    </p>
+                    <p className="text-xs text-gray-600">Estos datos pueden ayudarte a medir los progresos en algunos de nuestros programas.</p>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <label className="block text-xs">
                       <span className="font-medium">Sexo</span>
-                      <select
-                        className="mt-1 input text-[16px]"
-                        value={user.sexo ?? 'prefiero_no_decirlo'}
-                        onChange={(e) => handleChange('sexo', e.target.value as Sex)}
-                      >
+                      <select className="mt-1 input text-[16px]" value={user.sexo ?? 'prefiero_no_decirlo'} onChange={(e) => handleChange('sexo', e.target.value as Sex)}>
                         <option value="masculino">Masculino</option>
                         <option value="femenino">Femenino</option>
                         <option value="prefiero_no_decirlo">Prefiero no decirlo</option>
                       </select>
                     </label>
 
+                    {/* Sustituye "Edad" por "Fecha de nacimiento" */}
                     <label className="block text-xs">
-                      <span className="font-medium">Edad (años)</span>
+                      <span className="font-medium">Fecha de nacimiento</span>
                       <input
-                        type="number"
-                        min={5}
+                        type="date"
                         className="mt-1 input text-[16px]"
-                        value={user.edad ?? ''}
+                        value={user.fechaNacimiento ?? ''}
+                        min={minISO}
+                        max={maxISO}
                         onChange={(e) => {
-                          handleChange('edad', e.target.value ? Number(e.target.value) : undefined);
-                          setMissing((m) => ({ ...m, edad: false }));
+                          handleChange('fechaNacimiento', e.target.value || undefined);
+                          // mantenemos edad sólo como derivado (no se muestra)
+                          const derived = ageFromDOB(e.target.value || undefined);
+                          handleChange('edad', derived);
+                          setMissing((m) => ({ ...m, fechaNacimiento: false }));
                         }}
                       />
-                      {missing.edad && <p className="text-[11px] text-red-600 mt-1">Falta este dato</p>}
+                      {missing.fechaNacimiento && <p className="text-[11px] text-red-600 mt-1">Falta este dato</p>}
                     </label>
 
                     <label className="block text-xs">
@@ -984,11 +913,7 @@ export default function RegistrationModal({
 
                     <label className="block text-xs">
                       <span className="font-medium">Actividad</span>
-                      <select
-                        className="mt-1 input text-[16px]"
-                        value={user.actividad ?? 'sedentario'}
-                        onChange={(e) => handleChange('actividad', e.target.value as Act)}
-                      >
+                      <select className="mt-1 input text-[16px]" value={user.actividad ?? 'sedentario'} onChange={(e) => handleChange('actividad', e.target.value as Act)}>
                         <option value="sedentario">Sedentario</option>
                         <option value="ligero">Ligero (1–3 días/sem)</option>
                         <option value="moderado">Moderado (3–5 días/sem)</option>
@@ -1004,9 +929,7 @@ export default function RegistrationModal({
                           min={800}
                           className="input text-[16px]"
                           value={user.caloriasDiarias ?? ''}
-                          onChange={(e) =>
-                            handleChange('caloriasDiarias', e.target.value ? Number(e.target.value) : undefined)
-                          }
+                          onChange={(e) => handleChange('caloriasDiarias', e.target.value ? Number(e.target.value) : undefined)}
                         />
                         <button type="button" onClick={handleAutoCalories} className="btn secondary whitespace-nowrap">
                           Calcular
@@ -1016,14 +939,7 @@ export default function RegistrationModal({
                   </div>
 
                   <p className="text-xs text-gray-600 text-center mt-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        persistBodyMetrics();
-                        setStep(5);
-                      }}
-                      className="underline underline-offset-2"
-                    >
+                    <button type="button" onClick={() => { persistBodyMetrics(); setStep(5); }} className="underline underline-offset-2">
                       Omitir este paso
                     </button>
                   </p>
@@ -1042,27 +958,15 @@ export default function RegistrationModal({
                   <p className="text-gray-700">{copy.auth.welcomeIntro}</p>
                   <p className="font-medium">Pero tenemos algunas reglas que nos guiarán en el camino:</p>
                   <ol className="list-decimal pl-5 space-y-2 text-gray-700">
-                    <li>
-                      <strong>Decir siempre la verdad.</strong> Si marcas un hábito como realizado sin haberlo hecho, al
-                      único que engañas es a ti mism@.
-                    </li>
-                    <li>
-                      <strong>Está permitido fallar, pero nunca rendirse.</strong> Si un día no consigues un reto,
-                      tendrás otra oportunidad al día siguiente.
-                    </li>
-                    <li>
-                      <strong>Disfruta del proceso y celebra cada paso.</strong> La constancia es la clave, y cada
-                      avance merece orgullo.
-                    </li>
+                    <li><strong>Decir siempre la verdad.</strong> Si marcas un hábito como realizado sin haberlo hecho, al único que engañas es a ti mism@.</li>
+                    <li><strong>Está permitido fallar, pero nunca rendirse.</strong> Si un día no consigues un reto, tendrás otra oportunidad al día siguiente.</li>
+                    <li><strong>Disfruta del proceso y celebra cada paso.</strong> La constancia es la clave, y cada avance merece orgullo.</li>
                   </ol>
-                  <p className="text-gray-800">
-                    ✨ <strong>Recuerda: eres la suma de tus acciones</strong>
-                  </p>
+                  <p className="text-gray-800">✨ <strong>Recuerda: eres la suma de tus acciones</strong></p>
 
                   <div className="flex justify-center pt-2">
                     <button onClick={finish} disabled={finishing} className="btn inline-flex items-center gap-2 disabled:opacity-50">
-                      <Rocket size={18} />
-                      {finishing ? 'Cargando…' : 'Vamos a por ello'}
+                      <Rocket size={18} /> {finishing ? 'Cargando…' : 'Vamos a por ello'}
                     </button>
                   </div>
                 </div>
@@ -1077,10 +981,6 @@ export default function RegistrationModal({
 
 function StepDot({ active }: { active: boolean }) {
   return (
-    <span
-      className="inline-block h-2.5 w-2.5 rounded-full"
-      style={{ background: active ? '#000' : '#D1D5DB' }}
-      aria-hidden="true"
-    />
+    <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: active ? '#000' : '#D1D5DB' }} aria-hidden="true" />
   );
 }
