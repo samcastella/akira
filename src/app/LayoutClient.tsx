@@ -63,7 +63,7 @@ export default function LayoutClient({
       // Si el usuario acaba de iniciar sesión por proveedor externo,
       // abrimos el registro para completar datos (paso 2).
       if (session) {
-        localStorage.setItem(LS_SEEN_AUTH, '1');
+        try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
         setShowAuthModal(false);
         setRegistrationStartStep(2);
         setShowRegistration(true);
@@ -98,11 +98,21 @@ export default function LayoutClient({
 
   // Mientras el perfil NO esté listo, ocultamos app y mostramos gating (splash + modal), excepto en /login y /auth/*
   const gating = userOk === false && !isAuthRoute;
-  const hideNav = (gating || pathname === '/bienvenida') && !isAuthRoute;
+
+  // Ocultamos la BottomNav también en rutas de auth
+  const hideNav = gating || pathname === '/bienvenida' || isAuthRoute;
 
   function handleCloseRegistration() {
     setShowRegistration(false);
     // Si ya completó datos, desbloqueamos la app:
+    const ok = isUserComplete(loadUser());
+    if (ok) setUserOk(true);
+  }
+
+  // Al cerrar el primer modal (paso 1), marcamos visto y re-evaluamos perfil
+  function handleCloseAuthModal() {
+    setShowAuthModal(false);
+    try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
     const ok = isUserComplete(loadUser());
     if (ok) setUserOk(true);
   }
@@ -137,10 +147,7 @@ export default function LayoutClient({
           <div className="relative z-50">
             <RegistrationModal
               initialStep={1}
-              onClose={() => {
-                setShowAuthModal(false);
-                localStorage.setItem(LS_SEEN_AUTH, '1');
-              }}
+              onClose={handleCloseAuthModal}
             />
           </div>
         )}
