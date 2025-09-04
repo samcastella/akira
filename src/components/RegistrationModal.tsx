@@ -337,59 +337,113 @@ export default function RegistrationModal({
   // ——— Login por email ———
   const canLogin = useMemo(() => !!normalizedEmail && password.length >= 6, [normalizedEmail, password]);
 
-  async function submitLogin(e: React.FormEvent) {
-    e.preventDefault();
-    setErr(null);
-    setInfo(null);
-    if (!canLogin) return;
+async function submitLogin(e: React.FormEvent) {
+  e.preventDefault();
+  setErr(null);
+  setInfo(null);
+  if (!canLogin) return;
 
-    setLoading(true);
-    try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email: normalizedEmail,
-        password,
-      });
-      if (error) {
-        const friendly = /invalid login/i.test(error.message)
-          ? 'Email o contraseña incorrectos.'
-          : error.message;
-        throw new Error(friendly);
-      }
-
-      // Cargar perfil público y guardarlo en local para “Mi Zona”
-      const { data: udata } = await supabase.auth.getUser();
-      const uid = udata.user?.id;
-      const email = udata.user?.email || normalizedEmail;
-
-      if (uid) {
-        const { data: profile } = await supabase
-          .from('public_profiles')
-          .select('nombre, apellido, sexo, username')
-          .eq('user_id', uid)
-          .maybeSingle();
-
-        saveUserMerge({
-          email,
-          nombre: profile?.nombre ?? user.nombre ?? '',
-          apellido: profile?.apellido ?? user.apellido ?? '',
-          sexo: (profile?.sexo as Sex | undefined) ?? user.sexo,
-          username: profile?.username ?? user.username,
-        });
-      } else {
-        saveUserMerge({ email });
-      }
-
-      try {
-        localStorage.setItem(LS_SEEN_AUTH, '1');
-      } catch {}
-      router.replace(redirectTo || '/');
-      onClose?.();
-    } catch (e: any) {
-      setErr(e?.message || 'No se pudo iniciar sesión.');
-    } finally {
-      setLoading(false);
+  setLoading(true);
+  try {
+    const { error } = await supabase.auth.signInWithPassword({
+      email: normalizedEmail,
+      password,
+    });
+    if (error) {
+      const friendly = /invalid login/i.test(error.message)
+        ? 'Email o contraseña incorrectos.'
+        : error.message;
+      throw new Error(friendly);
     }
+
+    // Sesión OK → obtenemos uid y perfil público
+    const { data: udata } = await supabase.auth.getUser();
+    const uid = udata.user?.id;
+    const email = udata.user?.email || normalizedEmail;
+
+    // Normaliza el username local (por si lo teníamos guardado del registro)
+    const normalizedUsernameLocal = (user.username || '')
+      .trim()
+      .replace(/^@+/, '')
+      .toLowerCase()
+      .replace(/\s+/g, '');
+
+    let finalUsername: string | undefined = undefined;
+
+    if (uid) {
+      // Leemos también username
+      const { data: profile, error: profErr } = await supabase
+        .from('public_profiles')
+        .select('nombre, apellido, sexo, username')
+        .eq('user_id', uid)
+        .maybeSingle();
+
+      if (profErr) {
+        // No cortamos el login por esto; seguimos con lo que tengamos
+        console.warn('profile fetch error', profErr);
+      }
+
+      finalUsername = (profile?.username as string | null) || undefined;
+
+      // Si en BD no hay username pero en local sí, intentamos fijarlo ahora
+      if (!finalUsername && normalizedUsernameLocal) {
+        const { error: upErr } = await supabase
+          .from('public_profiles')
+          .upsert(
+            { user_id: uid, username: normalizedUsernameLocal },
+            { onConflict: 'user_id' }
+          );
+
+        if (upErr) {
+          // 23505 = unique_violation
+          if (String((upErr as any).code) === '23505') {
+            setErr('Este nombre de usuario ya está registrado.');
+          } else {
+            console.warn('username upsert error', upErr);
+          }
+        } else {
+          finalUsername = normalizedUsernameLocal;
+        }
+
+        // Si no existía fila aún, también podemos upsert básicos
+        if (!profile) {
+          await supabase
+            .from('public_profiles')
+            .upsert(
+              {
+                user_id: uid,
+                nombre: user.nombre || null,
+                apellido: user.apellido || null,
+                sexo: user.sexo || null,
+              },
+              { onConflict: 'user_id' }
+            )
+            .catch(() => {});
+        }
+      }
+
+      // Guardamos en local todo lo que tengamos
+      saveUserMerge({
+        email,
+        nombre: profile?.nombre ?? user.nombre ?? '',
+        apellido: profile?.apellido ?? user.apellido ?? '',
+        sexo: (profile?.sexo as Sex | undefined) ?? user.sexo,
+        username: finalUsername ?? normalizedUsernameLocal || undefined,
+      });
+    } else {
+      // Caso raro: sin uid pero login OK
+      saveUserMerge({ email });
+    }
+
+    try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
+    router.replace(redirectTo || '/');
+    onClose?.();
+  } catch (e: any) {
+    setErr(e?.message || 'No se pudo iniciar sesión.');
+  } finally {
+    setLoading(false);
   }
+}
 
   async function sendRecovery() {
     setErr(null);
