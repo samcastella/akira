@@ -21,7 +21,7 @@ export default function LayoutClient({
   // Rutas de autenticación donde no debe aplicarse el gating/splash
   const isAuthRoute =
     pathname === '/login' ||
-    pathname.startsWith('/auth'); // /auth/callback, etc.
+    pathname.startsWith('/auth'); // /auth/callback, /auth/confirmed, etc.
 
   // === Estado de perfil local (gating por completar datos) ===
   const [userOk, setUserOk] = useState<boolean | null>(null);
@@ -33,7 +33,7 @@ export default function LayoutClient({
   // === Modales ===
   // showAuthModal abre directamente RegistrationModal (paso 1)
   const [showAuthModal, setShowAuthModal] = useState(false);
-  // showRegistration se usa para abrir RegistrationModal en paso 2 tras OAuth (si lo activas en el futuro)
+  // showRegistration se usa para abrir RegistrationModal en paso 2 tras OAuth (Google/Apple)
   const [showRegistration, setShowRegistration] = useState(false);
   const [registrationStartStep, setRegistrationStartStep] = useState<1 | 2 | 3>(1);
 
@@ -60,13 +60,21 @@ export default function LayoutClient({
     const { data: sub } = supabase.auth.onAuthStateChange((_evt, session) => {
       setHasSession(!!session);
 
-      // Si el usuario acaba de iniciar sesión por proveedor externo,
-      // abrimos el registro para completar datos (paso 2).
-      if (session) {
-        try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
-        setShowAuthModal(false);
+      // Marcar splash visto y cerrar pop-up de onboarding
+      try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
+      setShowAuthModal(false);
+
+      // Solo abrimos el registro para completar datos si el proveedor es OAuth
+      // (no para email/contraseña)
+      const provider = (session?.user?.app_metadata as any)?.provider as string | undefined;
+      const isOAuth = provider && provider !== 'email' && provider !== 'phone';
+
+      if (session && isOAuth) {
         setRegistrationStartStep(2);
         setShowRegistration(true);
+      } else {
+        // Si es email/contraseña o no hay provider, aseguramos que NO abrimos el modal
+        setShowRegistration(false);
       }
     });
 
@@ -96,8 +104,9 @@ export default function LayoutClient({
     if (!seen) setShowAuthModal(true);
   }, [authReady, hasSession, userOk, isAuthRoute]);
 
-  // Mientras el perfil NO esté listo, ocultamos app y mostramos gating (splash + modal), excepto en /login y /auth/*
-  const gating = userOk === false && !isAuthRoute;
+  // Mientras el perfil NO esté listo, ocultamos app y mostramos gating (splash + modal),
+  // excepto en /login y /auth/* — y ahora también si YA hay sesión (no gatear con sesión)
+  const gating = userOk === false && !isAuthRoute && !hasSession;
 
   // Ocultamos la BottomNav también en rutas de auth
   const hideNav = gating || pathname === '/bienvenida' || isAuthRoute;
@@ -152,7 +161,7 @@ export default function LayoutClient({
           </div>
         )}
 
-        {/* Modal de registro (manual o tras proveedor en paso 2) */}
+        {/* Modal de registro (solo tras OAuth) */}
         {showRegistration && (
           <div className="relative z-50">
             <RegistrationModal
