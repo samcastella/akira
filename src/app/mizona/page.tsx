@@ -4,9 +4,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Check, RotateCcw, Trash2, Camera } from 'lucide-react';
 
+/* ====== import unificada de usuario ====== */
+import { loadUser, LS_USER } from '@/lib/user';
+
 /* ====== storage + tipos ====== */
 const LS_RETOS = 'akira_mizona_retos_v1';
-const LS_USER  = 'akira_user_v1';                    // donde RegistrationModal guarda con saveUserMerge
 const LS_ACTIVE_PROGRAMS = 'akira_programs_active_v1'; // array de keys de programas activos
 
 type Reto = { id: string; text: string; createdAt: number; due: string; done: boolean; permanent?: boolean };
@@ -50,7 +52,8 @@ const fmtKcal = (v?: number) => (typeof v === 'number' ? `${v} kcal` : '—');
 /* ====== página ====== */
 export default function MiZonaPage() {
   const [retos, setRetos] = useState<Reto[]>(() => loadLS<Reto[]>(LS_RETOS, []));
-  const [user, setUser]   = useState<UserProfileLS>(() => loadLS<UserProfileLS>(LS_USER, {}));
+  // ⬇️ Unificado: cargar perfil desde lib/user (fuente única)
+  const [user, setUser]   = useState<UserProfileLS>(() => (loadUser() as unknown as UserProfileLS));
   const [activePrograms, setActivePrograms] = useState<string[]>(() => loadLS<string[]>(LS_ACTIVE_PROGRAMS, []));
 
   /* Persiste cambios de retos */
@@ -59,24 +62,23 @@ export default function MiZonaPage() {
   /* Refresco inicial + sincronización si el perfil cambia en otra vista/solapa */
   useEffect(() => {
     const sync = () => {
-      setUser(loadLS<UserProfileLS>(LS_USER, {}));
+      setUser(loadUser() as unknown as UserProfileLS);
       setActivePrograms(loadLS<string[]>(LS_ACTIVE_PROGRAMS, []));
     };
     sync(); // primer render
 
     const onStorage = (e: StorageEvent) => {
-      if (e.key === LS_USER || e.key === LS_ACTIVE_PROGRAMS) sync();
+      if (!e.key || e.key === LS_USER || e.key === LS_ACTIVE_PROGRAMS) sync();
     };
     window.addEventListener('storage', onStorage);
     window.addEventListener('focus', sync);
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') sync();
-    });
+    const onVisible = () => { if (document.visibilityState === 'visible') sync(); };
+    document.addEventListener('visibilitychange', onVisible);
 
     return () => {
       window.removeEventListener('storage', onStorage);
       window.removeEventListener('focus', sync);
-      document.removeEventListener('visibilitychange', () => {});
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, []);
 

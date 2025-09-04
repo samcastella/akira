@@ -194,98 +194,118 @@ export default function RegistrationModal({
   }
 
   // ——— Registro por email ———
-async function submitEmailForm(e: React.FormEvent) {
-  e.preventDefault();
-  setErr(null);
-  setInfo(null);
+  async function submitEmailForm(e: React.FormEvent) {
+    e.preventDefault();
+    setErr(null);
+    setInfo(null);
 
-  // No seguimos si faltan básicos o hay error de password
-  if (!canNextForm || passError) return;
+    // No seguimos si faltan básicos o hay error de password
+    if (!canNextForm || passError) return;
 
-  setLoading(true);
-  try {
-    // Normalizamos username aquí (minúsculas, sin @, sin espacios)
-    const normalizedUsername = (user.username || '')
-      .trim()
-      .replace(/^@+/, '')
-      .toLowerCase()
-      .replace(/\s+/g, '');
+    setLoading(true);
+    try {
+      // Normalizamos username (minúsculas, sin @, sin espacios)
+      const normalizedUsername = (user.username || '')
+        .trim()
+        .replace(/^@+/, '')
+        .toLowerCase()
+        .replace(/\s+/g, '');
 
-    const appBase =
-      process.env.NEXT_PUBLIC_SITE_URL ||
-      (typeof window !== 'undefined' ? window.location.origin : undefined);
+      // ⬇️ Verificación de username único en public_profiles
+      if (normalizedUsername) {
+        const { data: existingUser, error: usernameErr } = await supabase
+          .from('public_profiles')
+          .select('user_id')
+          .eq('username', normalizedUsername)
+          .limit(1)
+          .maybeSingle();
 
-    const { data, error } = await supabase.auth.signUp({
-      email: normalizedEmail,
-      password,
-      options: {
-        emailRedirectTo: appBase ? `${appBase}/auth/callback` : undefined,
-        data: { nombre: user.nombre ?? '', apellido: user.apellido ?? '' },
-      },
-    });
+        if (usernameErr && !/column .*username.* does not exist/i.test(usernameErr.message)) {
+          setErr('No se pudo verificar el nombre de usuario. Inténtalo de nuevo.');
+          setLoading(false);
+          return;
+        }
+        if (existingUser) {
+          setErr('Este nombre de usuario ya está registrado.');
+          setLoading(false);
+          return;
+        }
+      }
 
-    // === Detección robusta de “email ya registrado” ===
-    const alreadyExists =
-      (!error &&
-        data?.user &&
-        Array.isArray((data.user as any).identities) &&
-        (data.user as any).identities.length === 0) ||
-      // algunos proyectos devuelven 422 / mensaje "User already registered"
-      (!!error && /already\s*registered|exists|duplic/i.test(error.message));
+      const appBase =
+        process.env.NEXT_PUBLIC_SITE_URL ||
+        (typeof window !== 'undefined' ? window.location.origin : undefined);
 
-    if (alreadyExists) {
-      setErr('Este email ya está registrado. Inicia sesión o recupera tu contraseña.');
-      // pasamos a login con el email ya rellenado
-      setMode('login');
-      setUser((u) => ({ ...u, email: normalizedEmail }));
-      setPassword('');
-      setConfirm('');
-      return;
+      const { data, error } = await supabase.auth.signUp({
+        email: normalizedEmail,
+        password,
+        options: {
+          emailRedirectTo: appBase ? `${appBase}/auth/callback` : undefined,
+          data: { nombre: user.nombre ?? '', apellido: user.apellido ?? '' },
+        },
+      });
+
+      // === Detección robusta de “email ya registrado” ===
+      const alreadyExists =
+        (!error &&
+          data?.user &&
+          Array.isArray((data.user as any).identities) &&
+          (data.user as any).identities.length === 0) ||
+        (!!error && /already\s*registered|exists|duplic/i.test(error.message));
+
+      if (alreadyExists) {
+        setErr('Este email ya está registrado. Inicia sesión o recupera tu contraseña.');
+        // pasamos a login con el email ya rellenado
+        setMode('login');
+        setUser((u) => ({ ...u, email: normalizedEmail }));
+        setPassword('');
+        setConfirm('');
+        return;
+      }
+
+      if (error) {
+        throw new Error(error.message || 'No se pudo crear la cuenta.');
+      }
+
+      // === Registro correcto ===
+      // Guardamos básicos locales normalizados
+      saveUserMerge({
+        username: normalizedUsername || undefined,
+        nombre: user.nombre,
+        apellido: user.apellido,
+        email: normalizedEmail,
+        telefono: (user.telefono || '').trim() || undefined,
+      } as any);
+
+      // Perfil público (best-effort) — incluye username si existe
+      if (data.session?.user) {
+        const uid = data.session.user.id;
+        await supabase
+          .from('public_profiles')
+          .upsert(
+            {
+              user_id: uid,
+              nombre: user.nombre || null,
+              apellido: user.apellido || null,
+              sexo: user.sexo || null,
+              username: normalizedUsername || null, // ⬅️ añadido
+              instagram: null,
+              tiktok: null,
+            },
+            { onConflict: 'user_id' }
+          );
+      }
+
+      setInfo(
+        'Te hemos enviado un correo para confirmar tu email. Puedes verificarlo cuando quieras; no es necesario para continuar ahora.'
+      );
+      setStep(3);
+    } catch (e: any) {
+      setErr(e?.message || 'No se pudo completar el registro.');
+    } finally {
+      setLoading(false);
     }
-
-    if (error) {
-      throw new Error(error.message || 'No se pudo crear la cuenta.');
-    }
-
-    // === Registro correcto ===
-    // Guardamos básicos locales normalizados
-    saveUserMerge({
-      username: normalizedUsername || undefined,
-      nombre: user.nombre,
-      apellido: user.apellido,
-      email: normalizedEmail,
-      telefono: (user.telefono || '').trim() || undefined,
-    } as any);
-
-    // Perfil público (best-effort)
-    if (data.session?.user) {
-      const uid = data.session.user.id;
-      await supabase
-        .from('public_profiles')
-        .upsert(
-          {
-            user_id: uid,
-            nombre: user.nombre || null,
-            apellido: user.apellido || null,
-            sexo: user.sexo || null,
-            instagram: null,
-            tiktok: null,
-          },
-          { onConflict: 'user_id' }
-        );
-    }
-
-    setInfo(
-      'Te hemos enviado un correo para confirmar tu email. Puedes verificarlo cuando quieras; no es necesario para continuar ahora.'
-    );
-    setStep(3);
-  } catch (e: any) {
-    setErr(e?.message || 'No se pudo completar el registro.');
-  } finally {
-    setLoading(false);
   }
-}
-
 
   // ——— Login por email ———
   const canLogin = useMemo(() => !!normalizedEmail && password.length >= 6, [normalizedEmail, password]);
@@ -447,7 +467,7 @@ async function submitEmailForm(e: React.FormEvent) {
             {mode === 'login' ? 'Iniciar sesión' : 'Registro'}
           </h2>
 
-        {/* Puntos de paso solo en registro */}
+          {/* Puntos de paso solo en registro */}
           {mode === 'register' && (
             <div className="flex items-center gap-2 text-[10px]">
               <StepDot active={step >= 1} />
@@ -539,8 +559,13 @@ async function submitEmailForm(e: React.FormEvent) {
                 {err && <p className="text-[11px] text-red-600">{err}</p>}
                 {info && <p className="text-[11px] text-amber-700">{info}</p>}
 
+                {/* ⬇️ Botonera con “Atrás” en una sola línea */}
                 <div className="flex items-center justify-between gap-2">
-                  <button type="button" onClick={() => setMode('register')} className="btn secondary">
+                  <button
+                    type="button"
+                    onClick={() => setMode('register')}
+                    className="btn secondary inline-flex items-center whitespace-nowrap"
+                  >
                     <ArrowLeft size={16} className="mr-1" />
                     Atrás
                   </button>
