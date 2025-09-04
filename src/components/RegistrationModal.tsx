@@ -1,11 +1,11 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { UserProfile, estimateCalories, saveUserMerge } from '@/lib/user';
-import { Rocket, ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { Rocket, ArrowLeft, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { getCopy } from '@/lib/copy';
 import { detectLocale } from '@/lib/locale';
 
@@ -28,11 +28,11 @@ type Props = {
   onClose?: () => void;
   initialStep?: Step;
   prefill?: Partial<FormUser>;
-  initialMode?: Mode;         // permite abrir directamente en modo "login"
-  redirectTo?: string;        // a dónde ir tras login/fin
+  initialMode?: Mode;
+  redirectTo?: string;
 };
 
-const LS_SEEN_AUTH = 'akira_seen_auth_v1'; // mismo nombre que en LayoutClient
+const LS_SEEN_AUTH = 'akira_seen_auth_v1';
 
 export default function RegistrationModal({
   onClose,
@@ -43,7 +43,7 @@ export default function RegistrationModal({
 }: Props) {
   const router = useRouter();
 
-  // i18n: copy centralizado
+  // i18n
   const locale = detectLocale();
   const copy = getCopy(locale);
 
@@ -60,9 +60,18 @@ export default function RegistrationModal({
 
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [showPass, setShowPass] = useState(false);
+  const [showPassConfirm, setShowPassConfirm] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+
+  // Limpia mensajes al cambiar de modo o paso
+  useEffect(() => {
+    setErr(null);
+    setInfo(null);
+  }, [mode, step]);
 
   function handleChange<K extends keyof FormUser>(key: K, value: FormUser[K]) {
     setUser((prev) => ({ ...prev, [key]: value }));
@@ -102,9 +111,15 @@ export default function RegistrationModal({
 
   // ——— OAuth desactivado temporalmente ———
   function oauthSoon() {
+    setErr(null);
     setInfo('Opción todavía no disponible');
     try { alert('Opción todavía no disponible'); } catch {}
+    // Autocierra el aviso
+    window.setTimeout(() => setInfo(null), 2500);
   }
+
+  // Helpers
+  const normalizedEmail = (user.email || '').trim().toLowerCase();
 
   // ——— Registro por email ———
   async function submitEmailForm(e: React.FormEvent) {
@@ -119,37 +134,48 @@ export default function RegistrationModal({
         (typeof window !== 'undefined' ? window.location.origin : undefined);
 
       const { data, error } = await supabase.auth.signUp({
-        email: user.email!,
+        email: normalizedEmail,
         password,
         options: {
           emailRedirectTo: appBase ? `${appBase}/auth/callback` : undefined,
           data: { nombre: user.nombre ?? '', apellido: user.apellido ?? '' },
         },
       });
-      if (error) {
-        const msg = /invalid api key/i.test(error.message)
-          ? 'Error de configuración: la API key pública de Supabase es inválida o no corresponde con la URL del proyecto.'
-          : error.message;
-        throw new Error(msg);
+
+      // Caso especial Supabase: user ya existe → identities = []
+      const alreadyExists =
+        !error && data?.user && Array.isArray((data.user as any).identities) && (data.user as any).identities.length === 0;
+
+      if (error || alreadyExists) {
+        const msg = error?.message || 'Este email ya está registrado. Inicia sesión con tu contraseña.';
+        setErr(msg);
+        // Cambiamos a modo login con el email puesto
+        setMode('login');
+        setUser((u) => ({ ...u, email: normalizedEmail }));
+        setPassword('');
+        setConfirm('');
+        return;
       }
 
+      // Guardar datos básicos locales
       saveUserMerge({
         nombre: user.nombre,
         apellido: user.apellido,
-        email: user.email,
-        telefono: user.telefono,
+        email: normalizedEmail,
+        telefono: (user.telefono || '').trim() || undefined,
       });
 
+      // Perfil público (best-effort)
       if (data.session?.user) {
         const uid = data.session.user.id;
         await supabase.from('public_profiles').upsert(
           {
             user_id: uid,
-          nombre: user.nombre || null,
-          apellido: user.apellido || null,
-          sexo: user.sexo || null,
-          instagram: null,
-          tiktok: null,
+            nombre: user.nombre || null,
+            apellido: user.apellido || null,
+            sexo: user.sexo || null,
+            instagram: null,
+            tiktok: null,
           },
           { onConflict: 'user_id' }
         );
@@ -165,7 +191,7 @@ export default function RegistrationModal({
   }
 
   // ——— Login por email ———
-  const canLogin = useMemo(() => !!(user.email?.trim()) && password.length >= 6, [user.email, password]);
+  const canLogin = useMemo(() => !!normalizedEmail && password.length >= 6, [normalizedEmail, password]);
 
   async function submitLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -176,14 +202,15 @@ export default function RegistrationModal({
     setLoading(true);
     try {
       const { error } = await supabase.auth.signInWithPassword({
-        email: user.email!,
+        email: normalizedEmail,
         password,
       });
       if (error) {
-        const msg = /invalid api key/i.test(error.message)
-          ? 'Error de configuración: la API key pública de Supabase es inválida o no corresponde con la URL del proyecto.'
+        // Mensaje amigable para credenciales inválidas
+        const friendly = /invalid login/i.test(error.message)
+          ? 'Email o contraseña incorrectos.'
           : error.message;
-        throw new Error(msg);
+        throw new Error(friendly);
       }
       try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
       router.replace(redirectTo || '/');
@@ -198,7 +225,7 @@ export default function RegistrationModal({
   async function sendRecovery() {
     setErr(null);
     setInfo(null);
-    if (!user.email?.trim()) {
+    if (!normalizedEmail) {
       setErr('Introduce tu email para enviarte el enlace de recuperación.');
       return;
     }
@@ -208,7 +235,7 @@ export default function RegistrationModal({
         process.env.NEXT_PUBLIC_SITE_URL ||
         (typeof window !== 'undefined' ? window.location.origin : undefined);
 
-      const { error } = await supabase.auth.resetPasswordForEmail(user.email!, {
+      const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
         redirectTo: appBase ? `${appBase}/auth/callback` : undefined,
       });
       if (error) throw error;
@@ -240,7 +267,7 @@ export default function RegistrationModal({
   function finish() {
     saveUserMerge(user);
     try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
-    router.replace(redirectTo || '/'); // evita volver a ver splash
+    router.replace(redirectTo || '/');
     onClose?.();
   }
 
@@ -334,13 +361,30 @@ export default function RegistrationModal({
 
                 <label className="block text-xs">
                   <span className="font-medium">Contraseña</span>
-                  <input
-                    type="password"
-                    className="mt-1 input text-[16px]"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                  />
+                  <div className="relative">
+                    <input
+                      type={showPass ? 'text' : 'password'}
+                      className="mt-1 input text-[16px] w-full pr-10"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPass((v) => !v)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 opacity-70 hover:opacity-100"
+                      aria-label={showPass ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                    >
+                      {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={sendRecovery}
+                    className="mt-1 text-[11px] underline underline-offset-2"
+                  >
+                    He olvidado mi contraseña
+                  </button>
                 </label>
 
                 {err && <p className="text-[11px] text-red-600">{err}</p>}
@@ -351,14 +395,9 @@ export default function RegistrationModal({
                     <ArrowLeft size={16} className="mr-1" />
                     Atrás
                   </button>
-                  <div className="flex gap-2">
-                    <button type="button" onClick={sendRecovery} className="btn secondary">
-                      Recuperar contraseña
-                    </button>
-                    <button type="submit" disabled={!canLogin || loading} className="btn disabled:opacity-50">
-                      {loading ? 'Entrando…' : 'Entrar'}
-                    </button>
-                  </div>
+                  <button type="submit" disabled={!canLogin || loading} className="btn disabled:opacity-50">
+                    {loading ? 'Entrando…' : 'Entrar'}
+                  </button>
                 </div>
               </form>
             </div>
@@ -453,23 +492,43 @@ export default function RegistrationModal({
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <label className="block text-xs">
                       <span className="font-medium">Contraseña</span>
-                      <input
-                        type="password"
-                        className="mt-1 input text-[16px]"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        required
-                      />
+                      <div className="relative">
+                        <input
+                          type={showPass ? 'text' : 'password'}
+                          className="mt-1 input text-[16px] w-full pr-10"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          required
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPass((v) => !v)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 opacity-70 hover:opacity-100"
+                          aria-label={showPass ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                        >
+                          {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </button>
+                      </div>
                     </label>
                     <label className="block text-xs">
                       <span className="font-medium">Repetir contraseña</span>
-                      <input
-                        type="password"
-                        className="mt-1 input text-[16px]"
-                        value={confirm}
-                        onChange={(e) => setConfirm(e.target.value)}
-                        required
-                      />
+                      <div className="relative">
+                        <input
+                          type={showPassConfirm ? 'text' : 'password'}
+                          className="mt-1 input text-[16px] w-full pr-10"
+                          value={confirm}
+                          onChange={(e) => setConfirm(e.target.value)}
+                          required
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassConfirm((v) => !v)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 opacity-70 hover:opacity-100"
+                          aria-label={showPassConfirm ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                        >
+                          {showPassConfirm ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </button>
+                      </div>
                     </label>
                   </div>
                   {passError && <p className="text-[11px] text-red-600">{passError}</p>}
