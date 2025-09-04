@@ -23,6 +23,7 @@ function CallbackInner() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  // leemos el "type" ya sea en query (?type=) o en el hash (#access_token&...&type=)
   const linkType = useMemo(() => {
     let t = params.get('type') || undefined;
     if (typeof window !== 'undefined' && !t && window.location.hash) {
@@ -36,6 +37,7 @@ function CallbackInner() {
     let alive = true;
     (async () => {
       try {
+        // 1) Nos aseguramos de intercambiar el code por sesión si viene en la URL
         let { data: sdata } = await supabase.auth.getSession();
         if (!sdata.session && typeof window !== 'undefined') {
           try {
@@ -45,13 +47,24 @@ function CallbackInner() {
         }
         if (!alive) return;
 
-        if (linkType === 'recovery' || sdata.session) {
+        // 2) Si es recuperación → mostramos el form para nueva contraseña
+        if (linkType === 'recovery') {
           setPhase('reset');
           setInfo('Introduce tu nueva contraseña.');
-        } else {
-          setPhase('done');
-          router.replace('/');
+          return;
         }
+
+        // 3) Para cualquier otro tipo de enlace válido (signup/email_change/magiclink…),
+        //    si hay sesión activa tras el exchange, vamos a /auth/confirmed
+        if (sdata.session) {
+          setPhase('done');
+          router.replace('/auth/confirmed');
+          return;
+        }
+
+        // 4) Si no hay sesión y no es recovery, no podemos validar el enlace
+        setPhase('error');
+        setErr('No se pudo validar el enlace.');
       } catch (e: any) {
         if (!alive) return;
         setErr(e?.message || 'No se pudo procesar el enlace.');

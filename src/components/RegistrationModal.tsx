@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
@@ -14,6 +14,7 @@ type Sex = 'masculino' | 'femenino' | 'prefiero_no_decirlo';
 type Act = 'sedentario' | 'ligero' | 'moderado' | 'intenso';
 
 type FormUser = UserProfile & {
+  username?: string;          // 👈 nuevo
   sexo?: Sex;
   edad?: number;
   estatura?: number;
@@ -50,6 +51,7 @@ export default function RegistrationModal({
   const [mode, setMode] = useState<Mode>(initialMode);
   const [step, setStep] = useState<Step>(initialStep);
   const [user, setUser] = useState<FormUser>({
+    username: prefill?.username ?? '',
     nombre: prefill?.nombre ?? '',
     apellido: prefill?.apellido ?? '',
     email: prefill?.email ?? '',
@@ -67,22 +69,63 @@ export default function RegistrationModal({
   const [err, setErr] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
 
-  // Limpia mensajes al cambiar de modo o paso
+  // === Scroll fixes ===
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // 1) Reset scroll al cambiar de paso o modo
   useEffect(() => {
+    try {
+      scrollRef.current?.scrollTo({ top: 0, behavior: 'auto' });
+    } catch {}
+    // limpiamos mensajes al navegar entre pantallas
     setErr(null);
     setInfo(null);
   }, [mode, step]);
+
+  // 2) Lock del scroll del body mientras el modal está abierto
+  useEffect(() => {
+    const body = document.body;
+    const prev = {
+      overflow: body.style.overflow,
+      position: body.style.position,
+      top: body.style.top,
+      width: body.style.width,
+      touchAction: (body.style as any).touchAction as string | undefined,
+    };
+    const scrollY = window.scrollY;
+    body.style.overflow = 'hidden';
+    body.style.position = 'fixed';
+    body.style.top = `-${scrollY}px`;
+    body.style.width = '100%';
+    (body.style as any).touchAction = 'none';
+
+    return () => {
+      body.style.overflow = prev.overflow;
+      body.style.position = prev.position;
+      body.style.top = prev.top;
+      body.style.width = prev.width;
+      (body.style as any).touchAction = prev.touchAction ?? '';
+      const y = -(parseInt(prev.top || '0', 10)) || scrollY;
+      window.scrollTo(0, y);
+    };
+  }, []);
 
   function handleChange<K extends keyof FormUser>(key: K, value: FormUser[K]) {
     setUser((prev) => ({ ...prev, [key]: value }));
   }
 
+  const normalizedEmail = (user.email || '').trim().toLowerCase();
+
   const canNextForm = useMemo(() => {
-    const okBasics = !!user.nombre?.trim() && !!user.apellido?.trim() && !!user.email?.trim();
+    const okBasics =
+      !!user.username?.trim() &&
+      !!user.nombre?.trim() &&
+      !!user.apellido?.trim() &&
+      !!normalizedEmail;
     const passLen = password.length >= 6;
     const match = password === confirm;
     return okBasics && passLen && match;
-  }, [user.nombre, user.apellido, user.email, password, confirm]);
+  }, [user.username, user.nombre, user.apellido, normalizedEmail, password, confirm]);
 
   const passError = useMemo(() => {
     if (!password && !confirm) return '';
@@ -114,12 +157,8 @@ export default function RegistrationModal({
     setErr(null);
     setInfo('Opción todavía no disponible');
     try { alert('Opción todavía no disponible'); } catch {}
-    // Autocierra el aviso
     window.setTimeout(() => setInfo(null), 2500);
   }
-
-  // Helpers
-  const normalizedEmail = (user.email || '').trim().toLowerCase();
 
   // ——— Registro por email ———
   async function submitEmailForm(e: React.FormEvent) {
@@ -142,14 +181,13 @@ export default function RegistrationModal({
         },
       });
 
-      // Caso especial Supabase: user ya existe → identities = []
+      // Supabase: si el email ya existe, identities = []
       const alreadyExists =
         !error && data?.user && Array.isArray((data.user as any).identities) && (data.user as any).identities.length === 0;
 
       if (error || alreadyExists) {
         const msg = error?.message || 'Este email ya está registrado. Inicia sesión con tu contraseña.';
         setErr(msg);
-        // Cambiamos a modo login con el email puesto
         setMode('login');
         setUser((u) => ({ ...u, email: normalizedEmail }));
         setPassword('');
@@ -157,15 +195,16 @@ export default function RegistrationModal({
         return;
       }
 
-      // Guardar datos básicos locales
+      // Guardar datos básicos locales (incluye username; si el tipo no lo acepta aún, el cast evita TS hasta que actualicemos user.ts)
       saveUserMerge({
+        username: user.username,
         nombre: user.nombre,
         apellido: user.apellido,
         email: normalizedEmail,
         telefono: (user.telefono || '').trim() || undefined,
-      });
+      } as any);
 
-      // Perfil público (best-effort)
+      // Perfil público (sin username para evitar error si aún no hay columna)
       if (data.session?.user) {
         const uid = data.session.user.id;
         await supabase.from('public_profiles').upsert(
@@ -206,7 +245,6 @@ export default function RegistrationModal({
         password,
       });
       if (error) {
-        // Mensaje amigable para credenciales inválidas
         const friendly = /invalid login/i.test(error.message)
           ? 'Email o contraseña incorrectos.'
           : error.message;
@@ -265,7 +303,9 @@ export default function RegistrationModal({
   }
 
   function finish() {
-    saveUserMerge(user);
+    // Guardamos username si aún no se guardó
+    saveUserMerge({ username: user.username } as any);
+    saveUserMerge(user as any);
     try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
     router.replace(redirectTo || '/');
     onClose?.();
@@ -317,7 +357,11 @@ export default function RegistrationModal({
           )}
         </div>
 
-        <div className="px-6 pb-6 overflow-y-auto">
+        <div
+          ref={scrollRef}
+          className="px-6 pb-6 overflow-y-auto"
+          style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' as any }}
+        >
           {/* ======== LOGIN MODE ======== */}
           {mode === 'login' && (
             <div className="space-y-4">
@@ -456,6 +500,17 @@ export default function RegistrationModal({
                     <p className="text-base font-extrabold mb-1">Regístrate con tu email</p>
                     <p className="text-xs text-gray-600">Completa el formulario para crear tu cuenta.</p>
                   </div>
+
+                  {/* 👇 NUEVO: Nombre de usuario */}
+                  <label className="block text-xs">
+                    <span className="font-medium">Nombre de usuario</span>
+                    <input
+                      className="mt-1 input text-[16px]"
+                      value={user.username ?? ''}
+                      onChange={(e) => handleChange('username', e.target.value)}
+                      required
+                    />
+                  </label>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <label className="block text-xs">

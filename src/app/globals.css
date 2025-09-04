@@ -403,3 +403,23 @@ details.accordion summary::-webkit-details-marker { display: none; }
   grid-template-columns: 1fr;
   gap: 12px;
 }
+/* ===== Scroll utilities (modales y paneles con overflow) ===== */
+html {
+  /* navegación entre pantallas más agradable; no afecta a scrollTo({behavior:'auto'}) */
+  scroll-behavior: smooth;
+}
+
+.scroll-area {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch; /* inercia iOS */
+  overscroll-behavior: contain;      /* evita que arrastre el body */
+  scrollbar-gutter: stable both-edges;/* menos “saltos” al aparecer la barra */
+  touch-action: pan-y;               /* gestos verticales más fiables en iOS */
+}
+
+/* Bloquea el scroll del body mientras hay un modal abierto (si lo usas) */
+body.modal-open {
+  overflow: hidden;
+  position: fixed;
+  width: 100%;
+}

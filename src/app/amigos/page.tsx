@@ -72,34 +72,51 @@ export default function AmigosPage() {
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
   const [tab, setTab] = useState<'crear' | 'unirse' | 'retos' | 'buscar' | 'ranking'>('crear');
 
-  // Obtener userId sin redirecciones manuales (RequireAuth se encarga)
+  // Scroll siempre arriba al entrar en la página
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setSessionUserId(data.user?.id ?? null);
-    });
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, []);
+  // Y también al cambiar de pestaña
+  useEffect(() => {
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [tab]);
+
+  // Obtener userId de sesión (sin forzar ningún flujo de login)
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      if (!alive) return;
+      setSessionUserId(data.session?.user?.id ?? null);
+    })();
+    return () => { alive = false; };
   }, []);
 
   // Sube/actualiza mi perfil público con lo que haya en local (nombre/rrss)
   useEffect(() => {
     if (!sessionUserId) return;
-    try {
-      const raw = localStorage.getItem('akira_user_v1');
-      const me = raw ? JSON.parse(raw) : {};
-      supabase
-        .from('public_profiles')
-        .upsert(
-          {
-            user_id: sessionUserId,
-            nombre: me.nombre || null,
-            apellido: me.apellido || null,
-            sexo: me.sexo || null,
-            instagram: me.instagram || null,
-            tiktok: me.tiktok || null,
-          },
-          { onConflict: 'user_id' }
-        )
-        .then();
-    } catch {}
+    let cancelled = false;
+    (async () => {
+      try {
+        const raw = localStorage.getItem('akira_user_v1');
+        const me = raw ? JSON.parse(raw) : {};
+        const { error } = await supabase
+          .from('public_profiles')
+          .upsert(
+            {
+              user_id: sessionUserId,
+              nombre: me.nombre || null,
+              apellido: me.apellido || null,
+              sexo: me.sexo || null,
+              instagram: me.instagram || null,
+              tiktok: me.tiktok || null,
+            },
+            { onConflict: 'user_id' }
+          );
+        if (error && !cancelled) console.error(error);
+      } catch {}
+    })();
+    return () => { cancelled = true; };
   }, [sessionUserId]);
 
   return (
@@ -362,7 +379,11 @@ function MyChallenges({ userId }: { userId: string }) {
   }
 
   useEffect(() => {
-    refresh();
+    let alive = true;
+    (async () => {
+      await refresh();
+    })();
+    return () => { alive = false; };
   }, [userId]);
 
   return (
@@ -400,13 +421,21 @@ function EditorDays({ challengeId, ownerId }: { challengeId: string; ownerId: st
   const [myId, setMyId] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setMyId(data.user?.id ?? null));
+    let alive = true;
+    supabase.auth.getUser().then(({ data }) => {
+      if (!alive) return;
+      setMyId(data.user?.id ?? null);
+    });
     supabase
       .from('challenge_days')
       .select('id, day, title')
       .eq('challenge_id', challengeId)
       .order('day')
-      .then(({ data }) => setDays(data || []));
+      .then(({ data }) => {
+        if (!alive) return;
+        setDays(data || []);
+      });
+    return () => { alive = false; };
   }, [challengeId]);
 
   const canEdit = myId === ownerId;
@@ -447,8 +476,10 @@ function Friends({ userId }: { userId: string }) {
 
   // carga directorio y estado de amistades
   useEffect(() => {
+    let alive = true;
     async function loadAll() {
       const { data: users } = await supabase.from('public_profiles').select('*');
+      if (!alive) return;
       const map: Record<string, PublicProfile> = {};
       (users || []).forEach((u) => (map[u.user_id] = u));
       setDir(map);
@@ -459,6 +490,7 @@ function Friends({ userId }: { userId: string }) {
         .select('requester')
         .eq('addressee', userId)
         .eq('status', 'pending');
+      if (!alive) return;
       setPendingIn((pendIn || []).map((r) => r.requester));
 
       // amigos aceptados
@@ -473,6 +505,7 @@ function Friends({ userId }: { userId: string }) {
         .eq('addressee', userId)
         .eq('status', 'accepted');
 
+      if (!alive) return;
       const ids = [
         ...(acceptedAsReq || []).map((r) => r.addressee as string),
         ...(acceptedAsAdd || []).map((r) => r.requester as string),
@@ -480,6 +513,7 @@ function Friends({ userId }: { userId: string }) {
       setFriends(ids);
     }
     loadAll();
+    return () => { alive = false; };
   }, [userId]);
 
   const results = useMemo(() => {
