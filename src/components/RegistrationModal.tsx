@@ -14,7 +14,7 @@ type Sex = 'masculino' | 'femenino' | 'prefiero_no_decirlo';
 type Act = 'sedentario' | 'ligero' | 'moderado' | 'intenso';
 
 type FormUser = UserProfile & {
-  username?: string;          // 👈 nuevo
+  username?: string;
   sexo?: Sex;
   edad?: number;
   estatura?: number;
@@ -72,12 +72,18 @@ export default function RegistrationModal({
   // === Scroll fixes ===
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Validación para “Calcular” (faltan datos)
+  const [missing, setMissing] = useState<{ edad: boolean; estatura: boolean; peso: boolean }>({
+    edad: false,
+    estatura: false,
+    peso: false,
+  });
+
   // 1) Reset scroll al cambiar de paso o modo
   useEffect(() => {
     try {
       scrollRef.current?.scrollTo({ top: 0, behavior: 'auto' });
     } catch {}
-    // limpiamos mensajes al navegar entre pantallas
     setErr(null);
     setInfo(null);
   }, [mode, step]);
@@ -137,17 +143,35 @@ export default function RegistrationModal({
   function handleAutoCalories() {
     try {
       const est = estimateCalories?.(user as UserProfile);
-      if (est) return setUser((p) => ({ ...p, caloriasDiarias: est }));
+      if (est) {
+        setMissing({ edad: false, estatura: false, peso: false });
+        return setUser((p) => ({ ...p, caloriasDiarias: est }));
+      }
     } catch {}
-    const { sexo, edad, estatura, peso, actividad } = user;
-    if (!edad || !estatura || !peso) return;
+    const { edad, estatura, peso } = user;
+    // Marca faltantes si no hay datos
+    const nextMissing = {
+      edad: !edad && edad !== 0,
+      estatura: !estatura && estatura !== 0,
+      peso: !peso && peso !== 0,
+    };
+    setMissing(nextMissing);
+    if (nextMissing.edad || nextMissing.estatura || nextMissing.peso) return;
+
+    // Cálculo manual (por si no entra en estimateCalories)
     const base =
-      10 * (peso ?? 0) + 6.25 * (estatura ?? 0) - 5 * (edad ?? 0) +
-      (sexo === 'masculino' ? 5 : sexo === 'femenino' ? -161 : 0);
+      10 * (user.peso ?? 0) +
+      6.25 * (user.estatura ?? 0) -
+      5 * (user.edad ?? 0) +
+      (user.sexo === 'masculino' ? 5 : user.sexo === 'femenino' ? -161 : 0);
     const factor =
-      actividad === 'ligero' ? 1.375 :
-      actividad === 'moderado' ? 1.55 :
-      actividad === 'intenso' ? 1.725 : 1.2;
+      user.actividad === 'ligero'
+        ? 1.375
+        : user.actividad === 'moderado'
+        ? 1.55
+        : user.actividad === 'intenso'
+        ? 1.725
+        : 1.2;
     const tdee = Math.round(base * factor);
     setUser((p) => ({ ...p, caloriasDiarias: tdee }));
   }
@@ -156,7 +180,9 @@ export default function RegistrationModal({
   function oauthSoon() {
     setErr(null);
     setInfo('Opción todavía no disponible');
-    try { alert('Opción todavía no disponible'); } catch {}
+    try {
+      alert('Opción todavía no disponible');
+    } catch {}
     window.setTimeout(() => setInfo(null), 2500);
   }
 
@@ -183,7 +209,10 @@ export default function RegistrationModal({
 
       // Supabase: si el email ya existe, identities = []
       const alreadyExists =
-        !error && data?.user && Array.isArray((data.user as any).identities) && (data.user as any).identities.length === 0;
+        !error &&
+        data?.user &&
+        Array.isArray((data.user as any).identities) &&
+        (data.user as any).identities.length === 0;
 
       if (error || alreadyExists) {
         const msg = error?.message || 'Este email ya está registrado. Inicia sesión con tu contraseña.';
@@ -195,7 +224,7 @@ export default function RegistrationModal({
         return;
       }
 
-      // Guardar datos básicos locales (incluye username; si el tipo no lo acepta aún, el cast evita TS hasta que actualicemos user.ts)
+      // Guardar datos básicos locales
       saveUserMerge({
         username: user.username,
         nombre: user.nombre,
@@ -204,23 +233,27 @@ export default function RegistrationModal({
         telefono: (user.telefono || '').trim() || undefined,
       } as any);
 
-      // Perfil público (sin username para evitar error si aún no hay columna)
+      // Perfil público (best-effort)
       if (data.session?.user) {
         const uid = data.session.user.id;
-        await supabase.from('public_profiles').upsert(
-          {
-            user_id: uid,
-            nombre: user.nombre || null,
-            apellido: user.apellido || null,
-            sexo: user.sexo || null,
-            instagram: null,
-            tiktok: null,
-          },
-          { onConflict: 'user_id' }
-        );
+        await supabase
+          .from('public_profiles')
+          .upsert(
+            {
+              user_id: uid,
+              nombre: user.nombre || null,
+              apellido: user.apellido || null,
+              sexo: user.sexo || null,
+              instagram: null,
+              tiktok: null,
+            },
+            { onConflict: 'user_id' }
+          );
       }
 
-      setInfo('Te hemos enviado un correo para confirmar tu email. Puedes verificarlo cuando quieras; no es necesario para continuar ahora.');
+      setInfo(
+        'Te hemos enviado un correo para confirmar tu email. Puedes verificarlo cuando quieras; no es necesario para continuar ahora.'
+      );
       setStep(3);
     } catch (e: any) {
       setErr(e?.message || 'No se pudo completar el registro.');
@@ -250,7 +283,32 @@ export default function RegistrationModal({
           : error.message;
         throw new Error(friendly);
       }
-      try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
+
+      // 🔹 Cargar perfil público y guardarlo en local para “Mi Zona”
+      const { data: udata } = await supabase.auth.getUser();
+      const uid = udata.user?.id;
+      const email = udata.user?.email || normalizedEmail;
+
+      if (uid) {
+        const { data: profile } = await supabase
+          .from('public_profiles')
+          .select('nombre, apellido, sexo')
+          .eq('user_id', uid)
+          .maybeSingle();
+
+        saveUserMerge({
+          email,
+          nombre: profile?.nombre ?? user.nombre ?? '',
+          apellido: profile?.apellido ?? user.apellido ?? '',
+          sexo: (profile?.sexo as Sex | undefined) ?? user.sexo,
+        });
+      } else {
+        saveUserMerge({ email });
+      }
+
+      try {
+        localStorage.setItem(LS_SEEN_AUTH, '1');
+      } catch {}
       router.replace(redirectTo || '/');
       onClose?.();
     } catch (e: any) {
@@ -303,10 +361,11 @@ export default function RegistrationModal({
   }
 
   function finish() {
-    // Guardamos username si aún no se guardó
     saveUserMerge({ username: user.username } as any);
     saveUserMerge(user as any);
-    try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
+    try {
+      localStorage.setItem(LS_SEEN_AUTH, '1');
+    } catch {}
     router.replace(redirectTo || '/');
     onClose?.();
   }
@@ -396,6 +455,7 @@ export default function RegistrationModal({
                   <span className="font-medium">Email</span>
                   <input
                     type="email"
+                    autoComplete="email"
                     className="mt-1 input text-[16px]"
                     value={user.email ?? ''}
                     onChange={(e) => handleChange('email', e.target.value)}
@@ -408,6 +468,7 @@ export default function RegistrationModal({
                   <div className="relative">
                     <input
                       type={showPass ? 'text' : 'password'}
+                      autoComplete="current-password"
                       className="mt-1 input text-[16px] w-full pr-10"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
@@ -415,6 +476,7 @@ export default function RegistrationModal({
                     />
                     <button
                       type="button"
+                      aria-pressed={showPass}
                       onClick={() => setShowPass((v) => !v)}
                       className="absolute right-2 top-1/2 -translate-y-1/2 p-1 opacity-70 hover:opacity-100"
                       aria-label={showPass ? 'Ocultar contraseña' : 'Mostrar contraseña'}
@@ -501,11 +563,12 @@ export default function RegistrationModal({
                     <p className="text-xs text-gray-600">Completa el formulario para crear tu cuenta.</p>
                   </div>
 
-                  {/* 👇 NUEVO: Nombre de usuario */}
+                  {/* Nombre de usuario */}
                   <label className="block text-xs">
                     <span className="font-medium">Nombre de usuario</span>
                     <input
                       className="mt-1 input text-[16px]"
+                      autoComplete="username"
                       value={user.username ?? ''}
                       onChange={(e) => handleChange('username', e.target.value)}
                       required
@@ -537,6 +600,7 @@ export default function RegistrationModal({
                     <span className="font-medium">Email</span>
                     <input
                       type="email"
+                      autoComplete="email"
                       className="mt-1 input text-[16px]"
                       value={user.email ?? ''}
                       onChange={(e) => handleChange('email', e.target.value)}
@@ -550,6 +614,7 @@ export default function RegistrationModal({
                       <div className="relative">
                         <input
                           type={showPass ? 'text' : 'password'}
+                          autoComplete="new-password"
                           className="mt-1 input text-[16px] w-full pr-10"
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
@@ -557,6 +622,7 @@ export default function RegistrationModal({
                         />
                         <button
                           type="button"
+                          aria-pressed={showPass}
                           onClick={() => setShowPass((v) => !v)}
                           className="absolute right-2 top-1/2 -translate-y-1/2 p-1 opacity-70 hover:opacity-100"
                           aria-label={showPass ? 'Ocultar contraseña' : 'Mostrar contraseña'}
@@ -570,6 +636,7 @@ export default function RegistrationModal({
                       <div className="relative">
                         <input
                           type={showPassConfirm ? 'text' : 'password'}
+                          autoComplete="new-password"
                           className="mt-1 input text-[16px] w-full pr-10"
                           value={confirm}
                           onChange={(e) => setConfirm(e.target.value)}
@@ -577,6 +644,7 @@ export default function RegistrationModal({
                         />
                         <button
                           type="button"
+                          aria-pressed={showPassConfirm}
                           onClick={() => setShowPassConfirm((v) => !v)}
                           className="absolute right-2 top-1/2 -translate-y-1/2 p-1 opacity-70 hover:opacity-100"
                           aria-label={showPassConfirm ? 'Ocultar contraseña' : 'Mostrar contraseña'}
@@ -668,8 +736,12 @@ export default function RegistrationModal({
                         min={5}
                         className="mt-1 input text-[16px]"
                         value={user.edad ?? ''}
-                        onChange={(e) => handleChange('edad', e.target.value ? Number(e.target.value) : undefined)}
+                        onChange={(e) => {
+                          handleChange('edad', e.target.value ? Number(e.target.value) : undefined);
+                          setMissing((m) => ({ ...m, edad: false }));
+                        }}
                       />
+                      {missing.edad && <p className="text-[11px] text-red-600 mt-1">Falta este dato</p>}
                     </label>
 
                     <label className="block text-xs">
@@ -679,8 +751,12 @@ export default function RegistrationModal({
                         min={80}
                         className="mt-1 input text-[16px]"
                         value={user.estatura ?? ''}
-                        onChange={(e) => handleChange('estatura', e.target.value ? Number(e.target.value) : undefined)}
+                        onChange={(e) => {
+                          handleChange('estatura', e.target.value ? Number(e.target.value) : undefined);
+                          setMissing((m) => ({ ...m, estatura: false }));
+                        }}
                       />
+                      {missing.estatura && <p className="text-[11px] text-red-600 mt-1">Falta este dato</p>}
                     </label>
 
                     <label className="block text-xs">
@@ -691,8 +767,12 @@ export default function RegistrationModal({
                         step="0.1"
                         className="mt-1 input text-[16px]"
                         value={user.peso ?? ''}
-                        onChange={(e) => handleChange('peso', e.target.value ? Number(e.target.value) : undefined)}
+                        onChange={(e) => {
+                          handleChange('peso', e.target.value ? Number(e.target.value) : undefined);
+                          setMissing((m) => ({ ...m, peso: false }));
+                        }}
                       />
+                      {missing.peso && <p className="text-[11px] text-red-600 mt-1">Falta este dato</p>}
                     </label>
 
                     <label className="block text-xs">
