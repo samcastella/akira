@@ -210,26 +210,32 @@ export default function RegistrationModal({
     setMissing(nextMissing);
     if (nextMissing.edad || nextMissing.estatura || nextMissing.peso) return;
 
-    const base =
-      10 * (user.peso ?? 0) +
-      6.25 * (user.estatura ?? 0) -
-      5 * (user.edad ?? 0) +
-      (user.sexo === 'masculino' ? 5 : 'femenino' ? -161 : 0);
-    const factor =
-      user.actividad === 'ligero'
-        ? 1.375
-        : user.actividad === 'moderado'
-        ? 1.55
-        : user.actividad === 'intenso'
-        ? 1.725
-        : 1.2;
-    const tdee = Math.round(base * factor);
-    setUser((p) => {
-      const next = { ...p, caloriasDiarias: tdee };
-      persistBodyMetrics({ caloriasDiarias: tdee });
-      return next;
-    });
-  }
+    const sexAdj =
+  user.sexo === 'masculino' ? 5 :
+  user.sexo === 'femenino'  ? -161 : 0;
+
+const base =
+  10 * (user.peso ?? 0) +
+  6.25 * (user.estatura ?? 0) -
+  5 * (user.edad ?? 0) +
+  sexAdj;
+
+const activityFactor: Record<Act, number> = {
+  sedentario: 1.2,
+  ligero: 1.375,
+  moderado: 1.55,
+  intenso: 1.725,
+};
+
+const factor = activityFactor[(user.actividad ?? 'sedentario') as Act];
+
+const tdee = Math.round(base * factor);
+setUser((p) => {
+  const next = { ...p, caloriasDiarias: tdee };
+  persistBodyMetrics({ caloriasDiarias: tdee });
+  return next;
+});
+
 
   // ——— OAuth desactivado temporalmente ———
   function oauthSoon() {
