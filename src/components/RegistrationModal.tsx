@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
-import { UserProfile, estimateCalories, saveUserMerge } from '@/lib/user';
+import { UserProfile, estimateCalories, saveUserMerge, loadUser, LS_USER_KEY } from '@/lib/user';
 import { Rocket, ArrowLeft, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { getCopy } from '@/lib/copy';
 import { detectLocale } from '@/lib/locale';
@@ -199,46 +199,61 @@ export default function RegistrationModal({
     return '';
   }, [password, confirm]);
 
-  /** Guarda métricas en local y, best-effort, en Supabase */
-  function persistBodyMetrics(extra?: Partial<FormUser>) {
-    const merged: Partial<FormUser> = {
-      sexo: user.sexo,
-      fechaNacimiento: user.fechaNacimiento,
-      edad: user.edad, // por compatibilidad
-      estatura: user.estatura,
-      peso: user.peso,
-      actividad: user.actividad,
-      caloriasDiarias: user.caloriasDiarias,
-      ...(extra ?? {}),
-    };
-    saveUserMerge(merged);
+/** Guarda métricas en local y, best-effort, en Supabase.
+ *  Si opts.silent === true, NO emite el evento 'akira:user-updated'
+ *  (así el modal no se cierra) y solo actualiza localStorage.
+ */
+function persistBodyMetrics(extra?: Partial<FormUser>, opts?: { silent?: boolean }) {
+  const merged: Partial<FormUser> = {
+    sexo: user.sexo,
+    fechaNacimiento: user.fechaNacimiento,
+    edad: user.edad, // compat
+    estatura: user.estatura,
+    peso: user.peso,
+    actividad: user.actividad,
+    caloriasDiarias: user.caloriasDiarias,
+    ...(extra ?? {}),
+  };
 
-    (async () => {
-      try {
-        const { data: u } = await supabase.auth.getUser();
-        const uid = u.user?.id;
-        if (!uid) return;
-
-        // edad derivada para guardar (sin enseñarla en UI)
-        const derivedAge = merged.edad ?? ageFromDOB(merged.fechaNacimiento);
-
-        await supabase
-          .from('public_profiles')
-          .update({
-            sexo: user.sexo ?? null,
-            edad: derivedAge ?? null,
-            estatura: user.estatura ?? null,
-            peso: user.peso ?? null,
-            calorias_diarias: (merged.caloriasDiarias ?? user.caloriasDiarias) ?? null,
-            fecha_nacimiento: user.fechaNacimiento ?? null,
-            telefono: user.telefono ?? null,
-          })
-          .eq('user_id', uid);
-      } catch {
-        // noop
-      }
-    })();
+  if (opts?.silent) {
+    // merge local SIN emitir evento
+    try {
+      const prev = loadUser();
+      const next = { ...prev, ...merged };
+      localStorage.setItem(LS_USER_KEY, JSON.stringify(next));
+      // no dispatch de 'akira:user-updated'
+    } catch {}
+  } else {
+    // merge normal (emite evento)
+    saveUserMerge(merged as UserProfile);
   }
+
+  // Best-effort a Supabase (no afecta al modal)
+  (async () => {
+    try {
+      const { data: u } = await supabase.auth.getUser();
+      const uid = u.user?.id;
+      if (!uid) return;
+
+      const derivedAge = merged.edad ?? ageFromDOB(merged.fechaNacimiento);
+
+      await supabase
+        .from('public_profiles')
+        .update({
+          sexo: merged.sexo ?? null,
+          edad: derivedAge ?? null,
+          estatura: merged.estatura ?? null,
+          peso: merged.peso ?? null,
+          calorias_diarias: merged.caloriasDiarias ?? null,
+          fecha_nacimiento: merged.fechaNacimiento ?? null,
+          telefono: user.telefono ?? null,
+        })
+        .eq('user_id', uid);
+    } catch {
+      // noop
+    }
+  })();
+}
 
 function handleAutoCalories() {
   try {
@@ -529,16 +544,17 @@ function handleAutoCalories() {
   function goToPersonalize() { setStep(4); }
 
   function savePersonalizeAndNext(e: React.FormEvent) {
-    e.preventDefault();
-    if (savingPersonalize) return;
-    setSavingPersonalize(true);
-    try {
-      persistBodyMetrics();
-      setStep(5);
-    } finally {
-      setSavingPersonalize(false);
-    }
+  e.preventDefault();
+  if (savingPersonalize) return;
+  setSavingPersonalize(true);
+  try {
+    // Guardamos en local/Supabase SIN evento → no se cierra el modal
+    persistBodyMetrics(undefined, { silent: true });
+    setStep(5);
+  } finally {
+    setSavingPersonalize(false);
   }
+}
 
   function finish() {
     if (finishing) return;
@@ -965,9 +981,14 @@ function handleAutoCalories() {
                   </div>
 
                   <p className="text-xs text-gray-600 text-center mt-2">
-                    <button type="button" onClick={() => { persistBodyMetrics(); setStep(5); }} className="underline underline-offset-2">
-                      Omitir este paso
-                    </button>
+                    <button
+  type="button"
+  onClick={() => { persistBodyMetrics(undefined, { silent: true }); setStep(5); }}
+  className="underline underline-offset-2"
+>
+  Omitir este paso
+</button>
+
                   </p>
 
                   <div className="flex justify-end">
