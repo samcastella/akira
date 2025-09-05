@@ -1,8 +1,12 @@
+// src/app/mizona/page.tsx
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Check, RotateCcw, Trash2, Camera } from 'lucide-react';
+import {
+  Check, RotateCcw, Trash2, Camera,
+  ChevronRight, ChevronLeft
+} from 'lucide-react';
 
 /* ====== usuario (reactivo) ====== */
 import { useUserProfile } from '@/lib/user';
@@ -49,8 +53,29 @@ const fmtKg = (v?: number) => (typeof v === 'number' ? `${v} kg` : '—');
 const fmtCm = (v?: number) => (typeof v === 'number' ? `${v} cm` : '—');
 const fmtKcal = (v?: number) => (typeof v === 'number' ? `${v} kcal` : '—');
 
+/* ===== helpers de calendario/semana ===== */
+function mondayOf(date: Date) {
+  const d = new Date(date);
+  const day = (d.getDay() + 6) % 7; // 0=lunes
+  d.setDate(d.getDate() - day);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+function addDays(d: Date, n: number) {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
+function ymd(d: Date) {
+  return d.toISOString().slice(0, 10);
+}
+
 /* ====== página ====== */
+type Tab = 'habitos' | 'crear' | 'logros' | 'perfil';
+
 export default function MiZonaPage() {
+  const [tab, setTab] = useState<Tab>('habitos');
+
   const [retos, setRetos] = useState<Reto[]>(() => loadLS<Reto[]>(LS_RETOS, []));
   const user = useUserProfile() as unknown as UserProfileLS; // ← reactivo a cambios del perfil
   const [activePrograms, setActivePrograms] = useState<string[]>(() => loadLS<string[]>(LS_ACTIVE_PROGRAMS, []));
@@ -86,7 +111,7 @@ export default function MiZonaPage() {
     [retos, today]
   );
   const hoy = useMemo(
-    () => retos.filter(r => !r.done && r.due === today),
+    () => retos.filter(r => r.due === today),
     [retos, today]
   );
   const proximos = useMemo(
@@ -97,6 +122,41 @@ export default function MiZonaPage() {
     () => retos.filter(r => r.done).sort((a, b) => b.createdAt - a.createdAt),
     [retos]
   );
+
+  /* === progreso semanal (colores por día) === */
+  const weekStart = mondayOf(new Date());
+  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  const dayLabel = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+
+  function dayColor(dateKey: string) {
+    const dayRetos = retos.filter(r => r.due === dateKey);
+    if (dayRetos.length === 0) return 'gray';
+    const doneCount = dayRetos.filter(r => r.done).length;
+    if (doneCount === 0) return 'red';
+    if (doneCount < dayRetos.length) return 'orange';
+    return 'green';
+  }
+
+  /* === calendario mensual === */
+  const [monthViewOpen, setMonthViewOpen] = useState(false);
+  const [monthCursor, setMonthCursor] = useState(() => {
+    const d = new Date(); d.setDate(1); d.setHours(0,0,0,0); return d;
+  });
+
+  const daysInMonth = useMemo(() => {
+    const first = new Date(monthCursor);
+    const last = new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 0);
+    const days: Date[] = [];
+    // padding desde lunes
+    const pad = (first.getDay() + 6) % 7;
+    for (let i = 0; i < pad; i++) days.push(new Date(first.getFullYear(), first.getMonth(), i - pad + 1));
+    for (let d = 1; d <= last.getDate(); d++) days.push(new Date(monthCursor.getFullYear(), monthCursor.getMonth(), d));
+    // completa a múltiplo de 7 (opcional)
+    while (days.length % 7 !== 0) {
+      const next = new Date(days[days.length - 1]); next.setDate(next.getDate() + 1); days.push(next);
+    }
+    return days;
+  }, [monthCursor]);
 
   /* === lógica clave: completar y recrear si es permanente === */
   function completeReto(id: string) {
@@ -146,146 +206,370 @@ export default function MiZonaPage() {
 
   return (
     <main className="container" style={{ paddingTop: 24, paddingBottom: 24 }}>
-      <h2 className="page-title">Mi zona</h2>
+      {/* ===== Sub-navegación en píldoras ===== */}
+      <h2 className="page-title" style={{ marginBottom: 8 }}>Mi zona</h2>
+      <p className="muted" style={{ marginTop: 0, marginBottom: 12 }}>
+        Navega por tus hábitos, crea nuevos y consulta tus logros.
+      </p>
 
-      {/* ===== Panel saludo + datos rápidos ===== */}
-      <section
-        style={{
-          background: 'var(--background)',
-          borderRadius: 'var(--radius-card)',
-          padding: 18,
-          border: '1px solid var(--line)',
-          marginBottom: 16
-        }}
-      >
-        <div className="flex items-center gap-4">
-          {/* Avatar redondo */}
-          <Link href="/mizona/perfil" className="shrink-0" title="Editar foto de perfil">
-            <div
-              className="rounded-full overflow-hidden flex items-center justify-center"
-              style={{
-                width: 64, height: 64,
-                border: '1px solid var(--line)',
-                background: '#f7f7f7',
-              }}
-            >
-              {user?.foto ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={user.foto}
-                  alt="Foto de perfil"
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                />
-              ) : (
-                <Camera size={24} className="muted" />
-              )}
+      <div className="flex flex-wrap gap-3 mb-4">
+        <button
+          className="btn"
+          onClick={() => setTab('habitos')}
+          style={tab === 'habitos'
+            ? { background: 'black', color: 'white' }
+            : { background: 'white', color: 'black', border: '1px solid var(--line)' }}
+        >
+          Mis hábitos
+        </button>
+        <button
+          className="btn"
+          onClick={() => setTab('crear')}
+          style={tab === 'crear'
+            ? { background: 'black', color: 'white' }
+            : { background: 'white', color: 'black', border: '1px solid var(--line)' }}
+        >
+          Crear hábito
+        </button>
+        <button
+          className="btn"
+          onClick={() => setTab('logros')}
+          style={tab === 'logros'
+            ? { background: 'black', color: 'white' }
+            : { background: 'white', color: 'black', border: '1px solid var(--line)' }}
+        >
+          Logros
+        </button>
+        <Link
+          href="/mizona/perfil"
+          className="btn"
+          style={{ background: 'white', color: 'black', border: '1px solid var(--line)' }}
+        >
+          Editar mi perfil
+        </Link>
+      </div>
+
+      {tab === 'habitos' && (
+        <>
+          {/* ===== Encabezado saludo + frase ===== */}
+          <section
+            style={{
+              background: 'var(--background)',
+              borderRadius: 'var(--radius-card)',
+              padding: 18,
+              border: '1px solid var(--line)',
+              marginBottom: 16
+            }}
+          >
+            <div className="flex items-center gap-4">
+              {/* Avatar redondo */}
+              <Link href="/mizona/perfil" className="shrink-0" title="Editar foto de perfil">
+                <div
+                  className="rounded-full overflow-hidden flex items-center justify-center"
+                  style={{
+                    width: 64, height: 64,
+                    border: '1px solid var(--line)',
+                    background: '#f7f7f7',
+                  }}
+                >
+                  {user?.foto ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={user.foto}
+                      alt="Foto de perfil"
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                  ) : (
+                    <Camera size={24} className="muted" />
+                  )}
+                </div>
+              </Link>
+
+              <div className="flex-1">
+                <p className="text-sm" style={{ margin: 0, fontWeight: 700 }}>
+                  Hola {greetingName}
+                </p>
+                <p className="muted" style={{ marginTop: 4 }}>
+                  Bienvenido a un nuevo día lleno de retos. En esta sección podrás ir marcando tus retos como conseguidos,
+                  crear nuevos e ir viendo todo tu progreso.
+                </p>
+
+                {/* Datos rápidos */}
+                <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-8 text-sm">
+                  <div>
+                    <div className="muted">Edad</div>
+                    <div style={{ fontWeight: 600 }}>{age}</div>
+                  </div>
+                  <div>
+                    <div className="muted">Peso</div>
+                    <div style={{ fontWeight: 600 }}>{weight}</div>
+                  </div>
+                  <div>
+                    <div className="muted">Estatura</div>
+                    <div style={{ fontWeight: 600 }}>{height}</div>
+                  </div>
+                  <div>
+                    <div className="muted">Actividad</div>
+                    <div style={{ fontWeight: 600 }}>{actividad}</div>
+                  </div>
+                  <div>
+                    <div className="muted">Kcal diarias</div>
+                    <div style={{ fontWeight: 600 }}>{kcal}</div>
+                  </div>
+                  <div>
+                    <div className="muted">Programas activos</div>
+                    <div style={{ fontWeight: 600 }}>{activeCount}</div>
+                  </div>
+                </div>
+
+                <div className="mt-4">
+                  <Link href="/mizona/perfil" className="btn">
+                    Ver más
+                  </Link>
+                </div>
+              </div>
             </div>
-          </Link>
+          </section>
 
-          <div className="flex-1">
-            <p className="text-sm" style={{ margin: 0, fontWeight: 700 }}>
-              Hola {greetingName},
+          {/* ===== Semana (círculos) + toggle calendario mensual ===== */}
+          <section
+            style={{
+              background: 'var(--background)',
+              borderRadius: 'var(--radius-card)',
+              padding: 18,
+              border: '1px solid var(--line)',
+              marginBottom: 16
+            }}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-8">
+                {weekDays.map((d, i) => {
+                  const k = ymd(d);
+                  const color = dayColor(k);
+                  const bg =
+                    color === 'green' ? '#10b981' :
+                    color === 'orange' ? '#f59e0b' :
+                    color === 'red' ? '#e10600' : '#e5e7eb';
+                  const fg = color === 'gray' ? '#111' : 'white';
+                  return (
+                    <div key={k} style={{ textAlign: 'center' }}>
+                      <div
+                        title={`${dayLabel[i]} · ${k}`}
+                        style={{
+                          width: 32, height: 32, borderRadius: 999,
+                          background: bg, color: fg, display: 'grid', placeItems: 'center',
+                          fontWeight: 700
+                        }}
+                      >
+                        {dayLabel[i]}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <button
+                className="btn secondary"
+                onClick={() => setMonthViewOpen(v => !v)}
+                title="Ver calendario mensual"
+              >
+                <ChevronRight size={18} />
+              </button>
+            </div>
+
+            {monthViewOpen && (
+              <div className="mt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <button className="btn secondary" onClick={() => {
+                    const d = new Date(monthCursor);
+                    d.setMonth(d.getMonth() - 1);
+                    setMonthCursor(d);
+                  }}>
+                    <ChevronLeft size={16} />
+                  </button>
+                  <div className="text-sm font-semibold">
+                    {monthCursor.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })}
+                  </div>
+                  <button className="btn secondary" onClick={() => {
+                    const d = new Date(monthCursor);
+                    d.setMonth(d.getMonth() + 1);
+                    setMonthCursor(d);
+                  }}>
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-7 gap-2 text-xs">
+                  {['L','M','X','J','V','S','D'].map(hl => (
+                    <div key={`h-${hl}`} className="muted" style={{ textAlign: 'center' }}>{hl}</div>
+                  ))}
+                  {daysInMonth.map((d, idx) => {
+                    const k = ymd(d);
+                    const inCurrent = d.getMonth() === monthCursor.getMonth();
+                    const color = dayColor(k);
+                    const bg =
+                      color === 'green' ? '#10b981' :
+                      color === 'orange' ? '#f59e0b' :
+                      color === 'red' ? '#e10600' : '#e5e7eb';
+                    const fg = color === 'gray' ? '#111' : 'white';
+                    return (
+                      <div
+                        key={`d-${idx}-${k}`}
+                        style={{
+                          padding: 6,
+                          borderRadius: 8,
+                          textAlign: 'center',
+                          opacity: inCurrent ? 1 : 0.4,
+                          background: bg,
+                          color: fg,
+                          fontWeight: 600
+                        }}
+                        title={`${k}`}
+                      >
+                        {d.getDate()}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </section>
+
+          {/* ===== Listados (orden por importancia) ===== */}
+
+          {/* 1) Importante: Mis hábitos (retos del usuario) */}
+          <section
+            style={{
+              background: 'var(--background)',
+              borderRadius: 'var(--radius-card)',
+              padding: 18,
+              border: 'none',
+            }}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: 8 }}>Mis hábitos</h3>
+            <p className="muted" style={{ marginTop: 0 }}>
+              Marca como hecho y, si es permanente, se recreará automáticamente para mañana.
             </p>
 
-            {/* Datos rápidos */}
-            <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-8 text-sm">
-              <div>
-                <div className="muted">Edad</div>
-                <div style={{ fontWeight: 600 }}>{age}</div>
-              </div>
-              <div>
-                <div className="muted">Peso</div>
-                <div style={{ fontWeight: 600 }}>{weight}</div>
-              </div>
-              <div>
-                <div className="muted">Estatura</div>
-                <div style={{ fontWeight: 600 }}>{height}</div>
-              </div>
-              <div>
-                <div className="muted">Actividad</div>
-                <div style={{ fontWeight: 600 }}>{actividad}</div>
-              </div>
-              <div>
-                <div className="muted">Kcal diarias</div>
-                <div style={{ fontWeight: 600 }}>{kcal}</div>
-              </div>
-              <div>
-                <div className="muted">Programas activos</div>
-                <div style={{ fontWeight: 600 }}>{activeCount}</div>
-              </div>
-            </div>
+            <Section title="Atrasados" empty="No tienes hábitos atrasados.">
+              {atrasados.map(r => (
+                <RetoItem
+                  key={r.id}
+                  reto={r}
+                  onDone={() => completeReto(r.id)}
+                  onUndo={() => undoReto(r.id)}
+                  onDelete={() => deleteReto(r.id)}
+                />
+              ))}
+            </Section>
 
-            <div className="mt-4">
-              <Link href="/mizona/perfil" className="btn">
-                Ver más
-              </Link>
-            </div>
-          </div>
-        </div>
-      </section>
+            <Section title={`Hoy · ${fmtDate(today)}`} empty="Nada para hoy.">
+              {hoy.map(r => (
+                <RetoItem
+                  key={r.id}
+                  reto={r}
+                  onDone={() => completeReto(r.id)}
+                  onUndo={() => undoReto(r.id)}
+                  onDelete={() => deleteReto(r.id)}
+                />
+              ))}
+            </Section>
 
-      {/* ===== Retos ===== */}
-      <section
-        style={{
-          background: 'var(--background)',
-          borderRadius: 'var(--radius-card)',
-          padding: 18,
-          border: 'none',
-        }}
-      >
-        <p className="muted" style={{ marginTop: 0 }}>
-          Tus retos diarios. Marca como hecho y, si es permanente, se recreará automáticamente para mañana.
-        </p>
+            <Section title="Próximos" empty="Sin hábitos próximos.">
+              {proximos.map(r => (
+                <RetoItem
+                  key={r.id}
+                  reto={r}
+                  onDone={() => completeReto(r.id)}
+                  onUndo={() => undoReto(r.id)}
+                  onDelete={() => deleteReto(r.id)}
+                />
+              ))}
+            </Section>
 
-        <Section title="Atrasados" empty="No tienes retos atrasados.">
-          {atrasados.map(r => (
-            <RetoItem
-              key={r.id}
-              reto={r}
-              onDone={() => completeReto(r.id)}
-              onUndo={() => undoReto(r.id)}
-              onDelete={() => deleteReto(r.id)}
-            />
-          ))}
-        </Section>
+            <Section title="Hechos" empty="Aún no has completado hábitos.">
+              {hechos.map(r => (
+                <RetoItem
+                  key={r.id}
+                  reto={r}
+                  done
+                  onDone={() => completeReto(r.id)}
+                  onUndo={() => undoReto(r.id)}
+                  onDelete={() => deleteReto(r.id)}
+                />
+              ))}
+            </Section>
+          </section>
 
-        <Section title={`Hoy · ${fmtDate(today)}`} empty="Nada para hoy.">
-          {hoy.map(r => (
-            <RetoItem
-              key={r.id}
-              reto={r}
-              onDone={() => completeReto(r.id)}
-              onUndo={() => undoReto(r.id)}
-              onDelete={() => deleteReto(r.id)}
-            />
-          ))}
-        </Section>
+          {/* 2) Un poco menos importante: Programas activos */}
+          <section
+            style={{
+              background: 'var(--background)',
+              borderRadius: 'var(--radius-card)',
+              padding: 18,
+              border: '1px solid var(--line)',
+              marginTop: 16
+            }}
+          >
+            <h3 style={{ marginTop: 0 }}>Programas activos</h3>
+            {activePrograms.length === 0 ? (
+              <p className="muted">No tienes programas activos. Actívalos desde la sección de Programas.</p>
+            ) : (
+              <ul className="list" style={{ margin: 0 }}>
+                {activePrograms.map(key => (
+                  <li key={key} style={{ padding: '8px 0', borderTop: '1px solid var(--line)' }}>
+                    <div className="flex items-center justify-between">
+                      <div><strong>{key}</strong></div>
+                      <div className="muted text-xs">Hábitos del programa aparecerán aquí</div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
 
-        <Section title="Próximos" empty="Sin retos próximos.">
-          {proximos.map(r => (
-            <RetoItem
-              key={r.id}
-              reto={r}
-              onDone={() => completeReto(r.id)}
-              onUndo={() => undoReto(r.id)}
-              onDelete={() => deleteReto(r.id)}
-            />
-          ))}
-        </Section>
+          {/* 3) Por último: Hábitos con amigos */}
+          <section
+            style={{
+              background: 'var(--background)',
+              borderRadius: 'var(--radius-card)',
+              padding: 18,
+              border: '1px solid var(--line)',
+              marginTop: 16
+            }}
+          >
+            <h3 style={{ marginTop: 0 }}>Hábitos con amigos</h3>
+            <p className="muted">Cuando te unas a retos con amigos, verás aquí los hábitos compartidos del día.</p>
+          </section>
+        </>
+      )}
 
-        <Section title="Hechos" empty="Aún no has completado retos.">
-          {hechos.map(r => (
-            <RetoItem
-              key={r.id}
-              reto={r}
-              done
-              onDone={() => completeReto(r.id)}
-              onUndo={() => undoReto(r.id)}
-              onDelete={() => deleteReto(r.id)}
-            />
-          ))}
-        </Section>
-      </section>
+      {tab === 'crear' && (
+        <section
+          style={{
+            background: 'var(--background)',
+            borderRadius: 'var(--radius-card)',
+            padding: 18,
+            border: '1px solid var(--line)',
+          }}
+        >
+          <h3 style={{ marginTop: 0 }}>Crear hábito</h3>
+          <p className="muted">Próximamente: formulario para crear y programar hábitos.</p>
+        </section>
+      )}
+
+      {tab === 'logros' && (
+        <section
+          style={{
+            background: 'var(--background)',
+            borderRadius: 'var(--radius-card)',
+            padding: 18,
+            border: '1px solid var(--line)',
+          }}
+        >
+          <h3 style={{ marginTop: 0 }}>Logros</h3>
+          <p className="muted">Próximamente: tus rachas, días perfectos y medallas.</p>
+        </section>
+      )}
     </main>
   );
 }
@@ -296,7 +580,7 @@ function Section({ title, empty, children }: { title: string; empty: string; chi
     Array.isArray(children) ? (children as React.ReactNode[]).length > 0 : !!children;
   return (
     <section style={{ marginTop: 16 }}>
-      <h3 style={{ marginTop: 0, marginBottom: 8 }}>{title}</h3>
+      <h4 style={{ marginTop: 0, marginBottom: 8 }}>{title}</h4>
       <ul className="list" style={{ margin: 0 }}>
         {has ? children : <li className="muted" style={{ padding: '8px 0' }}>{empty}</li>}
       </ul>
