@@ -3,13 +3,18 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { Camera } from 'lucide-react';
+import { supabase } from '@/lib/supabaseClient';
 import { useUserProfile, upsertProfile, saveUserMerge, Sex, normalizeUsername } from '@/lib/user';
 
 type Profile = {
   username?: string;
   nombre?: string;
   apellido?: string;
+  // Conservamos edad por compatibilidad, pero usamos fechaNacimiento
   edad?: number;
+  fechaNacimiento?: string; // YYYY-MM-DD
   sexo?: Sex;
   caloriasDiarias?: number;
   instagram?: string;
@@ -43,6 +48,7 @@ export default function PerfilPage() {
   const [profile, setProfile] = useState<Profile>({});
   const [savedOpen, setSavedOpen] = useState(false); // pop-up guardado
   const [saving, setSaving] = useState(false);
+  const router = useRouter();
 
   // Hidrata el formulario con el perfil global cuando no estamos editando
   useEffect(() => {
@@ -75,6 +81,8 @@ export default function PerfilPage() {
         instagram: normalizeInstagramLink(profile.instagram),
         tiktok: profile.tiktok?.trim() || undefined,
         username: profile.username ? normalizeUsername(profile.username) : undefined,
+        fechaNacimiento: profile.fechaNacimiento || undefined,
+        // mantenemos edad si existiera por compatibilidad, pero no la forzamos
       };
 
       // 1) Escribe en Supabase (propaga a otros dispositivos)
@@ -104,6 +112,16 @@ export default function PerfilPage() {
       setEditing(false);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleLogout() {
+    try {
+      await supabase.auth.signOut();
+    } finally {
+      // limpiamos perfil local por seguridad (clave decidida en el proyecto)
+      try { localStorage.removeItem('akira_user_profile_v2'); } catch {}
+      router.push('/login');
     }
   }
 
@@ -152,7 +170,10 @@ export default function PerfilPage() {
             <Row label="Usuario" value={profile.username || '—'} />
             <Row label="Nombre" value={profile.nombre || '—'} />
             <Row label="Apellidos" value={profile.apellido || '—'} />
-            <Row label="Edad" value={profile.edad ?? '—'} />
+
+            {/* Fecha de nacimiento sustituye Edad */}
+            <Row label="Fecha de nacimiento" value={profile.fechaNacimiento || '—'} />
+
             <Row label="Sexo" value={profile.sexo || '—'} />
             <Row label="Peso (kg)" value={profile.peso ?? '—'} />
             <Row label="Calorías diarias" value={profile.caloriasDiarias ?? '—'} />
@@ -172,7 +193,7 @@ export default function PerfilPage() {
             <Row label="Email" value={profile.email || '—'} />
             <Row label="Teléfono" value={profile.telefono || '—'} />
 
-            <div className="mt-4">
+            <div className="mt-4 flex gap-2">
               <button className="btn" onClick={() => setEditing(true)}>
                 Editar perfil
               </button>
@@ -186,10 +207,10 @@ export default function PerfilPage() {
               void save();
             }}
           >
-            {/* Avatar + selector de archivo */}
+            {/* Avatar + selector de archivo con overlay de cámara */}
             <div className="flex items-center gap-3">
               <div
-                className="rounded-full overflow-hidden"
+                className="relative rounded-full overflow-hidden"
                 style={{
                   width: 96,
                   height: 96,
@@ -205,8 +226,29 @@ export default function PerfilPage() {
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   />
                 ) : null}
+
+                {/* Botón cámara (overlay) */}
+                <label
+                  htmlFor="fotoInput"
+                  title="Cambiar foto"
+                  aria-label="Cambiar foto"
+                  className="absolute bottom-1 right-1 rounded-full shadow"
+                  style={{
+                    background: 'white',
+                    border: '1px solid var(--line)',
+                    width: 32,
+                    height: 32,
+                    display: 'grid',
+                    placeItems: 'center',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Camera size={18} />
+                </label>
               </div>
+
               <div>
+                {/* Mantengo también el botón textual por accesibilidad */}
                 <label className="btn secondary" htmlFor="fotoInput">
                   Subir foto
                 </label>
@@ -236,6 +278,7 @@ export default function PerfilPage() {
                 onChange={(e) => handleChange('nombre', e.target.value)}
               />
             </Field>
+
             <Field label="Apellidos">
               <input
                 className="input text-[16px]"
@@ -243,17 +286,17 @@ export default function PerfilPage() {
                 onChange={(e) => handleChange('apellido', e.target.value)}
               />
             </Field>
-            <Field label="Edad">
+
+            {/* Sustituimos Edad por Fecha de nacimiento */}
+            <Field label="Fecha de nacimiento">
               <input
-                type="number"
-                min={5}
+                type="date"
                 className="input text-[16px]"
-                value={profile.edad ?? ''}
-                onChange={(e) =>
-                  handleChange('edad', e.target.value ? Number(e.target.value) : undefined)
-                }
+                value={profile.fechaNacimiento || ''}
+                onChange={(e) => handleChange('fechaNacimiento', e.target.value || undefined)}
               />
             </Field>
+
             <Field label="Sexo">
               <select
                 className="input text-[16px]"
@@ -265,6 +308,7 @@ export default function PerfilPage() {
                 <option value="prefiero_no_decirlo">Prefiero no decirlo</option>
               </select>
             </Field>
+
             <Field label="Peso (kg)">
               <input
                 type="number"
@@ -277,6 +321,7 @@ export default function PerfilPage() {
                 }
               />
             </Field>
+
             <Field label="Calorías diarias">
               <input
                 type="number"
@@ -291,6 +336,7 @@ export default function PerfilPage() {
                 }
               />
             </Field>
+
             <Field label="Instagram (URL o @usuario)">
               <input
                 className="input text-[16px]"
@@ -299,6 +345,7 @@ export default function PerfilPage() {
                 onChange={(e) => handleChange('instagram', e.target.value)}
               />
             </Field>
+
             <Field label="TikTok (URL)">
               <input
                 className="input text-[16px]"
@@ -307,6 +354,7 @@ export default function PerfilPage() {
                 onChange={(e) => handleChange('tiktok', e.target.value)}
               />
             </Field>
+
             <Field label="Email">
               <input
                 type="email"
@@ -315,6 +363,7 @@ export default function PerfilPage() {
                 onChange={(e) => handleChange('email', e.target.value)}
               />
             </Field>
+
             <Field label="Teléfono">
               <input
                 className="input text-[16px]"
@@ -339,6 +388,13 @@ export default function PerfilPage() {
           </form>
         )}
       </section>
+
+      {/* Botón Cerrar sesión */}
+      <div className="mt-4">
+        <button type="button" className="btn secondary" onClick={handleLogout}>
+          Cerrar sesión
+        </button>
+      </div>
 
       {/* Pop-up de confirmación */}
       {savedOpen && (
@@ -442,7 +498,7 @@ function resizeImageDataURL(dataURL: string, maxSize: number): Promise<string> {
         const out = canvas.toDataURL('image/png');
         resolve(out);
       } catch (e) {
-        reject(e);
+        reject(e as Error);
       }
     };
     img.onerror = reject;
