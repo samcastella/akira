@@ -10,6 +10,8 @@ import {
   LS_USER,
   pullProfile,
   syncLocalToRemoteIfMissing,
+  // ★ añadimos esta clave para reset dev
+  LS_USER_KEY,
 } from '@/lib/user';
 import { supabase } from '@/lib/supabaseClient';
 import RegistrationModal from '@/components/RegistrationModal';
@@ -47,6 +49,20 @@ export default function LayoutClient({
     const u = loadUser();
     const ok = isUserComplete(u);
     setUserOk(ok);
+  }, []);
+
+  // ★ Reaccionar a cambios del perfil local (pullProfile / ediciones en Perfil)
+  useEffect(() => {
+    const onUserUpdated = () => {
+      const okNow = isUserComplete(loadUser());
+      setUserOk(okNow);
+    };
+    window.addEventListener('akira:user-updated', onUserUpdated);
+    window.addEventListener('storage', onUserUpdated);
+    return () => {
+      window.removeEventListener('akira:user-updated', onUserUpdated);
+      window.removeEventListener('storage', onUserUpdated);
+    };
   }, []);
 
   // Helper: sincroniza perfil remoto <-> local si hay sesión
@@ -117,7 +133,8 @@ export default function LayoutClient({
 
     return () => {
       cancelled = true;
-      sub.subscription.unsubscribe();
+      // ★ defensivo por si cambia la forma de desuscribir
+      try { sub?.subscription?.unsubscribe?.(); } catch {}
     };
   }, []);
 
@@ -178,6 +195,7 @@ export default function LayoutClient({
     try {
       localStorage.removeItem(LS_FIRST_RUN);
       localStorage.removeItem(LS_USER);
+      localStorage.removeItem(LS_USER_KEY); // ★ borra también el perfil actual
       localStorage.removeItem(LS_SEEN_AUTH);
     } catch {}
     location.reload();

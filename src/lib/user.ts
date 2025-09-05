@@ -1,5 +1,6 @@
 // src/lib/user.ts
 import { supabase } from '@/lib/supabaseClient';
+import { useEffect, useState } from 'react';
 
 // ===== Tipos =====
 export type Activity = 'sedentario' | 'ligero' | 'moderado' | 'intenso';
@@ -35,11 +36,9 @@ export const LS_FIRST_RUN = 'akira_first_run_done';
 export function normalizeEmail(email: string | undefined | null): string {
   return (email || '').trim().toLowerCase();
 }
-
 export function normalizeUsername(u: string | undefined | null): string {
   return (u ?? '').trim().replace(/^@+/, '').toLowerCase().replace(/\s+/g, '');
 }
-
 /** Calcula edad (años) a partir de yyyy-mm-dd */
 export function ageFromDOB(dob?: string): number | undefined {
   if (!dob) return undefined;
@@ -51,7 +50,6 @@ export function ageFromDOB(dob?: string): number | undefined {
   if (m < 0 || (m === 0 && today.getDate() < d.getDate())) age--;
   return age >= 0 ? age : undefined;
 }
-
 function sanitizeUser(u: Partial<UserProfile>): Partial<UserProfile> {
   const out: Partial<UserProfile> = { ...u };
   if (typeof out.nombre === 'string') out.nombre = out.nombre.trim();
@@ -61,7 +59,6 @@ function sanitizeUser(u: Partial<UserProfile>): Partial<UserProfile> {
   if (typeof out.telefono === 'string') out.telefono = out.telefono.trim();
   return out;
 }
-
 /** Evita sobreescribir con undefined/null al hacer merge en LS */
 function keepDefined<T extends Record<string, any>>(obj: T): Partial<T> {
   const out: Partial<T> = {};
@@ -81,7 +78,6 @@ export function loadUser(): UserProfile {
       const data = JSON.parse(rawV2);
       return (data && typeof data === 'object') ? (data as UserProfile) : {};
     }
-
     // 2) migra desde v1 si existía
     const rawV1 = localStorage.getItem(LS_USER);
     if (rawV1) {
@@ -94,7 +90,6 @@ export function loadUser(): UserProfile {
       localStorage.setItem(LS_USER_KEY, JSON.stringify(fixed));
       return fixed;
     }
-
     return {};
   } catch {
     try { localStorage.removeItem(LS_USER_KEY); } catch {}
@@ -106,6 +101,8 @@ export function saveUser(u: UserProfile): UserProfile {
   if (typeof window === 'undefined') return { ...u, ...sanitizeUser(u) } as UserProfile;
   const normalized = { ...u, ...sanitizeUser(u) } as UserProfile;
   localStorage.setItem(LS_USER_KEY, JSON.stringify(normalized));
+  // 🔔 notificar a la UI
+  try { window.dispatchEvent(new CustomEvent('akira:user-updated')); } catch {}
   return normalized;
 }
 
@@ -119,6 +116,8 @@ export function saveUserMerge(partial: Partial<UserProfile>): UserProfile {
   const norm = sanitizeUser(partial);
   const merged = { ...prev, ...norm } as UserProfile;
   localStorage.setItem(LS_USER_KEY, JSON.stringify(merged));
+  // 🔔 notificar a la UI
+  try { window.dispatchEvent(new CustomEvent('akira:user-updated')); } catch {}
   return merged;
 }
 
@@ -145,18 +144,14 @@ function activityFactor(a: Activity | undefined): number {
     default: return 1.2; // sedentario / undefined
   }
 }
-
-/** Soporta edad directa o derivada desde fechaNacimiento */
 export function estimateCalories(u: UserProfile): number | undefined {
   const edad = u.edad ?? ageFromDOB(u.fechaNacimiento);
   if (!u.sexo || edad == null || u.estatura == null || u.peso == null) return undefined;
-
   const base =
     10 * u.peso +
     6.25 * u.estatura -
     5 * edad +
     (u.sexo === 'masculino' ? 5 : u.sexo === 'femenino' ? -161 : 0);
-
   return Math.round(base * activityFactor(u.actividad));
 }
 
@@ -170,7 +165,6 @@ export function profileFromDbRow(row: any): Partial<UserProfile> {
     apellido: row.apellido ?? undefined,
     email: row.email ?? undefined, // si lo guardas en esta tabla (opcional)
     telefono: row.telefono ?? undefined,
-
     sexo: row.sexo ?? undefined,
     fechaNacimiento: row.fecha_nacimiento ?? undefined,
     edad: row.edad ?? undefined,
@@ -180,7 +174,6 @@ export function profileFromDbRow(row: any): Partial<UserProfile> {
     caloriasDiarias: row.calorias_diarias ?? undefined,
   };
 }
-
 export function dbRowFromProfile(p: Partial<UserProfile>): any {
   return {
     user_id: p.userId ?? undefined,
@@ -227,7 +220,7 @@ export async function upsertProfile(partial: Partial<UserProfile>): Promise<User
     .from('public_profiles')
     .upsert(row, { onConflict: 'user_id' })
     .select('*')
-    .single();
+    .single(); // <- sin .eq()
 
   if (error) {
     console.error('[upsertProfile] error', error);
@@ -316,4 +309,19 @@ export async function syncLocalToRemoteIfMissing(): Promise<UserProfile | null> 
 
   const created = await upsertProfile(local);
   return created;
+}
+
+/* ===== Hook para componentes cliente (reactiva la UI al sincronizar) ===== */
+export function useUserProfile(): UserProfile {
+  const [u, setU] = useState<UserProfile>(() => (typeof window === 'undefined' ? {} : loadUser()));
+  useEffect(() => {
+    const onUpdate = () => setU(loadUser());
+    window.addEventListener('akira:user-updated', onUpdate);
+    window.addEventListener('storage', onUpdate);
+    return () => {
+      window.removeEventListener('akira:user-updated', onUpdate);
+      window.removeEventListener('storage', onUpdate);
+    };
+  }, []);
+  return u;
 }

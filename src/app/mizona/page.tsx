@@ -4,8 +4,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Check, RotateCcw, Trash2, Camera } from 'lucide-react';
 
-/* ====== import unificada de usuario ====== */
-import { loadUser, LS_USER } from '@/lib/user';
+/* ====== usuario (reactivo) ====== */
+import { useUserProfile } from '@/lib/user';
 
 /* ====== storage + tipos ====== */
 const LS_RETOS = 'akira_mizona_retos_v1';
@@ -39,7 +39,7 @@ function saveLS<T>(key: string, val: T) {
   localStorage.setItem(key, JSON.stringify(val));
 }
 
-const todayKey = () => new Date().toISOString().slice(0,10);
+const todayKey = () => new Date().toISOString().slice(0, 10);
 const fmtDate = (d: string | number) =>
   new Date(d).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }).replace('.', '');
 
@@ -52,29 +52,26 @@ const fmtKcal = (v?: number) => (typeof v === 'number' ? `${v} kcal` : '—');
 /* ====== página ====== */
 export default function MiZonaPage() {
   const [retos, setRetos] = useState<Reto[]>(() => loadLS<Reto[]>(LS_RETOS, []));
-  // ⬇️ Unificado: cargar perfil desde lib/user (fuente única)
-  const [user, setUser]   = useState<UserProfileLS>(() => (loadUser() as unknown as UserProfileLS));
+  const user = useUserProfile() as unknown as UserProfileLS; // ← reactivo a cambios del perfil
   const [activePrograms, setActivePrograms] = useState<string[]>(() => loadLS<string[]>(LS_ACTIVE_PROGRAMS, []));
 
   /* Persiste cambios de retos */
   useEffect(() => { saveLS(LS_RETOS, retos); }, [retos]);
 
-  /* Refresco inicial + sincronización si el perfil cambia en otra vista/solapa */
+  /* Sincroniza con otros tabs/cambios para retos y programas activos */
   useEffect(() => {
     const sync = () => {
-      setUser(loadUser() as unknown as UserProfileLS);
       setActivePrograms(loadLS<string[]>(LS_ACTIVE_PROGRAMS, []));
+      setRetos(loadLS<Reto[]>(LS_RETOS, []));
     };
-    sync(); // primer render
-
     const onStorage = (e: StorageEvent) => {
-      if (!e.key || e.key === LS_USER || e.key === LS_ACTIVE_PROGRAMS) sync();
+      if (!e.key || e.key === LS_ACTIVE_PROGRAMS || e.key === LS_RETOS) sync();
     };
+    const onVisible = () => { if (document.visibilityState === 'visible') sync(); };
+
     window.addEventListener('storage', onStorage);
     window.addEventListener('focus', sync);
-    const onVisible = () => { if (document.visibilityState === 'visible') sync(); };
     document.addEventListener('visibilitychange', onVisible);
-
     return () => {
       window.removeEventListener('storage', onStorage);
       window.removeEventListener('focus', sync);
@@ -85,7 +82,7 @@ export default function MiZonaPage() {
   const today = todayKey();
 
   const atrasados = useMemo(
-    () => retos.filter(r => !r.done && r.due < today).sort((a,b)=>a.due.localeCompare(b.due)),
+    () => retos.filter(r => !r.done && r.due < today).sort((a, b) => a.due.localeCompare(b.due)),
     [retos, today]
   );
   const hoy = useMemo(
@@ -93,11 +90,11 @@ export default function MiZonaPage() {
     [retos, today]
   );
   const proximos = useMemo(
-    () => retos.filter(r => !r.done && r.due > today).sort((a,b)=>a.due.localeCompare(b.due)),
+    () => retos.filter(r => !r.done && r.due > today).sort((a, b) => a.due.localeCompare(b.due)),
     [retos, today]
   );
   const hechos = useMemo(
-    () => retos.filter(r => r.done).sort((a,b)=>b.createdAt - a.createdAt),
+    () => retos.filter(r => r.done).sort((a, b) => b.createdAt - a.createdAt),
     [retos]
   );
 
@@ -118,7 +115,7 @@ export default function MiZonaPage() {
           id: crypto.randomUUID(),
           text: r.text,
           createdAt: Date.now(),
-          due: tomorrow.toISOString().slice(0,10),
+          due: tomorrow.toISOString().slice(0, 10),
           done: false,
           permanent: true,
         };

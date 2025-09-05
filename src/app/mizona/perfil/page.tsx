@@ -1,10 +1,9 @@
+// src/app/mizona/perfil/page.tsx
 'use client';
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { loadUser, saveUserMerge } from '@/lib/user';
-
-type Sex = 'masculino' | 'femenino' | 'prefiero_no_decirlo';
+import { useUserProfile, upsertProfile, saveUserMerge, Sex } from '@/lib/user';
 
 type Profile = {
   username?: string;
@@ -26,9 +25,7 @@ function normalizeInstagramLink(val?: string) {
   if (!val) return undefined;
   const trimmed = val.trim();
   if (!trimmed) return undefined;
-  // Si ya trae http(s) lo dejamos
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  // Si viene @usuario o solo usuario
+  if (/^https?:\/\//i.test(trimmed)) return trimmed; // ya es URL
   const user = trimmed.replace(/^@/, '');
   return `https://instagram.com/${user}`;
 }
@@ -41,13 +38,18 @@ function instagramLabel(val?: string) {
 }
 
 export default function PerfilPage() {
+  const user = useUserProfile();            // ← reactivo a cambios (pullProfile)
   const [editing, setEditing] = useState(false);
   const [profile, setProfile] = useState<Profile>({});
   const [savedOpen, setSavedOpen] = useState(false); // pop-up guardado
+  const [saving, setSaving] = useState(false);
 
+  // Hidrata el formulario con el perfil global cuando no estamos editando
   useEffect(() => {
-    setProfile(loadUser() as Profile);
-  }, []);
+    if (!editing && user) {
+      setProfile(user as Profile);
+    }
+  }, [user, editing]);
 
   function handleChange<K extends keyof Profile>(k: K, v: Profile[K]) {
     setProfile((prev) => ({ ...prev, [k]: v }));
@@ -64,21 +66,36 @@ export default function PerfilPage() {
   }
 
   async function save() {
-  // Normalización suave
-  const payload: Profile = {
-    ...profile,
-    email: profile.email?.trim().toLowerCase(),
-    instagram: normalizeInstagramLink(profile.instagram),
-    tiktok: profile.tiktok?.trim() || undefined,
-    username: profile.username?.trim() || undefined,
-  };
+    setSaving(true);
+    try {
+      // Normalización suave
+      const payload: Profile = {
+        ...profile,
+        email: profile.email?.trim().toLowerCase(),
+        instagram: normalizeInstagramLink(profile.instagram),
+        tiktok: profile.tiktok?.trim() || undefined,
+        username: profile.username?.trim() || undefined,
+      };
 
-  // Guardamos y usamos el retorno para refrescar UI sin leer de nuevo
-  const updated = saveUserMerge(payload as any);
-  setProfile(updated as Profile);
-  setSavedOpen(true); // pop-up de confirmación
-}
+      // 1) Escribe en Supabase (propaga a otros dispositivos)
+      await upsertProfile(payload as any);
 
+      // 2) Refleja local y dispara evento para la UI actual
+      const updated = saveUserMerge(payload as any);
+
+      setProfile(updated as Profile);
+      setSavedOpen(true);
+      setEditing(false);
+    } catch (err) {
+      console.warn('[PerfilPage] upsertProfile falló, guardo local y continúo', err);
+      const updated = saveUserMerge(profile as any);
+      setProfile(updated as Profile);
+      setSavedOpen(true);
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <main className="container" style={{ paddingTop: 24, paddingBottom: 24 }}>
@@ -223,10 +240,7 @@ export default function PerfilPage() {
                 className="input text-[16px]"
                 value={profile.edad ?? ''}
                 onChange={(e) =>
-                  handleChange(
-                    'edad',
-                    e.target.value ? Number(e.target.value) : undefined
-                  )
+                  handleChange('edad', e.target.value ? Number(e.target.value) : undefined)
                 }
               />
             </Field>
@@ -249,10 +263,7 @@ export default function PerfilPage() {
                 className="input text-[16px]"
                 value={profile.peso ?? ''}
                 onChange={(e) =>
-                  handleChange(
-                    'peso',
-                    e.target.value ? Number(e.target.value) : undefined
-                  )
+                  handleChange('peso', e.target.value ? Number(e.target.value) : undefined)
                 }
               />
             </Field>
@@ -303,13 +314,14 @@ export default function PerfilPage() {
             </Field>
 
             <div className="flex gap-2 mt-4">
-              <button type="submit" className="btn">
-                Guardar cambios
+              <button type="submit" className="btn" disabled={saving}>
+                {saving ? 'Guardando…' : 'Guardar cambios'}
               </button>
               <button
                 type="button"
                 className="btn secondary"
                 onClick={() => setEditing(false)}
+                disabled={saving}
               >
                 Cancelar
               </button>
@@ -327,15 +339,12 @@ export default function PerfilPage() {
             role="dialog"
             aria-modal="true"
           >
-            <p className="font-semibold">
-              Tus cambios han sido guardados con éxito
-            </p>
+            <p className="font-semibold">Tus cambios han sido guardados con éxito</p>
             <div className="mt-4 flex justify-end gap-2">
               <button
                 className="btn"
                 onClick={() => {
                   setSavedOpen(false);
-                  setEditing(false);
                 }}
               >
                 Aceptar
@@ -420,7 +429,7 @@ function resizeImageDataURL(dataURL: string, maxSize: number): Promise<string> {
       }
       ctx.drawImage(img, 0, 0, newW, newH);
       try {
-        const out = canvas.toDataURL('image/png'); // sin especificar quality para PNG
+        const out = canvas.toDataURL('image/png');
         resolve(out);
       } catch (e) {
         reject(e);
