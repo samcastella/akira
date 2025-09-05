@@ -42,7 +42,7 @@ export default function LayoutClient({
   // === Modales ===
   const [showAuthModal, setShowAuthModal] = useState(false);            // paso 1
   const [showRegistration, setShowRegistration] = useState(false);      // paso 2 tras OAuth
-  const [registrationStartStep, setRegistrationStartStep] = useState<1 | 2 | 3>(1);
+const [registrationStartStep, setRegistrationStartStep] = useState<1 | 2 | 3 | 4 | 5>(1);
 
   // Cargar perfil local
   useEffect(() => {
@@ -104,32 +104,36 @@ export default function LayoutClient({
     initAuth();
 
     const { data: sub } = supabase.auth.onAuthStateChange(async (evt, session) => {
-      setHasSession(!!session);
+  setHasSession(!!session);
 
-      // Marcar splash visto y cerrar pop-up de onboarding
-      try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
-      setShowAuthModal(false);
+  // Solo en SIGNED_IN marcamos "visto" y cerramos el modal inicial (step 1)
+  if (evt === 'SIGNED_IN') {
+    try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
+    setShowAuthModal(false);
+  }
 
-      // Solo abrir completar datos si el proveedor es OAuth (no email/pass)
-      const provider = (session?.user?.app_metadata as any)?.provider as string | undefined;
-      const isOAuth = provider && provider !== 'email' && provider !== 'phone';
+  // Sincroniza perfil en eventos relevantes
+  if (session && (evt === 'SIGNED_IN' || evt === 'TOKEN_REFRESHED' || evt === 'USER_UPDATED')) {
+    await syncProfile();
+  } else {
+    const ok = isUserComplete(loadUser());
+    if (ok) setUserOk(true);
+  }
 
-      if (session && isOAuth) {
-        setRegistrationStartStep(2);
-        setShowRegistration(true);
-      } else {
-        setShowRegistration(false);
-      }
-
-      // Tras cualquier login/refresco de token, sincroniza perfil
-      if (session && (evt === 'SIGNED_IN' || evt === 'TOKEN_REFRESHED' || evt === 'USER_UPDATED')) {
-        await syncProfile();
-      } else {
-        // Re-evaluamos el perfil local igualmente
-        const ok = isUserComplete(loadUser());
-        if (ok) setUserOk(true);
-      }
-    });
+  // Si hay sesión pero el perfil sigue incompleto, abre el modal adecuado
+  const okNow = isUserComplete(loadUser());
+  if (session && !okNow /* && !isAuthRoute */) {
+    type AppMeta = { provider?: string };
+    const provider = (session.user?.app_metadata as AppMeta | undefined)?.provider;
+    const isOAuth = provider && provider !== 'email' && provider !== 'phone';
+    setShowAuthModal(false);
+    setRegistrationStartStep(isOAuth ? 2 : 4); // OAuth → step 2 | email/pass → step 4
+    setShowRegistration(true);
+  } else if (!session) {
+    // Sin sesión, no mostrar registro forzado
+    setShowRegistration(false);
+  }
+});
 
     return () => {
       cancelled = true;
@@ -139,38 +143,40 @@ export default function LayoutClient({
   }, []);
 
   // Decidir si enseñamos el pop-up de onboarding (RegistrationModal paso 1)
-  useEffect(() => {
-    if (!authReady || userOk === null) return;
+useEffect(() => {
+  if (!authReady || userOk === null) return;
 
-    // En rutas de auth no mostramos el modal nunca
-    if (isAuthRoute) {
-      setShowAuthModal(false);
-      setShowRegistration(false);
-      return;
-    }
-
-    // Si el perfil ya está completo, no mostramos nada
-    if (userOk) {
-      setShowAuthModal(false);
-      setShowRegistration(false);
-      return;
-    }
-
-    // PERFIL INCOMPLETO:
-    // - Sin sesión: mostrar SIEMPRE el modal de onboarding (ignoramos LS_SEEN_AUTH)
-    // - Con sesión: no gateamos la app ni abrimos modal (salvo OAuth en onAuthStateChange)
-    if (!hasSession) {
-      setShowAuthModal(true);
-      return;
-    }
-
-    // hasSession && !userOk: no abrir nada aquí (syncProfile se ejecuta en init/auth change)
+  // En rutas de auth no mostramos modales
+  if (isAuthRoute) {
     setShowAuthModal(false);
-  }, [authReady, userOk, hasSession, isAuthRoute]);
+    setShowRegistration(false);
+    return;
+  }
+
+  // Perfil completo → no mostrar nada
+  if (userOk) {
+    setShowAuthModal(false);
+    setShowRegistration(false);
+    return;
+  }
+
+  // Perfil incompleto
+  if (!hasSession) {
+    // Sin sesión → onboarding paso 1
+    setShowAuthModal(true);
+    setShowRegistration(false);
+    return;
+  }
+
+  // Con sesión → ir directo a personalización (paso 4)
+  setShowAuthModal(false);
+  setRegistrationStartStep(4);
+  setShowRegistration(true);
+}, [authReady, userOk, hasSession, isAuthRoute]);
 
   // Mientras el perfil NO esté listo, ocultamos app y mostramos gating (splash + modal),
   // excepto en /login y /auth/* — y también si YA hay sesión (no gatear con sesión)
-  const gating = userOk === false && !isAuthRoute && !hasSession;
+  const gating = userOk === false && !isAuthRoute;
 
   // Ocultamos la BottomNav también en rutas de auth
   const hideNav = gating || pathname === '/bienvenida' || isAuthRoute;

@@ -127,12 +127,30 @@ export function clearUser() {
   try { localStorage.removeItem(LS_USER); } catch {}
 }
 
-/** Reglas mínimas para considerar “completo” (se mantiene la exigencia de username) */
+/** Reglas mínimas para considerar “completo”:
+ *  - identidad: nombre, apellido, email y username
+ *  - métricas: fechaNacimiento válida (edad >= 5 y <= 120), estatura y peso en rangos razonables
+ */
 export function isUserComplete(u: UserProfile | null | undefined): boolean {
   if (!u) return false;
-  if (!u.nombre?.trim() || !u.apellido?.trim() || !u.email?.trim()) return false;
-  if (!u.username || !u.username.trim()) return false;
-  return true;
+
+  const hasBasics =
+    !!u.nombre?.trim() &&
+    !!u.apellido?.trim() &&
+    !!u.email?.trim() &&
+    !!u.username?.trim();
+
+  if (!hasBasics) return false;
+
+  // Validar fecha de nacimiento con edad derivada
+  const age = ageFromDOB(u.fechaNacimiento);
+  const dobOk = !!u.fechaNacimiento && age !== undefined && age >= 5 && age <= 120;
+
+  // Rangos razonables
+  const heightOk = typeof u.estatura === 'number' && u.estatura >= 80 && u.estatura <= 250;
+  const weightOk = typeof u.peso === 'number' && u.peso >= 20 && u.peso <= 400;
+
+  return dobOk && heightOk && weightOk;
 }
 
 // ===== Calorías (Mifflin-St Jeor) =====
