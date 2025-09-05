@@ -3,9 +3,8 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { Camera } from 'lucide-react';
-import { supabase } from '@/lib/supabaseClient';
+import { logoutAndResetApp } from '@/lib/logout';
 import { useUserProfile, upsertProfile, saveUserMerge, Sex, normalizeUsername } from '@/lib/user';
 
 type Profile = {
@@ -48,7 +47,6 @@ export default function PerfilPage() {
   const [profile, setProfile] = useState<Profile>({});
   const [savedOpen, setSavedOpen] = useState(false); // pop-up guardado
   const [saving, setSaving] = useState(false);
-  const router = useRouter();
 
   // Hidrata el formulario con el perfil global cuando no estamos editando
   useEffect(() => {
@@ -116,13 +114,7 @@ export default function PerfilPage() {
   }
 
   async function handleLogout() {
-    try {
-      await supabase.auth.signOut();
-    } finally {
-      // limpiamos perfil local por seguridad (clave decidida en el proyecto)
-      try { localStorage.removeItem('akira_user_profile_v2'); } catch {}
-      router.push('/login');
-    }
+    await logoutAndResetApp('/login');
   }
 
   return (
@@ -391,7 +383,16 @@ export default function PerfilPage() {
 
       {/* Botón Cerrar sesión */}
       <div className="mt-4">
-        <button type="button" className="btn secondary" onClick={handleLogout}>
+        <button
+          type="button"
+          className="btn"
+          onClick={handleLogout}
+          style={{
+            background: '#e10600',
+            color: 'white',
+            border: '1px solid #e10600',
+          }}
+        >
           Cerrar sesión
         </button>
       </div>
