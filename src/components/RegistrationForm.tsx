@@ -31,8 +31,12 @@ export default function RegistrationForm() {
     }
   }, [router]);
 
+  // ✅ Evitamos undefined con coalesce antes de usar trim()
   const canContinueStep1 = useMemo(() => {
-    return user.nombre.trim().length > 0 && user.apellido.trim().length > 0 && user.email.trim().length > 4;
+    const nombre   = (user.nombre   ?? '').trim();
+    const apellido = (user.apellido ?? '').trim();
+    const email    = (user.email    ?? '').trim();
+    return nombre.length > 0 && apellido.length > 0 && email.length > 4;
   }, [user]);
 
   function handleChange<K extends keyof UserProfile>(key: K, value: UserProfile[K]) {
@@ -80,7 +84,7 @@ export default function RegistrationForm() {
               <span className="text-sm font-medium">Nombre</span>
               <input
                 className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 outline-none focus:ring-2"
-                value={user.nombre}
+                value={user.nombre ?? ''}             {/* ✅ controlado */}
                 onChange={(e) => handleChange('nombre', e.target.value)}
                 required
               />
@@ -90,7 +94,7 @@ export default function RegistrationForm() {
               <span className="text-sm font-medium">Apellido</span>
               <input
                 className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 outline-none focus:ring-2"
-                value={user.apellido}
+                value={user.apellido ?? ''}           {/* ✅ controlado */}
                 onChange={(e) => handleChange('apellido', e.target.value)}
                 required
               />
@@ -102,7 +106,7 @@ export default function RegistrationForm() {
             <input
               type="email"
               className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 outline-none focus:ring-2"
-              value={user.email}
+              value={user.email ?? ''}               {/* ✅ controlado */}
               onChange={(e) => handleChange('email', e.target.value)}
               required
             />
@@ -112,7 +116,7 @@ export default function RegistrationForm() {
             <span className="text-sm font-medium">Teléfono (opcional)</span>
             <input
               className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 outline-none focus:ring-2"
-              value={user.telefono ?? ''}
+              value={user.telefono ?? ''}            {/* ✅ ya estaba */}
               onChange={(e) => handleChange('telefono', e.target.value)}
             />
           </label>
