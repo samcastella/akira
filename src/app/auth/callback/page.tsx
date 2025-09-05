@@ -9,6 +9,12 @@ export const dynamic = 'force-dynamic';
 
 type Phase = 'checking' | 'reset' | 'done' | 'error';
 
+function getHashParams() {
+  if (typeof window === 'undefined') return new URLSearchParams();
+  const raw = window.location.hash?.replace(/^#/, '') || '';
+  return new URLSearchParams(raw);
+}
+
 function CallbackInner() {
   const router = useRouter();
   const params = useSearchParams();
@@ -23,11 +29,11 @@ function CallbackInner() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // leemos el "type" ya sea en query (?type=) o en el hash (#access_token&...&type=)
+  // type en query (?type=) o en el hash (#type=)
   const linkType = useMemo(() => {
     let t = params.get('type') || undefined;
     if (typeof window !== 'undefined' && !t && window.location.hash) {
-      const hp = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+      const hp = getHashParams();
       t = hp.get('type') || undefined;
     }
     return t;
@@ -35,44 +41,84 @@ function CallbackInner() {
 
   useEffect(() => {
     let alive = true;
+
     (async () => {
       try {
-        // 1) Nos aseguramos de intercambiar el code por sesión si viene en la URL
-        let { data: sdata } = await supabase.auth.getSession();
-        if (!sdata.session && typeof window !== 'undefined') {
-          try {
-            await supabase.auth.exchangeCodeForSession(window.location.href);
-            ({ data: sdata } = await supabase.auth.getSession());
-          } catch {}
-        }
-        if (!alive) return;
-
-        // 2) Si es recuperación → mostramos el form para nueva contraseña
-        if (linkType === 'recovery') {
-          setPhase('reset');
-          setInfo('Introduce tu nueva contraseña.');
+        // 0) ¿el hash trae error?
+        const hp = getHashParams();
+        const hashErr = hp.get('error');
+        const hashErrDesc = hp.get('error_description');
+        if (hashErr) {
+          if (!alive) return;
+          setErr(decodeURIComponent(hashErrDesc || hashErr));
+          setPhase('error');
           return;
         }
 
-        // 3) Para cualquier otro tipo de enlace válido (signup/email_change/magiclink…),
-        //    si hay sesión activa tras el exchange, vamos a /auth/confirmed
-        if (sdata.session) {
+        // 1) ¿venimos de OAuth/PKCE con ?code=...?
+        const code = params.get('code');
+        if (code && typeof window !== 'undefined') {
+          try {
+            await supabase.auth.exchangeCodeForSession(window.location.href);
+            if (!alive) return;
+            setPhase('done');
+            router.replace('/auth/confirmed');
+            return;
+          } catch (e: any) {
+            // si no funciona, seguimos probando tokens del hash
+          }
+        }
+
+        // 2) ¿trae tokens en el hash? (signup / magic link / recovery)
+        const access_token = hp.get('access_token');
+        const refresh_token = hp.get('refresh_token');
+        const typeHash = hp.get('type') || linkType || undefined;
+
+        if (access_token && refresh_token) {
+          // Establece sesión directamente
+          const { error: setErrSes } = await supabase.auth.setSession({
+            access_token,
+            refresh_token,
+          });
+          if (setErrSes) throw setErrSes;
+
+          if (!alive) return;
+
+          // Si es recovery → mostrar formulario
+          if (typeHash === 'recovery') {
+            setPhase('reset');
+            setInfo('Introduce tu nueva contraseña.');
+            return;
+          }
+
+          // Resto de tipos válidos → confirmado
           setPhase('done');
           router.replace('/auth/confirmed');
           return;
         }
 
-        // 4) Si no hay sesión y no es recovery, no podemos validar el enlace
+        // 3) Como último recurso, ¿ya hay sesión activa?
+        let { data: sdata } = await supabase.auth.getSession();
+        if (sdata.session) {
+          if (!alive) return;
+          setPhase('done');
+          router.replace('/auth/confirmed');
+          return;
+        }
+
+        // Nada de lo anterior → error
+        if (!alive) return;
         setPhase('error');
-        setErr('No se pudo validar el enlace.');
+        setErr('No se pudo validar el enlace (faltan parámetros o ha expirado).');
       } catch (e: any) {
         if (!alive) return;
         setErr(e?.message || 'No se pudo procesar el enlace.');
         setPhase('error');
       }
     })();
+
     return () => { alive = false; };
-  }, [linkType, router]);
+  }, [linkType, params, router]);
 
   const passError = useMemo(() => {
     if (!password && !confirm) return '';
@@ -186,8 +232,8 @@ function CallbackInner() {
           {phase === 'error' && (
             <>
               <h1 className="text-lg font-bold mb-2">Enlace inválido</h1>
-              <p className="text-xs text-gray-600 mb-4">
-                No hemos podido validar tu enlace. Vuelve a solicitar la recuperación desde la pantalla de inicio de sesión.
+              <p className="text-xs text-gray-600 mb-2">
+                No hemos podido validar tu enlace.
               </p>
               {err && <p className="text-[11px] text-red-600">{err}</p>}
               <div className="mt-3">
