@@ -27,6 +27,21 @@ type Props = {
 
 const LS_SEEN_AUTH = 'akira_seen_auth_v1';
 
+/** URL absoluta a /auth/callback del entorno actual (local/preview/prod) */
+function authRedirectTo(): string | undefined {
+  if (typeof window !== 'undefined') {
+    return `${window.location.origin}/auth/callback`;
+  }
+  const base =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    (process.env.NEXT_PUBLIC_VERCEL_URL
+      ? (process.env.NEXT_PUBLIC_VERCEL_URL.startsWith('http')
+          ? process.env.NEXT_PUBLIC_VERCEL_URL
+          : `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`)
+      : undefined);
+  return base ? `${base}/auth/callback` : undefined;
+}
+
 /** calcula edad (años) a partir de yyyy-mm-dd */
 function ageFromDOB(dob?: string): number | undefined {
   if (!dob) return undefined;
@@ -293,15 +308,11 @@ export default function RegistrationModal({
     try {
       const normalizedUsername = normalizeUsername(user.username || '');
 
-      const appBase =
-        process.env.NEXT_PUBLIC_SITE_URL ||
-        (typeof window !== 'undefined' ? window.location.origin : undefined);
-
       const { data, error } = await supabase.auth.signUp({
         email: normalizedEmail,
         password,
         options: {
-          emailRedirectTo: appBase ? `${appBase}/auth/callback` : undefined,
+          emailRedirectTo: authRedirectTo(), // ← único cambio aquí
           data: { nombre: user.nombre ?? '', apellido: user.apellido ?? '' },
         },
       });
@@ -485,12 +496,8 @@ export default function RegistrationModal({
     }
     setLoading(true);
     try {
-      const appBase =
-        process.env.NEXT_PUBLIC_SITE_URL ||
-        (typeof window !== 'undefined' ? window.location.origin : undefined);
-
       const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
-        redirectTo: appBase ? `${appBase}/auth/callback` : undefined,
+        redirectTo: authRedirectTo(), // ← y el cambio aquí
       });
       if (error) throw error;
       setInfo('Te hemos enviado un correo con el enlace para recuperar tu contraseña.');
@@ -586,7 +593,7 @@ export default function RegistrationModal({
             {mode === 'login' ? 'Iniciar sesión' : 'Registro'}
           </h2>
 
-          {mode === 'register' && (
+        {mode === 'register' && (
             <div className="flex items-center gap-2 text-[10px]">
               <StepDot active={step >= 1} />
               <StepDot active={step >= 2} />

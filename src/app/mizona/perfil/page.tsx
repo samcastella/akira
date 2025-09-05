@@ -3,7 +3,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useUserProfile, upsertProfile, saveUserMerge, Sex } from '@/lib/user';
+import { useUserProfile, upsertProfile, saveUserMerge, Sex, normalizeUsername } from '@/lib/user';
 
 type Profile = {
   username?: string;
@@ -38,7 +38,7 @@ function instagramLabel(val?: string) {
 }
 
 export default function PerfilPage() {
-  const user = useUserProfile();            // ← reactivo a cambios (pullProfile)
+  const user = useUserProfile(); // ← reactivo a cambios (pullProfile)
   const [editing, setEditing] = useState(false);
   const [profile, setProfile] = useState<Profile>({});
   const [savedOpen, setSavedOpen] = useState(false); // pop-up guardado
@@ -68,13 +68,13 @@ export default function PerfilPage() {
   async function save() {
     setSaving(true);
     try {
-      // Normalización suave
+      // Normalización suave (+ username normalizado)
       const payload: Profile = {
         ...profile,
         email: profile.email?.trim().toLowerCase(),
         instagram: normalizeInstagramLink(profile.instagram),
         tiktok: profile.tiktok?.trim() || undefined,
-        username: profile.username?.trim() || undefined,
+        username: profile.username ? normalizeUsername(profile.username) : undefined,
       };
 
       // 1) Escribe en Supabase (propaga a otros dispositivos)
@@ -86,7 +86,17 @@ export default function PerfilPage() {
       setProfile(updated as Profile);
       setSavedOpen(true);
       setEditing(false);
-    } catch (err) {
+    } catch (err: any) {
+      const code = String(err?.code || err?.status || '');
+      const msg = String(err?.message || '');
+
+      // Username duplicado → no cierres el editor ni sigas con guardado local
+      if (code === '23505' || /duplicate|unique/i.test(msg)) {
+        try { alert('Ese nombre de usuario ya está en uso. Prueba con otro.'); } catch {}
+        setSaving(false);
+        return;
+      }
+
       console.warn('[PerfilPage] upsertProfile falló, guardo local y continúo', err);
       const updated = saveUserMerge(profile as any);
       setProfile(updated as Profile);
