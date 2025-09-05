@@ -151,7 +151,7 @@ export default function MiZonaPage() {
     const pad = (first.getDay() + 6) % 7;
     for (let i = 0; i < pad; i++) days.push(new Date(first.getFullYear(), first.getMonth(), i - pad + 1));
     for (let d = 1; d <= last.getDate(); d++) days.push(new Date(monthCursor.getFullYear(), monthCursor.getMonth(), d));
-    // completa a múltiplo de 7 (opcional)
+    // completa a múltiplo de 7
     while (days.length % 7 !== 0) {
       const next = new Date(days[days.length - 1]); next.setDate(next.getDate() + 1); days.push(next);
     }
@@ -172,7 +172,7 @@ export default function MiZonaPage() {
         const tomorrow = new Date();
         tomorrow.setDate(tomorrow.getDate() + 1);
         const clone: Reto = {
-          id: crypto.randomUUID(),
+          id: (globalThis.crypto as any)?.randomUUID?.() ?? String(Date.now()),
           text: r.text,
           createdAt: Date.now(),
           due: tomorrow.toISOString().slice(0, 10),
@@ -201,13 +201,15 @@ export default function MiZonaPage() {
   const weight = fmtKg(user?.peso);
   const height = fmtCm(user?.estatura);
   const kcal = fmtKcal(user?.caloriasDiarias);
-  const actividad = user?.actividad ? user.actividad : '—';
   const activeCount = activePrograms?.length ?? 0;
 
   return (
-    <main className="container" style={{ paddingTop: 24, paddingBottom: 24 }}>
+    <main
+      className="container"
+      style={{ paddingTop: 24, paddingBottom: 24, overflowX: 'hidden', background: 'white' }}
+    >
       {/* ===== Sub-navegación en píldoras ===== */}
-      <h2 className="page-title" style={{ marginBottom: 8 }}>Mi zona</h2>
+      <h2 className="page-title" style={{ marginBottom: 8 }}>Hola {greetingName}</h2>
       <p className="muted" style={{ marginTop: 0, marginBottom: 12 }}>
         Navega por tus hábitos, crea nuevos y consulta tus logros.
       </p>
@@ -251,51 +253,47 @@ export default function MiZonaPage() {
 
       {tab === 'habitos' && (
         <>
-          {/* ===== Encabezado saludo + frase ===== */}
-          <section
+          {/* ===== Card de usuario (todo clicable) ===== */}
+          <Link
+            href="/mizona/perfil"
             style={{
-              background: 'var(--background)',
+              display: 'block',
+              textDecoration: 'none',
+              color: 'inherit',
+              background: 'white',
               borderRadius: 'var(--radius-card)',
               padding: 18,
               border: '1px solid var(--line)',
               marginBottom: 16
             }}
+            aria-label="Ir a mi perfil"
           >
             <div className="flex items-center gap-4">
               {/* Avatar redondo */}
-              <Link href="/mizona/perfil" className="shrink-0" title="Editar foto de perfil">
-                <div
-                  className="rounded-full overflow-hidden flex items-center justify-center"
-                  style={{
-                    width: 64, height: 64,
-                    border: '1px solid var(--line)',
-                    background: '#f7f7f7',
-                  }}
-                >
-                  {user?.foto ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={user.foto}
-                      alt="Foto de perfil"
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    />
-                  ) : (
-                    <Camera size={24} className="muted" />
-                  )}
-                </div>
-              </Link>
+              <div
+                className="rounded-full overflow-hidden flex items-center justify-center"
+                style={{
+                  width: 64, height: 64,
+                  border: '1px solid var(--line)',
+                  background: '#f7f7f7',
+                  flex: '0 0 auto'
+                }}
+              >
+                {user?.foto ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={user.foto}
+                    alt="Foto de perfil"
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                ) : (
+                  <Camera size={24} className="muted" />
+                )}
+              </div>
 
+              {/* Métricas rápidas */}
               <div className="flex-1">
-                <p className="text-sm" style={{ margin: 0, fontWeight: 700 }}>
-                  Hola {greetingName}
-                </p>
-                <p className="muted" style={{ marginTop: 4 }}>
-                  Bienvenido a un nuevo día lleno de retos. En esta sección podrás ir marcando tus retos como conseguidos,
-                  crear nuevos e ir viendo todo tu progreso.
-                </p>
-
-                {/* Datos rápidos */}
-                <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-8 text-sm">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-8 gap-y-10 text-sm">
                   <div>
                     <div className="muted">Edad</div>
                     <div style={{ fontWeight: 600 }}>{age}</div>
@@ -309,10 +307,6 @@ export default function MiZonaPage() {
                     <div style={{ fontWeight: 600 }}>{height}</div>
                   </div>
                   <div>
-                    <div className="muted">Actividad</div>
-                    <div style={{ fontWeight: 600 }}>{actividad}</div>
-                  </div>
-                  <div>
                     <div className="muted">Kcal diarias</div>
                     <div style={{ fontWeight: 600 }}>{kcal}</div>
                   </div>
@@ -321,28 +315,22 @@ export default function MiZonaPage() {
                     <div style={{ fontWeight: 600 }}>{activeCount}</div>
                   </div>
                 </div>
-
-                <div className="mt-4">
-                  <Link href="/mizona/perfil" className="btn">
-                    Ver más
-                  </Link>
-                </div>
               </div>
             </div>
-          </section>
+          </Link>
 
           {/* ===== Semana (círculos) + toggle calendario mensual ===== */}
           <section
             style={{
-              background: 'var(--background)',
+              background: 'white',
               borderRadius: 'var(--radius-card)',
-              padding: 18,
+              padding: 14,
               border: '1px solid var(--line)',
               marginBottom: 16
             }}
           >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-8">
+            <div className="flex items-center">
+              <div className="flex items-center gap-2" style={{ flex: 1, minWidth: 0 }}>
                 {weekDays.map((d, i) => {
                   const k = ymd(d);
                   const color = dayColor(k);
@@ -356,9 +344,9 @@ export default function MiZonaPage() {
                       <div
                         title={`${dayLabel[i]} · ${k}`}
                         style={{
-                          width: 32, height: 32, borderRadius: 999,
+                          width: 28, height: 28, borderRadius: 999,
                           background: bg, color: fg, display: 'grid', placeItems: 'center',
-                          fontWeight: 700
+                          fontSize: 12, fontWeight: 600, opacity: 0.95
                         }}
                       >
                         {dayLabel[i]}
@@ -368,37 +356,54 @@ export default function MiZonaPage() {
                 })}
               </div>
               <button
-                className="btn secondary"
                 onClick={() => setMonthViewOpen(v => !v)}
                 title="Ver calendario mensual"
+                aria-label="Ver calendario mensual"
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  padding: 0,
+                  marginLeft: 8,
+                  lineHeight: 0,
+                  cursor: 'pointer',
+                  color: 'black'
+                }}
               >
-                <ChevronRight size={18} />
+                <ChevronRight size={22} />
               </button>
             </div>
 
             {monthViewOpen && (
               <div className="mt-4">
                 <div className="flex items-center justify-between mb-2">
-                  <button className="btn secondary" onClick={() => {
-                    const d = new Date(monthCursor);
-                    d.setMonth(d.getMonth() - 1);
-                    setMonthCursor(d);
-                  }}>
-                    <ChevronLeft size={16} />
+                  <button
+                    onClick={() => {
+                      const d = new Date(monthCursor);
+                      d.setMonth(d.getMonth() - 1);
+                      setMonthCursor(d);
+                    }}
+                    aria-label="Mes anterior"
+                    style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer' }}
+                  >
+                    <ChevronLeft size={18} />
                   </button>
                   <div className="text-sm font-semibold">
                     {monthCursor.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })}
                   </div>
-                  <button className="btn secondary" onClick={() => {
-                    const d = new Date(monthCursor);
-                    d.setMonth(d.getMonth() + 1);
-                    setMonthCursor(d);
-                  }}>
-                    <ChevronRight size={16} />
+                  <button
+                    onClick={() => {
+                      const d = new Date(monthCursor);
+                      d.setMonth(d.getMonth() + 1);
+                      setMonthCursor(d);
+                    }}
+                    aria-label="Mes siguiente"
+                    style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer' }}
+                  >
+                    <ChevronRight size={18} />
                   </button>
                 </div>
 
-                <div className="grid grid-cols-7 gap-2 text-xs">
+                <div className="grid grid-cols-7 gap-1 text-xs" style={{ width: '100%' }}>
                   {['L','M','X','J','V','S','D'].map(hl => (
                     <div key={`h-${hl}`} className="muted" style={{ textAlign: 'center' }}>{hl}</div>
                   ))}
@@ -439,7 +444,7 @@ export default function MiZonaPage() {
           {/* 1) Importante: Mis hábitos (retos del usuario) */}
           <section
             style={{
-              background: 'var(--background)',
+              background: 'white',
               borderRadius: 'var(--radius-card)',
               padding: 18,
               border: 'none',
@@ -503,7 +508,7 @@ export default function MiZonaPage() {
           {/* 2) Un poco menos importante: Programas activos */}
           <section
             style={{
-              background: 'var(--background)',
+              background: 'white',
               borderRadius: 'var(--radius-card)',
               padding: 18,
               border: '1px solid var(--line)',
@@ -530,7 +535,7 @@ export default function MiZonaPage() {
           {/* 3) Por último: Hábitos con amigos */}
           <section
             style={{
-              background: 'var(--background)',
+              background: 'white',
               borderRadius: 'var(--radius-card)',
               padding: 18,
               border: '1px solid var(--line)',
@@ -546,7 +551,7 @@ export default function MiZonaPage() {
       {tab === 'crear' && (
         <section
           style={{
-            background: 'var(--background)',
+            background: 'white',
             borderRadius: 'var(--radius-card)',
             padding: 18,
             border: '1px solid var(--line)',
@@ -560,7 +565,7 @@ export default function MiZonaPage() {
       {tab === 'logros' && (
         <section
           style={{
-            background: 'var(--background)',
+            background: 'white',
             borderRadius: 'var(--radius-card)',
             padding: 18,
             border: '1px solid var(--line)',
