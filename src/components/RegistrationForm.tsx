@@ -23,7 +23,6 @@ export default function RegistrationForm() {
     actividad: 'sedentario',
   });
 
-  // Si ya existe usuario completo, no tiene sentido estar aquí:
   useEffect(() => {
     const existing = loadUser();
     if (isUserComplete(existing)) {
@@ -31,7 +30,6 @@ export default function RegistrationForm() {
     }
   }, [router]);
 
-  // ✅ Evitamos undefined con coalesce antes de usar trim()
   const canContinueStep1 = useMemo(() => {
     const nombre   = (user.nombre   ?? '').trim();
     const apellido = (user.apellido ?? '').trim();
@@ -51,7 +49,6 @@ export default function RegistrationForm() {
   }
 
   function skipStep2() {
-    // Explicativa que se puede saltar — guardamos lo básico igualmente
     saveUser(user);
     router.push('/bienvenida');
   }
@@ -65,7 +62,6 @@ export default function RegistrationForm() {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    // Guardamos todo lo que haya y pasamos a bienvenida
     saveUser(user);
     router.push('/bienvenida');
   }
@@ -84,7 +80,7 @@ export default function RegistrationForm() {
               <span className="text-sm font-medium">Nombre</span>
               <input
                 className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 outline-none focus:ring-2"
-                value={user.nombre ?? ''}             {/* ✅ controlado */}
+                value={user.nombre ?? ''}
                 onChange={(e) => handleChange('nombre', e.target.value)}
                 required
               />
@@ -94,7 +90,7 @@ export default function RegistrationForm() {
               <span className="text-sm font-medium">Apellido</span>
               <input
                 className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 outline-none focus:ring-2"
-                value={user.apellido ?? ''}           {/* ✅ controlado */}
+                value={user.apellido ?? ''}
                 onChange={(e) => handleChange('apellido', e.target.value)}
                 required
               />
@@ -106,7 +102,7 @@ export default function RegistrationForm() {
             <input
               type="email"
               className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 outline-none focus:ring-2"
-              value={user.email ?? ''}               {/* ✅ controlado */}
+              value={user.email ?? ''}
               onChange={(e) => handleChange('email', e.target.value)}
               required
             />
@@ -116,7 +112,7 @@ export default function RegistrationForm() {
             <span className="text-sm font-medium">Teléfono (opcional)</span>
             <input
               className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 outline-none focus:ring-2"
-              value={user.telefono ?? ''}            {/* ✅ ya estaba */}
+              value={user.telefono ?? ''}
               onChange={(e) => handleChange('telefono', e.target.value)}
             />
           </label>
@@ -246,3 +242,4 @@ export default function RegistrationForm() {
     </div>
   );
 }
+
