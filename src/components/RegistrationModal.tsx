@@ -240,54 +240,48 @@ export default function RegistrationModal({
     })();
   }
 
-  function handleAutoCalories() {
-    try {
-      const est = estimateCalories?.(user);
-      if (est) {
-        setMissing({ fechaNacimiento: false, estatura: false, peso: false });
-        setUser((p) => {
-          const next = { ...p, caloriasDiarias: est };
-          persistBodyMetrics({ caloriasDiarias: est });
-          return next;
-        });
-        return;
-      }
-    } catch {}
+function handleAutoCalories() {
+  try {
+    const est = estimateCalories?.(user);
+    if (est) {
+      setMissing({ fechaNacimiento: false, estatura: false, peso: false });
+      // Solo estado local, NO persistir aquí
+      setUser((p) => ({ ...p, caloriasDiarias: est }));
+      return;
+    }
+  } catch {}
 
-    const derivedAge = user.edad ?? ageFromDOB(user.fechaNacimiento);
+  const derivedAge = user.edad ?? ageFromDOB(user.fechaNacimiento);
 
-    const nextMissing = {
-      fechaNacimiento: derivedAge == null,
-      estatura: !user.estatura && user.estatura !== 0,
-      peso: !user.peso && user.peso !== 0,
-    };
-    setMissing(nextMissing);
-    if (nextMissing.fechaNacimiento || nextMissing.estatura || nextMissing.peso) return;
+  const nextMissing = {
+    fechaNacimiento: derivedAge == null,
+    estatura: !user.estatura && user.estatura !== 0,
+    peso: !user.peso && user.peso !== 0,
+  };
+  setMissing(nextMissing);
+  if (nextMissing.fechaNacimiento || nextMissing.estatura || nextMissing.peso) return;
 
-    const sexAdj = user.sexo === 'masculino' ? 5 : user.sexo === 'femenino' ? -161 : 0;
+  const sexAdj = user.sexo === 'masculino' ? 5 : user.sexo === 'femenino' ? -161 : 0;
 
-    const base =
-      10 * (user.peso ?? 0) +
-      6.25 * (user.estatura ?? 0) -
-      5 * (derivedAge ?? 0) +
-      sexAdj;
+  const base =
+    10 * (user.peso ?? 0) +
+    6.25 * (user.estatura ?? 0) -
+    5 * (derivedAge ?? 0) +
+    sexAdj;
 
-    const activityFactor: Record<Act, number> = {
-      sedentario: 1.2,
-      ligero: 1.375,
-      moderado: 1.55,
-      intenso: 1.725,
-    };
+  const activityFactor: Record<Act, number> = {
+    sedentario: 1.2,
+    ligero: 1.375,
+    moderado: 1.55,
+    intenso: 1.725,
+  };
 
-    const factor = activityFactor[(user.actividad ?? 'sedentario') as Act];
+  const factor = activityFactor[(user.actividad ?? 'sedentario') as Act];
+  const tdee = Math.round(base * factor);
 
-    const tdee = Math.round(base * factor);
-    setUser((p) => {
-      const next = { ...p, caloriasDiarias: tdee };
-      persistBodyMetrics({ caloriasDiarias: tdee });
-      return next;
-    });
-  }
+  // Solo estado local, NO persistir aquí
+  setUser((p) => ({ ...p, caloriasDiarias: tdee }));
+}
 
   // ——— OAuth desactivado temporalmente ———
   function oauthSoon() {
@@ -507,6 +501,30 @@ export default function RegistrationModal({
       setLoading(false);
     }
   }
+
+  async function resendVerification() {
+  setErr(null);
+  setInfo(null);
+  const email = normalizedEmail;
+  if (!email) {
+    setErr('Introduce tu email para reenviar la verificación.');
+    return;
+  }
+  setLoading(true);
+  try {
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email,
+      options: { emailRedirectTo: authRedirectTo() },
+    });
+    if (error) throw error;
+    setInfo('Te hemos reenviado el correo de verificación. Revisa tu bandeja.');
+  } catch (e: any) {
+    setErr(e?.message || 'No se pudo reenviar el correo de verificación.');
+  } finally {
+    setLoading(false);
+  }
+}
 
   function goToPersonalize() { setStep(4); }
 
@@ -826,18 +844,31 @@ export default function RegistrationModal({
                 </form>
               )}
 
-              {step === 3 && (
-                <div className="py-6 space-y-4 text-center">
-                  <div className="flex justify-center"><CheckCircle2 size={56} /></div>
-                  <h3 className="text-lg font-bold">Tu registro ha sido creado con éxito</h3>
-                  <p className="text-xs text-gray-600 max-w-sm mx-auto">
-                    Te hemos enviado un correo para confirmar tu email. Puedes verificarlo cuando quieras <strong>— no es necesario para continuar ahora</strong>.
-                  </p>
-                  <div className="flex justify-center">
-                    <button onClick={goToPersonalize} className="btn whitespace-nowrap">Continuar</button>
-                  </div>
-                </div>
-              )}
+{step === 3 && (
+  <div className="py-6 space-y-4 text-center">
+    <div className="flex justify-center"><CheckCircle2 size={56} /></div>
+    <h3 className="text-lg font-bold">Tu registro ha sido creado con éxito</h3>
+
+    <p className="text-xs text-gray-600 max-w-sm mx-auto">
+      Este email no está verificado.
+      <button
+        type="button"
+        onClick={resendVerification}
+        disabled={loading}
+        className="ml-1 underline underline-offset-2"
+      >
+        {loading ? 'Enviando…' : 'Verificar ahora'}
+      </button>
+    </p>
+
+    {err && <p className="text-[11px] text-red-600">{err}</p>}
+    {info && <p className="text-[11px] text-amber-700">{info}</p>}
+
+    <div className="flex justify-center">
+      <button onClick={goToPersonalize} className="btn whitespace-nowrap">Continuar</button>
+    </div>
+  </div>
+)}
 
               {step === 4 && (
                 <form onSubmit={savePersonalizeAndNext} className="space-y-4">
