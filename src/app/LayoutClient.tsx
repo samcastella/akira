@@ -1,8 +1,16 @@
+// src/app/LayoutClient.tsx
 'use client';
 
 import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
-import { loadUser, isUserComplete, LS_FIRST_RUN, LS_USER } from '@/lib/user';
+import {
+  loadUser,
+  isUserComplete,
+  LS_FIRST_RUN,
+  LS_USER,
+  pullProfile,
+  syncLocalToRemoteIfMissing,
+} from '@/lib/user';
 import { supabase } from '@/lib/supabaseClient';
 import RegistrationModal from '@/components/RegistrationModal';
 
@@ -41,6 +49,25 @@ export default function LayoutClient({
     setUserOk(ok);
   }, []);
 
+  // Helper: sincroniza perfil remoto <-> local si hay sesión
+  async function syncProfile() {
+    try {
+      // 1) Intenta hidratar desde DB
+      const remote = await pullProfile();
+      if (!remote) {
+        // 2) Si no existe fila en DB, intenta crearla desde LS (si hay datos mínimos)
+        await syncLocalToRemoteIfMissing();
+      }
+    } catch (e) {
+      // No bloqueamos la UI por errores de sync; sólo registramos
+      console.warn('[LayoutClient] syncProfile error', e);
+    } finally {
+      // Re-evalúa si el perfil ya cumple requisitos
+      const okNow = isUserComplete(loadUser());
+      if (okNow) setUserOk(true);
+    }
+  }
+
   // Cargar sesión + suscripción a cambios de auth
   useEffect(() => {
     let cancelled = false;
@@ -48,13 +75,19 @@ export default function LayoutClient({
     async function initAuth() {
       const { data } = await supabase.auth.getSession();
       if (!cancelled) {
-        setHasSession(!!data.session);
+        const has = !!data.session;
+        setHasSession(has);
         setAuthReady(true);
+
+        // Si ya hay sesión activa al montar, sincroniza perfil
+        if (has) {
+          await syncProfile();
+        }
       }
     }
     initAuth();
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_evt, session) => {
+    const { data: sub } = supabase.auth.onAuthStateChange(async (evt, session) => {
       setHasSession(!!session);
 
       // Marcar splash visto y cerrar pop-up de onboarding
@@ -72,9 +105,14 @@ export default function LayoutClient({
         setShowRegistration(false);
       }
 
-      // Tras cualquier login, re-evaluamos el perfil local por si se completó
-      const ok = isUserComplete(loadUser());
-      if (ok) setUserOk(true);
+      // Tras cualquier login/refresco de token, sincroniza perfil
+      if (session && (evt === 'SIGNED_IN' || evt === 'TOKEN_REFRESHED' || evt === 'USER_UPDATED')) {
+        await syncProfile();
+      } else {
+        // Re-evaluamos el perfil local igualmente
+        const ok = isUserComplete(loadUser());
+        if (ok) setUserOk(true);
+      }
     });
 
     return () => {
@@ -109,7 +147,7 @@ export default function LayoutClient({
       return;
     }
 
-    // hasSession && !userOk: no abrir nada aquí
+    // hasSession && !userOk: no abrir nada aquí (syncProfile se ejecuta en init/auth change)
     setShowAuthModal(false);
   }, [authReady, userOk, hasSession, isAuthRoute]);
 

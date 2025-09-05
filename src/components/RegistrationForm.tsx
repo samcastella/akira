@@ -3,13 +3,23 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { estimateCalories, isUserComplete, loadUser, saveUser, Sex, UserProfile } from '@/lib/user';
+import {
+  estimateCalories,
+  isUserComplete,
+  loadUser,
+  saveUserMerge,
+  Sex,
+  UserProfile,
+  upsertProfile,
+} from '@/lib/user';
 
 type Step = 1 | 2;
 
 export default function RegistrationForm() {
   const router = useRouter();
   const [step, setStep] = useState<Step>(1);
+  const [saving, setSaving] = useState(false);
+
   const [user, setUser] = useState<UserProfile>({
     nombre: '',
     apellido: '',
@@ -48,9 +58,27 @@ export default function RegistrationForm() {
     }
   }
 
-  function skipStep2() {
-    saveUser(user);
-    router.push('/bienvenida');
+  async function persistAndContinue() {
+    setSaving(true);
+    try {
+      // 1) Escribe/actualiza el perfil en Supabase
+      const serverProfile = await upsertProfile(user);
+      // 2) Refleja en LocalStorage (mergea sin pisar campos más nuevos)
+      saveUserMerge(serverProfile);
+      // 3) Navega
+      router.push('/bienvenida');
+    } catch (err) {
+      console.warn('[RegistrationForm] upsertProfile fallo, guardo local y continuo', err);
+      // Fallback: al menos guarda local para no bloquear el flujo
+      saveUserMerge(user);
+      router.push('/bienvenida');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function skipStep2() {
+    await persistAndContinue();
   }
 
   function autoCalories() {
@@ -60,10 +88,9 @@ export default function RegistrationForm() {
     }
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    saveUser(user);
-    router.push('/bienvenida');
+    await persistAndContinue();
   }
 
   return (
@@ -120,10 +147,10 @@ export default function RegistrationForm() {
           <div className="flex items-center gap-3">
             <button
               type="submit"
-              disabled={!canContinueStep1}
+              disabled={!canContinueStep1 || saving}
               className="rounded-full px-5 py-2 border border-black disabled:opacity-50"
             >
-              Continuar
+              {saving ? 'Guardando…' : 'Continuar'}
             </button>
           </div>
         </form>
@@ -226,15 +253,17 @@ export default function RegistrationForm() {
             <button
               type="button"
               onClick={skipStep2}
-              className="rounded-full px-5 py-2 border border-gray-300"
+              disabled={saving}
+              className="rounded-full px-5 py-2 border border-gray-300 disabled:opacity-50"
             >
-              Saltar
+              {saving ? 'Guardando…' : 'Saltar'}
             </button>
             <button
               type="submit"
-              className="rounded-full px-5 py-2 border border-black"
+              disabled={saving}
+              className="rounded-full px-5 py-2 border border-black disabled:opacity-50"
             >
-              Guardar y continuar
+              {saving ? 'Guardando…' : 'Guardar y continuar'}
             </button>
           </div>
         </form>
@@ -242,4 +271,3 @@ export default function RegistrationForm() {
     </div>
   );
 }
-

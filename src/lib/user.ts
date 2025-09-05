@@ -1,4 +1,5 @@
 // src/lib/user.ts
+import { supabase } from '@/lib/supabaseClient';
 
 // ===== Tipos =====
 export type Activity = 'sedentario' | 'ligero' | 'moderado' | 'intenso';
@@ -61,6 +62,15 @@ function sanitizeUser(u: Partial<UserProfile>): Partial<UserProfile> {
   return out;
 }
 
+/** Evita sobreescribir con undefined/null al hacer merge en LS */
+function keepDefined<T extends Record<string, any>>(obj: T): Partial<T> {
+  const out: Partial<T> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v !== undefined && v !== null) (out as any)[k] = v;
+  }
+  return out;
+}
+
 // ===== Persistencia local (con migración automática v1 -> v2) =====
 export function loadUser(): UserProfile {
   if (typeof window === 'undefined') return {};
@@ -69,7 +79,7 @@ export function loadUser(): UserProfile {
     const rawV2 = localStorage.getItem(LS_USER_KEY);
     if (rawV2) {
       const data = JSON.parse(rawV2);
-      return (data && typeof data === 'object') ? data as UserProfile : {};
+      return (data && typeof data === 'object') ? (data as UserProfile) : {};
     }
 
     // 2) migra desde v1 si existía
@@ -186,4 +196,124 @@ export function dbRowFromProfile(p: Partial<UserProfile>): any {
     actividad: p.actividad ?? null,
     calorias_diarias: p.caloriasDiarias ?? null,
   };
+}
+
+/* ===========================================================
+   === SINCRONIZACIÓN CON SUPABASE: upsert / pull / bootstrap ===
+   =========================================================== */
+
+/** Obtiene el user_id del usuario autenticado */
+export async function getAuthUserId(): Promise<string | null> {
+  const { data, error } = await supabase.auth.getUser();
+  if (error) {
+    console.warn('[auth.getUser] error', error);
+    return null;
+  }
+  return data.user?.id ?? null;
+}
+
+/**
+ * Crea/actualiza la fila del perfil en public_profiles (onConflict: user_id)
+ * y devuelve el perfil normalizado (tipo local). También mergea a LocalStorage.
+ */
+export async function upsertProfile(partial: Partial<UserProfile>): Promise<UserProfile> {
+  const uid = await getAuthUserId();
+  if (!uid) throw new Error('No hay sesión activa para upsertProfile');
+
+  // construimos fila DB (forzando user_id)
+  const row = dbRowFromProfile({ ...partial, userId: uid });
+
+  const { data, error } = await supabase
+    .from('public_profiles')
+    .upsert(row, { onConflict: 'user_id' })
+    .select('*')
+    .single();
+
+  if (error) {
+    console.error('[upsertProfile] error', error);
+    throw error;
+  }
+
+  const profile = profileFromDbRow(data) as UserProfile;
+
+  // reflejamos localmente sin pisar con undefined/null
+  try {
+    saveUserMerge(keepDefined(profile));
+  } catch (e) {
+    console.warn('[upsertProfile] saveUserMerge fallo (ignorable)', e);
+  }
+
+  return profile;
+}
+
+/**
+ * Lee el perfil remoto; si existe, lo mergea en LocalStorage.
+ * Devuelve el perfil (local) o null si no hay fila.
+ */
+export async function pullProfile(): Promise<UserProfile | null> {
+  const uid = await getAuthUserId();
+  if (!uid) return null;
+
+  const { data, error } = await supabase
+    .from('public_profiles')
+    .select('*')
+    .eq('user_id', uid)
+    .maybeSingle();
+
+  if (error) {
+    console.error('[pullProfile] error', error);
+    throw error;
+  }
+  if (!data) return null;
+
+  const profile = profileFromDbRow(data) as UserProfile;
+
+  try {
+    saveUserMerge(keepDefined(profile));
+  } catch (e) {
+    console.warn('[pullProfile] saveUserMerge fallo (ignorable)', e);
+  }
+
+  return profile;
+}
+
+/**
+ * Si no existe fila remota pero hay datos mínimos en LocalStorage,
+ * crea la fila en DB y la deja sincronizada localmente.
+ */
+export async function syncLocalToRemoteIfMissing(): Promise<UserProfile | null> {
+  const uid = await getAuthUserId();
+  if (!uid) return null;
+
+  // ¿ya existe fila?
+  const { data, error } = await supabase
+    .from('public_profiles')
+    .select('user_id')
+    .eq('user_id', uid)
+    .maybeSingle();
+
+  if (error) {
+    console.error('[syncLocalToRemoteIfMissing] error SELECT', error);
+    throw error;
+  }
+  if (data) {
+    // ya existe; hidratamos LS por si acaso
+    return await pullProfile();
+  }
+
+  // No existe fila: intentamos crearla desde LS si hay datos mínimos
+  let local: Partial<UserProfile> | null = null;
+  try {
+    local = loadUser();
+  } catch {
+    /* noop */
+  }
+
+  if (!local || !(local.nombre && local.apellido && local.email)) {
+    // no hay datos locales suficientes
+    return null;
+  }
+
+  const created = await upsertProfile(local);
+  return created;
 }
