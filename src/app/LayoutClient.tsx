@@ -21,8 +21,8 @@ const LS_SEEN_AUTH = 'akira_seen_auth_v1';
 // Decide si ya podemos dejar pasar al usuario (perfil completo O ha terminado onboarding)
 function canEnter(): boolean {
   try {
-    const u = loadUser() as any;
-    return !!u?.onboardingDone || isUserComplete(u);
+    const u = loadUser();
+    return isUserComplete(u);
   } catch {
     return false;
   }
@@ -208,53 +208,55 @@ export default function LayoutClient({
     location.reload();
   }
 
-  if (gating) {
-    return (
-      <>
-        {/* Fondo splash */}
-        <div
-          className="fixed inset-0 z-40"
-          style={{
-            backgroundImage: 'url(/splash.jpg)',
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-            backgroundRepeat: 'no-repeat',
-          }}
+{/* === OVERLAY DE GATING: se muestra encima de la app cuando userOk === false === */}
+{gating && (
+  <>
+    {/* Fondo splash */}
+    <div
+      className="fixed inset-0 z-40"
+      style={{
+        backgroundImage: 'url(/splash.jpg)',
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
+      }}
+    />
+
+    {/* Pop-up de onboarding → RegistrationModal (paso 1) */}
+    {!hasSession && showAuthModal && (
+      <div className="fixed inset-0 z-50">
+        <RegistrationModal
+          initialStep={1}
+          onClose={handleCloseAuthModal}
+          redirectTo="/mizona"
         />
+      </div>
+    )}
 
-        {/* Pop-up de onboarding → RegistrationModal (paso 1) */}
-        {!hasSession && showAuthModal && (
-          <div className="relative z-50">
-            <RegistrationModal
-              initialStep={1}
-              onClose={handleCloseAuthModal}
-            />
-          </div>
-        )}
+    {/* Modal de registro / personalización */}
+    {showRegistration && (
+      <div className="fixed inset-0 z-50">
+        <RegistrationModal
+          onClose={handleCloseRegistration}
+          initialStep={registrationStartStep as any}
+          redirectTo="/mizona"
+        />
+      </div>
+    )}
 
-        {/* Modal de registro / personalización */}
-        {showRegistration && (
-          <div className="relative z-50">
-            <RegistrationModal
-              onClose={handleCloseRegistration}
-              initialStep={registrationStartStep as any}
-            />
-          </div>
-        )}
+    {/* Botón dev reset */}
+    {isDev && (
+      <button
+        onClick={handleDevReset}
+        title="Reset onboarding (solo dev)"
+        className="fixed bottom-4 right-4 z-[70] rounded-full px-3 py-1.5 text-xs font-semibold border border-black bg-white/90 backdrop-blur"
+      >
+        Reset onboarding
+      </button>
+    )}
+  </>
+)}
 
-        {/* Botón dev reset */}
-        {isDev && (
-          <button
-            onClick={handleDevReset}
-            title="Reset onboarding (solo dev)"
-            className="fixed bottom-4 right-4 z-[70] rounded-full px-3 py-1.5 text-xs font-semibold border border-black bg-white/90 backdrop-blur"
-          >
-            Reset onboarding
-          </button>
-        )}
-      </>
-    );
-  }
 
   // App normal cuando ya puede entrar (perfil completo o onboardingDone) o estamos en rutas de auth
   return (

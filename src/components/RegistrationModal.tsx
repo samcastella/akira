@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
-import { UserProfile, estimateCalories, saveUserMerge, loadUser, LS_USER_KEY } from '@/lib/user';
+import { UserProfile, estimateCalories, saveUserMerge, loadUser, LS_USER_KEY, isUserComplete } from '@/lib/user';
 import { Rocket, ArrowLeft, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { getCopy } from '@/lib/copy';
 import { detectLocale } from '@/lib/locale';
@@ -566,19 +566,22 @@ export default function RegistrationModal({
   }
 
   function finish() {
-    if (finishing) return;
-    setFinishing(true);
+  if (finishing) return;
+  setFinishing(true);
 
-    // Guardar todo y marcar onboardingDone
-    saveUserMerge({ username: user.username });
-    saveUserMerge(user);
-    // hasta que ampliemos el tipo, forzamos el flag con any
-    saveUserMerge({ onboardingDone: true } as any);
-    try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
-
-    onClose?.();
-    setTimeout(() => { router.replace(redirectTo || '/'); }, 0);
+  // Solo cerramos si el perfil está completo
+  const complete = isUserComplete(loadUser());
+  if (!complete) {
+    setFinishing(false);
+    setInfo('Para terminar, completa fecha de nacimiento, estatura y peso.');
+    setStep(4);
+    return;
   }
+
+  try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
+  onClose?.();
+  setTimeout(() => { router.replace(redirectTo || '/mizona'); }, 0);
+}
 
   function goLogin() {
     setMode('login');
@@ -998,11 +1001,11 @@ export default function RegistrationModal({
                     <button
                       type="button"
                       onClick={() => {
-                        // Guardar métricas, marcar onboardingDone de forma SILENCIOSA y pasar a la motivación
-                        persistBodyMetrics(undefined, { silent: true });
-                        setOnboardingDoneSilent();
-                        setStep(5);
-                      }}
+  // Guardar métricas de forma silenciosa y pasar a la motivación (sin marcar onboardingDone)
+  persistBodyMetrics(undefined, { silent: true });
+  setStep(5);
+}}
+
                       className="underline underline-offset-2"
                     >
                       Omitir este paso

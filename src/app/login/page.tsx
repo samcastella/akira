@@ -13,7 +13,7 @@ function LoginContent() {
   const router = useRouter();
   const params = useSearchParams();
 
-  const redirect = params.get('redirect') || '/';
+  const redirect = params.get('redirect') || '/mizona';
   const emailQS = params.get('email') || undefined;
   const resetOk = params.get('reset') === 'ok';
 
