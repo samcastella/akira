@@ -4,9 +4,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Check } from 'lucide-react';
 import type { HabitMaster } from '@/components/habits/HabitForm';
+import { useUserProfile } from '@/lib/user';
 
 const LS_HABITS_MASTER = 'akira_habits_master_v1';
 const LS_HABITS_DAILY  = 'akira_habits_daily_v1'; // { [yyyy-mm-dd]: { [habitId]: { done, doneAt? } } }
+const LS_ACTIVE_PROGRAMS = 'akira_programs_active_v1';
 
 type DailyEntry = { done: boolean; doneAt?: number };
 type DailyMap = Record<string, Record<string, DailyEntry>>; // dateKey -> habitId -> entry
@@ -52,6 +54,20 @@ const isWeekendDay = (d: Date) => {
   return g === 0 || g === 6;
 };
 const parseKeyToDate = (k: string) => new Date(k + 'T00:00:00');
+
+/* Semana utilidades */
+function mondayOf(date: Date) {
+  const d = new Date(date);
+  const day = (d.getDay() + 6) % 7; // 0=lunes
+  d.setDate(d.getDate() - day);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+function addDays(d: Date, n: number) {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
 
 /* ===== Tipado de lista para render ===== */
 type HabitView = HabitMaster & { done: boolean };
@@ -105,6 +121,14 @@ export default function HabitosClient() {
   const [daily, setDaily] = useState<DailyMap>({});
   const [today, setToday] = useState<string>(dateKey());
 
+  // Usuario (para avatar y nombre)
+  const user = (useUserProfile?.() as any) || {};
+  const username = user?.username || user?.nombre || 'usuario/a';
+  const avatar = user?.foto as string | undefined;
+
+  // Programas activos (placeholder visual por ahora)
+  const [activePrograms, setActivePrograms] = useState<string[]>([]);
+
   // Felicitación
   const [showCongrats, setShowCongrats] = useState(false);
   const [congratsText, setCongratsText] = useState<typeof CONGRATS_MESSAGES[number]>(CONGRATS_MESSAGES[0]);
@@ -113,6 +137,10 @@ export default function HabitosClient() {
   useEffect(() => {
     setMasters(loadMasterHabits());
     setDaily(loadDaily());
+    try {
+      const raw = localStorage.getItem(LS_ACTIVE_PROGRAMS);
+      setActivePrograms(raw ? JSON.parse(raw) : []);
+    } catch { setActivePrograms([]); }
   }, []);
 
   // Asegura que para "hoy" existan entradas de todos los hábitos aplicables
@@ -147,6 +175,21 @@ export default function HabitosClient() {
       .filter(h => isInRange(dKey, h.startDate, h.endDate))
       .filter(h => !(h.weekend === false && isWeekendDay(d)))
       .map(h => h.id);
+  }
+
+  // Semáforo: estado por día ('green'|'orange'|'red'|'gray')
+  function dayStatus(dKey: string): 'green' | 'orange' | 'red' | 'gray' {
+    const ids = applicableMasterIds(dKey);
+    if (ids.length === 0) return 'gray';
+    const bucket = daily[dKey] ?? {};
+    const doneCount = ids.filter(id => bucket[id]?.done).length;
+    if (doneCount === 0) {
+      // rojo solo si es un día pasado y no se hizo ninguno
+      if (dKey < today) return 'red';
+      return 'orange';
+    }
+    if (doneCount === ids.length) return 'green';
+    return 'orange';
   }
 
   // ✅ dKey ahora es opcional
@@ -200,61 +243,110 @@ export default function HabitosClient() {
       .map(h => ({ ...h, done: !!bucket[h.id]?.done }));
   }, [masters, daily, today]);
 
-  function moveDay(delta: number) {
-    const d = parseKeyToDate(today);
-    d.setDate(d.getDate() + delta);
-    const k = dateKey(d);
-    setToday(k);
-    ensureDailyForDate(k);
-  }
+  const formatNoYear = (k: string) =>
+    new Date(k + 'T00:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-6" style={{ background: 'white' }}>
-      <div className="mb-4">
-        <h2 className="page-title" style={{ marginBottom: 6 }}>Mis hábitos</h2>
-        <p className="muted" style={{ marginTop: 0 }}>
-          Marca los hábitos de hoy. Los colores e iconos vienen del hábito raíz que creaste.
-        </p>
-      </div>
-
-      {/* Navegación de fecha */}
-      <div className="mb-4 flex items-center justify-between">
-        <button
-          className="rounded-full border border-black/20 bg-white px-3 py-1 text-sm hover:bg-black/5"
-          onClick={() => moveDay(-1)}
+      {/* Subnavegación */}
+      <nav className="mb-4 flex flex-wrap gap-3">
+        <Link
+          href="/mizona"
+          className="btn"
+          style={{ background: 'black', color: 'white', border: '1px solid black' }} // Mis hábitos seleccionado
         >
-          ← Ayer
-        </button>
-        <div className="text-sm font-semibold">
-          {parseKeyToDate(today).toLocaleDateString('es-ES', { weekday: 'long', day: '2-digit', month: 'short' })}
-        </div>
-        <button
-          className="rounded-full border border-black/20 bg-white px-3 py-1 text-sm hover:bg-black/5"
-          onClick={() => moveDay(+1)}
+          Mis hábitos
+        </Link>
+        <Link
+          href="/mizona/logros"
+          className="btn"
+          style={{ background: 'white', color: 'black', border: '1px solid var(--line)' }}
         >
-          Mañana →
-        </button>
-      </div>
+          Logros
+        </Link>
+        <Link
+          href="/mizona/perfil"
+          className="btn"
+          style={{ background: 'white', color: 'black', border: '1px solid var(--line)' }}
+        >
+          Mi perfil
+        </Link>
+      </nav>
 
-      {/* Si no hay masters */}
-      {masters.length === 0 && (
-        <div className="rounded-2xl border border-dashed border-black/20 px-4 py-6 text-center text-sm text-black/60">
-          No tienes hábitos creados todavía. Ve a{' '}
-          <Link href="/mizona/crear-habitos" className="font-medium underline">
-            Crear mis hábitos
-          </Link>.
-        </div>
-      )}
-
-      {/* Lista de hoy */}
-      {masters.length > 0 && (
-        <ul className="space-y-3">
-          {todayHabits.length === 0 ? (
-            <li className="rounded-2xl border border-dashed border-black/20 px-4 py-6 text-center text-sm text-black/60">
-              No hay hábitos programados para hoy (según rango o fin de semana).
-            </li>
+      {/* Perfil compacto (avatar + @username, todo clicable) */}
+      <Link
+        href="/mizona/perfil"
+        className="mb-3 flex items-center gap-3 text-inherit"
+        style={{ textDecoration: 'none' }}
+        aria-label="Ir a mi perfil"
+      >
+        <span
+          className="rounded-full overflow-hidden flex items-center justify-center"
+          style={{ width: 44, height: 44, border: '1px solid var(--line)', background: '#f7f7f7' }}
+        >
+          {avatar ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={avatar} alt="Foto de perfil" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           ) : (
-            todayHabits.map((h) => {
+            <span style={{ fontSize: 18, color: '#9ca3af' }}>👤</span>
+          )}
+        </span>
+        <span style={{ fontWeight: 600 }}>@{String(username).trim()}</span>
+      </Link>
+
+      {/* Semáforo semanal centrado (sin recuadro) */}
+      <div className="mb-5 flex items-center justify-center gap-4">
+        {(() => {
+          const weekStart = mondayOf(new Date());
+          const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+          const labels = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+          return days.map((d, i) => {
+            const k = dateKey(d);
+            const status = dayStatus(k); // 'green'|'orange'|'red'|'gray'
+            const bg =
+              status === 'green' ? '#10b981' :
+              status === 'orange' ? '#f59e0b' :
+              status === 'red' ? '#e10600' : '#ffffff';
+            const fg = status === 'gray' ? '#111' : '#fff';
+            return (
+              <div key={k} style={{ textAlign: 'center' }}>
+                <div
+                  title={`${labels[i]} · ${k}`}
+                  style={{
+                    width: 40, height: 40, borderRadius: 999,
+                    display: 'grid', placeItems: 'center',
+                    border: '1px solid #000', background: bg, color: fg,
+                    fontSize: 13, fontWeight: 700
+                  }}
+                >
+                  {labels[i]}
+                </div>
+              </div>
+            );
+          });
+        })()}
+      </div>
+
+      {/* Título de hoy */}
+      <h3 style={{ marginTop: 0, marginBottom: 10 }}>
+        ¿Qué tenemos para hoy {formatNoYear(today)}?
+      </h3>
+
+      {/* Hábitos creados por ti */}
+      <section className="mb-6">
+        <h4 style={{ margin: '6px 0 8px 0' }}>Hábitos creados por ti</h4>
+        {masters.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-black/20 px-4 py-6 text-center text-sm text-black/60">
+            No tienes hábitos creados todavía. Ve a{' '}
+            <Link href="/mizona/crear-habitos" className="font-medium underline">Crear mis hábitos</Link>.
+          </div>
+        ) : todayHabits.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-black/20 px-4 py-6 text-center text-sm text-black/60">
+            No hay hábitos programados para hoy (según rango o fin de semana).
+          </div>
+        ) : (
+          <ul className="space-y-3">
+            {todayHabits.map((h) => {
               const checked = h.done;
               const bg = checked ? (h.color ?? '#E8EAF6') : '#fff';
               const textColor = checked ? (h.textColor === 'white' ? '#fff' : '#111') : '#111';
@@ -282,13 +374,31 @@ export default function HabitosClient() {
                   </button>
                 </li>
               );
-            })
-          )}
-        </ul>
-      )}
+            })}
+          </ul>
+        )}
+      </section>
 
-      {/* Enlace de vuelta */}
-      <div className="mt-8">
+      {/* Programas activos (placeholder hasta vincular hábitos de programa) */}
+      {activePrograms?.map((p) => (
+        <section key={p} className="mb-6">
+          <h4 style={{ margin: '6px 0 8px 0' }}>Programa activo: {p}</h4>
+          <div className="rounded-2xl border border-dashed border-black/20 px-4 py-6 text-center text-sm text-black/60">
+            Próximamente: hábitos con check por programa.
+          </div>
+        </section>
+      ))}
+
+      {/* Retos con amigos (placeholder) */}
+      <section className="mb-2">
+        <h4 style={{ margin: '6px 0 8px 0' }}>Retos con amigos</h4>
+        <div className="rounded-2xl border border-dashed border-black/20 px-4 py-6 text-center text-sm text-black/60">
+          Próximamente: “Ir al gym durante 30 días” y otros retos compartidos, con sus checks diarios.
+        </div>
+      </section>
+
+      {/* Enlace crear/editar */}
+      <div className="mt-6">
         <Link
           href="/mizona/crear-habitos"
           className="rounded-full border border-black/20 bg-white px-4 py-2 text-sm hover:bg-black/5"
