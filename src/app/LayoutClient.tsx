@@ -182,7 +182,9 @@ export default function LayoutClient({
   const gating = userOk === false && !isAuthRoute;
 
   // Ocultamos la BottomNav también en rutas de auth
-  const hideNav = gating || pathname === '/bienvenida' || isAuthRoute;
+// No ocultes la nav por gating: queremos verla incluso si el modal está encima
+const hideNav = pathname === '/bienvenida' || isAuthRoute;
+
 
   function handleCloseRegistration() {
     setShowRegistration(false);
