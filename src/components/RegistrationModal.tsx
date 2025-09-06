@@ -54,6 +54,15 @@ function ageFromDOB(dob?: string): number | undefined {
   return age >= 0 ? age : undefined;
 }
 
+/** Marca onboardingDone en LS sin emitir evento ni chocar con tipos (hasta que ampliemos UserProfile) */
+function setOnboardingDoneSilent() {
+  try {
+    const prev = loadUser() as any;
+    const next = { ...(prev || {}), onboardingDone: true };
+    localStorage.setItem(LS_USER_KEY, JSON.stringify(next));
+  } catch {}
+}
+
 export default function RegistrationModal({
   onClose,
   initialStep = 1,
@@ -199,104 +208,104 @@ export default function RegistrationModal({
     return '';
   }, [password, confirm]);
 
-/** Guarda métricas en local y, best-effort, en Supabase.
- *  Si opts.silent === true, NO emite el evento 'akira:user-updated'
- *  (así el modal no se cierra) y solo actualiza localStorage.
- */
-function persistBodyMetrics(extra?: Partial<FormUser>, opts?: { silent?: boolean }) {
-  const merged: Partial<FormUser> = {
-    sexo: user.sexo,
-    fechaNacimiento: user.fechaNacimiento,
-    edad: user.edad, // compat
-    estatura: user.estatura,
-    peso: user.peso,
-    actividad: user.actividad,
-    caloriasDiarias: user.caloriasDiarias,
-    ...(extra ?? {}),
-  };
+  /** Guarda métricas en local y, best-effort, en Supabase.
+   *  Si opts.silent === true, NO emite el evento 'akira:user-updated'
+   *  (así el modal no se cierra) y solo actualiza localStorage.
+   */
+  function persistBodyMetrics(extra?: Partial<FormUser>, opts?: { silent?: boolean }) {
+    const merged: Partial<FormUser> = {
+      sexo: user.sexo,
+      fechaNacimiento: user.fechaNacimiento,
+      edad: user.edad, // compat
+      estatura: user.estatura,
+      peso: user.peso,
+      actividad: user.actividad,
+      caloriasDiarias: user.caloriasDiarias,
+      ...(extra ?? {}),
+    };
 
-  if (opts?.silent) {
-    // merge local SIN emitir evento
-    try {
-      const prev = loadUser();
-      const next = { ...prev, ...merged };
-      localStorage.setItem(LS_USER_KEY, JSON.stringify(next));
-      // no dispatch de 'akira:user-updated'
-    } catch {}
-  } else {
-    // merge normal (emite evento)
-    saveUserMerge(merged as UserProfile);
+    if (opts?.silent) {
+      // merge local SIN emitir evento
+      try {
+        const prev = loadUser();
+        const next = { ...prev, ...merged };
+        localStorage.setItem(LS_USER_KEY, JSON.stringify(next));
+        // no dispatch de 'akira:user-updated'
+      } catch {}
+    } else {
+      // merge normal (emite evento)
+      saveUserMerge(merged as UserProfile);
+    }
+
+    // Best-effort a Supabase (no afecta al modal)
+    (async () => {
+      try {
+        const { data: u } = await supabase.auth.getUser();
+        const uid = u.user?.id;
+        if (!uid) return;
+
+        const derivedAge = merged.edad ?? ageFromDOB(merged.fechaNacimiento);
+
+        await supabase
+          .from('public_profiles')
+          .update({
+            sexo: merged.sexo ?? null,
+            edad: derivedAge ?? null,
+            estatura: merged.estatura ?? null,
+            peso: merged.peso ?? null,
+            calorias_diarias: merged.caloriasDiarias ?? null,
+            fecha_nacimiento: merged.fechaNacimiento ?? null,
+            telefono: user.telefono ?? null,
+          })
+          .eq('user_id', uid);
+      } catch {
+        // noop
+      }
+    })();
   }
 
-  // Best-effort a Supabase (no afecta al modal)
-  (async () => {
+  function handleAutoCalories() {
     try {
-      const { data: u } = await supabase.auth.getUser();
-      const uid = u.user?.id;
-      if (!uid) return;
+      const est = estimateCalories?.(user);
+      if (est) {
+        setMissing({ fechaNacimiento: false, estatura: false, peso: false });
+        // Solo estado local, NO persistir aquí
+        setUser((p) => ({ ...p, caloriasDiarias: est }));
+        return;
+      }
+    } catch {}
 
-      const derivedAge = merged.edad ?? ageFromDOB(merged.fechaNacimiento);
+    const derivedAge = user.edad ?? ageFromDOB(user.fechaNacimiento);
 
-      await supabase
-        .from('public_profiles')
-        .update({
-          sexo: merged.sexo ?? null,
-          edad: derivedAge ?? null,
-          estatura: merged.estatura ?? null,
-          peso: merged.peso ?? null,
-          calorias_diarias: merged.caloriasDiarias ?? null,
-          fecha_nacimiento: merged.fechaNacimiento ?? null,
-          telefono: user.telefono ?? null,
-        })
-        .eq('user_id', uid);
-    } catch {
-      // noop
-    }
-  })();
-}
+    const nextMissing = {
+      fechaNacimiento: derivedAge == null,
+      estatura: !user.estatura && user.estatura !== 0,
+      peso: !user.peso && user.peso !== 0,
+    };
+    setMissing(nextMissing);
+    if (nextMissing.fechaNacimiento || nextMissing.estatura || nextMissing.peso) return;
 
-function handleAutoCalories() {
-  try {
-    const est = estimateCalories?.(user);
-    if (est) {
-      setMissing({ fechaNacimiento: false, estatura: false, peso: false });
-      // Solo estado local, NO persistir aquí
-      setUser((p) => ({ ...p, caloriasDiarias: est }));
-      return;
-    }
-  } catch {}
+    const sexAdj = user.sexo === 'masculino' ? 5 : user.sexo === 'femenino' ? -161 : 0;
 
-  const derivedAge = user.edad ?? ageFromDOB(user.fechaNacimiento);
+    const base =
+      10 * (user.peso ?? 0) +
+      6.25 * (user.estatura ?? 0) -
+      5 * (derivedAge ?? 0) +
+      sexAdj;
 
-  const nextMissing = {
-    fechaNacimiento: derivedAge == null,
-    estatura: !user.estatura && user.estatura !== 0,
-    peso: !user.peso && user.peso !== 0,
-  };
-  setMissing(nextMissing);
-  if (nextMissing.fechaNacimiento || nextMissing.estatura || nextMissing.peso) return;
+    const activityFactor: Record<Act, number> = {
+      sedentario: 1.2,
+      ligero: 1.375,
+      moderado: 1.55,
+      intenso: 1.725,
+    };
 
-  const sexAdj = user.sexo === 'masculino' ? 5 : user.sexo === 'femenino' ? -161 : 0;
+    const factor = activityFactor[(user.actividad ?? 'sedentario') as Act];
+    const tdee = Math.round(base * factor);
 
-  const base =
-    10 * (user.peso ?? 0) +
-    6.25 * (user.estatura ?? 0) -
-    5 * (derivedAge ?? 0) +
-    sexAdj;
-
-  const activityFactor: Record<Act, number> = {
-    sedentario: 1.2,
-    ligero: 1.375,
-    moderado: 1.55,
-    intenso: 1.725,
-  };
-
-  const factor = activityFactor[(user.actividad ?? 'sedentario') as Act];
-  const tdee = Math.round(base * factor);
-
-  // Solo estado local, NO persistir aquí
-  setUser((p) => ({ ...p, caloriasDiarias: tdee }));
-}
+    // Solo estado local, NO persistir aquí
+    setUser((p) => ({ ...p, caloriasDiarias: tdee }));
+  }
 
   // ——— OAuth desactivado temporalmente ———
   function oauthSoon() {
@@ -518,50 +527,55 @@ function handleAutoCalories() {
   }
 
   async function resendVerification() {
-  setErr(null);
-  setInfo(null);
-  const email = normalizedEmail;
-  if (!email) {
-    setErr('Introduce tu email para reenviar la verificación.');
-    return;
+    setErr(null);
+    setInfo(null);
+    const email = normalizedEmail;
+    if (!email) {
+      setErr('Introduce tu email para reenviar la verificación.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email,
+        options: { emailRedirectTo: authRedirectTo() },
+      });
+      if (error) throw error;
+      setInfo('Te hemos reenviado el correo de verificación. Revisa tu bandeja.');
+    } catch (e: any) {
+      setErr(e?.message || 'No se pudo reenviar el correo de verificación.');
+    } finally {
+      setLoading(false);
+    }
   }
-  setLoading(true);
-  try {
-    const { error } = await supabase.auth.resend({
-      type: 'signup',
-      email,
-      options: { emailRedirectTo: authRedirectTo() },
-    });
-    if (error) throw error;
-    setInfo('Te hemos reenviado el correo de verificación. Revisa tu bandeja.');
-  } catch (e: any) {
-    setErr(e?.message || 'No se pudo reenviar el correo de verificación.');
-  } finally {
-    setLoading(false);
-  }
-}
 
   function goToPersonalize() { setStep(4); }
 
   function savePersonalizeAndNext(e: React.FormEvent) {
-  e.preventDefault();
-  if (savingPersonalize) return;
-  setSavingPersonalize(true);
-  try {
-    // Guardamos en local/Supabase SIN evento → no se cierra el modal
-    persistBodyMetrics(undefined, { silent: true });
-    setStep(5);
-  } finally {
-    setSavingPersonalize(false);
+    e.preventDefault();
+    if (savingPersonalize) return;
+    setSavingPersonalize(true);
+    try {
+      // Guardamos en local/Supabase SIN evento → no se cierra el modal
+      persistBodyMetrics(undefined, { silent: true });
+      setStep(5);
+    } finally {
+      setSavingPersonalize(false);
+    }
   }
-}
 
   function finish() {
     if (finishing) return;
     setFinishing(true);
+
+    // Guardar todo y marcar onboardingDone
     saveUserMerge({ username: user.username });
     saveUserMerge(user);
+    // hasta que ampliemos el tipo, forzamos el flag con any
+    saveUserMerge({ onboardingDone: true } as any);
     try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
+
     onClose?.();
     setTimeout(() => { router.replace(redirectTo || '/'); }, 0);
   }
@@ -627,7 +641,7 @@ function handleAutoCalories() {
             {mode === 'login' ? 'Iniciar sesión' : 'Registro'}
           </h2>
 
-        {mode === 'register' && (
+          {mode === 'register' && (
             <div className="flex items-center gap-2 text-[10px]">
               <StepDot active={step >= 1} />
               <StepDot active={step >= 2} />
@@ -821,16 +835,16 @@ function handleAutoCalories() {
                       <span className="font-medium">Repetir contraseña</span>
                       <div className="relative">
                         <input
-                          key={`passc-${showPassConfirm ? 't' : 'p'}`}
-                          ref={confirmRef}
-                          type={showPassConfirm ? 'text' : 'password'}
-                          name="new-password-confirm"
-                          autoComplete="new-password"
-                          className="mt-1 input text-[16px] w-full pr-10"
-                          value={confirm}
-                          onChange={(e) => setConfirm(e.target.value)}
-                          required
-                        />
+  key={`passc-${showPassConfirm ? 't' : 'p'}`}
+  ref={confirmRef}
+  type={showPassConfirm ? 'text' : 'password'}
+  name="new-password-confirm"
+  autoComplete="new-password"
+  className="mt-1 input text-[16px] w-full pr-10"
+  value={confirm}
+  onChange={(e) => setConfirm(e.target.value)}
+  required
+/>
                         <button type="button" aria-pressed={showPassConfirm} onClick={toggleShowPassConfirm} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 opacity-70 hover:opacity-100" aria-label={showPassConfirm ? 'Ocultar contraseña' : 'Mostrar contraseña'}>
                           {showPassConfirm ? <EyeOff size={18} /> : <Eye size={18} />}
                         </button>
@@ -860,31 +874,31 @@ function handleAutoCalories() {
                 </form>
               )}
 
-{step === 3 && (
-  <div className="py-6 space-y-4 text-center">
-    <div className="flex justify-center"><CheckCircle2 size={56} /></div>
-    <h3 className="text-lg font-bold">Tu registro ha sido creado con éxito</h3>
+              {step === 3 && (
+                <div className="py-6 space-y-4 text-center">
+                  <div className="flex justify-center"><CheckCircle2 size={56} /></div>
+                  <h3 className="text-lg font-bold">Tu registro ha sido creado con éxito</h3>
 
-    <p className="text-xs text-gray-600 max-w-sm mx-auto">
-      Este email no está verificado.
-      <button
-        type="button"
-        onClick={resendVerification}
-        disabled={loading}
-        className="ml-1 underline underline-offset-2"
-      >
-        {loading ? 'Enviando…' : 'Verificar ahora'}
-      </button>
-    </p>
+                  <p className="text-xs text-gray-600 max-w-sm mx-auto">
+                    Este email no está verificado.
+                    <button
+                      type="button"
+                      onClick={resendVerification}
+                      disabled={loading}
+                      className="ml-1 underline underline-offset-2"
+                    >
+                      {loading ? 'Enviando…' : 'Verificar ahora'}
+                    </button>
+                  </p>
 
-    {err && <p className="text-[11px] text-red-600">{err}</p>}
-    {info && <p className="text-[11px] text-amber-700">{info}</p>}
+                  {err && <p className="text-[11px] text-red-600">{err}</p>}
+                  {info && <p className="text-[11px] text-amber-700">{info}</p>}
 
-    <div className="flex justify-center">
-      <button onClick={goToPersonalize} className="btn whitespace-nowrap">Continuar</button>
-    </div>
-  </div>
-)}
+                  <div className="flex justify-center">
+                    <button onClick={goToPersonalize} className="btn whitespace-nowrap">Continuar</button>
+                  </div>
+                </div>
+              )}
 
               {step === 4 && (
                 <form onSubmit={savePersonalizeAndNext} className="space-y-4">
@@ -982,13 +996,17 @@ function handleAutoCalories() {
 
                   <p className="text-xs text-gray-600 text-center mt-2">
                     <button
-  type="button"
-  onClick={() => { persistBodyMetrics(undefined, { silent: true }); setStep(5); }}
-  className="underline underline-offset-2"
->
-  Omitir este paso
-</button>
-
+                      type="button"
+                      onClick={() => {
+                        // Guardar métricas, marcar onboardingDone de forma SILENCIOSA y pasar a la motivación
+                        persistBodyMetrics(undefined, { silent: true });
+                        setOnboardingDoneSilent();
+                        setStep(5);
+                      }}
+                      className="underline underline-offset-2"
+                    >
+                      Omitir este paso
+                    </button>
                   </p>
 
                   <div className="flex justify-end">

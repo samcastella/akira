@@ -18,6 +18,16 @@ import RegistrationModal from '@/components/RegistrationModal';
 
 const LS_SEEN_AUTH = 'akira_seen_auth_v1';
 
+// Decide si ya podemos dejar pasar al usuario (perfil completo O ha terminado onboarding)
+function canEnter(): boolean {
+  try {
+    const u = loadUser() as any;
+    return !!u?.onboardingDone || isUserComplete(u);
+  } catch {
+    return false;
+  }
+}
+
 export default function LayoutClient({
   children,
   bottomNav,
@@ -32,7 +42,7 @@ export default function LayoutClient({
     pathname === '/login' ||
     pathname.startsWith('/auth'); // /auth/callback, /auth/confirmed, etc.
 
-  // === Estado de perfil local (gating por completar datos) ===
+  // === Estado de perfil local (gating por completar datos / onboarding) ===
   const [userOk, setUserOk] = useState<boolean | null>(null);
 
   // === Estado de auth (sesión Supabase) ===
@@ -41,22 +51,17 @@ export default function LayoutClient({
 
   // === Modales ===
   const [showAuthModal, setShowAuthModal] = useState(false);            // paso 1
-  const [showRegistration, setShowRegistration] = useState(false);      // paso 2 tras OAuth
-const [registrationStartStep, setRegistrationStartStep] = useState<1 | 2 | 3 | 4 | 5>(1);
+  const [showRegistration, setShowRegistration] = useState(false);      // pasos 2–5
+  const [registrationStartStep, setRegistrationStartStep] = useState<1 | 2 | 3 | 4 | 5>(1);
 
   // Cargar perfil local
   useEffect(() => {
-    const u = loadUser();
-    const ok = isUserComplete(u);
-    setUserOk(ok);
+    setUserOk(canEnter());
   }, []);
 
-  // ★ Reaccionar a cambios del perfil local (pullProfile / ediciones en Perfil)
+  // ★ Reaccionar a cambios del perfil local (pullProfile / ediciones en Perfil / onboardingDone)
   useEffect(() => {
-    const onUserUpdated = () => {
-      const okNow = isUserComplete(loadUser());
-      setUserOk(okNow);
-    };
+    const onUserUpdated = () => setUserOk(canEnter());
     window.addEventListener('akira:user-updated', onUserUpdated);
     window.addEventListener('storage', onUserUpdated);
     return () => {
@@ -78,9 +83,8 @@ const [registrationStartStep, setRegistrationStartStep] = useState<1 | 2 | 3 | 4
       // No bloqueamos la UI por errores de sync; sólo registramos
       console.warn('[LayoutClient] syncProfile error', e);
     } finally {
-      // Re-evalúa si el perfil ya cumple requisitos
-      const okNow = isUserComplete(loadUser());
-      if (okNow) setUserOk(true);
+      // Re-evalúa si el perfil ya cumple requisitos o si onboarding ya se marcó
+      if (canEnter()) setUserOk(true);
     }
   }
 
@@ -104,36 +108,35 @@ const [registrationStartStep, setRegistrationStartStep] = useState<1 | 2 | 3 | 4
     initAuth();
 
     const { data: sub } = supabase.auth.onAuthStateChange(async (evt, session) => {
-  setHasSession(!!session);
+      setHasSession(!!session);
 
-  // Solo en SIGNED_IN marcamos "visto" y cerramos el modal inicial (step 1)
-  if (evt === 'SIGNED_IN') {
-    try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
-    setShowAuthModal(false);
-  }
+      // Solo en SIGNED_IN marcamos "visto" y cerramos el modal inicial (step 1)
+      if (evt === 'SIGNED_IN') {
+        try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
+        setShowAuthModal(false);
+      }
 
-  // Sincroniza perfil en eventos relevantes
-  if (session && (evt === 'SIGNED_IN' || evt === 'TOKEN_REFRESHED' || evt === 'USER_UPDATED')) {
-    await syncProfile();
-  } else {
-    const ok = isUserComplete(loadUser());
-    if (ok) setUserOk(true);
-  }
+      // Sincroniza perfil en eventos relevantes
+      if (session && (evt === 'SIGNED_IN' || evt === 'TOKEN_REFRESHED' || evt === 'USER_UPDATED')) {
+        await syncProfile();
+      } else {
+        if (canEnter()) setUserOk(true);
+      }
 
-  // Si hay sesión pero el perfil sigue incompleto, abre el modal adecuado
-  const okNow = isUserComplete(loadUser());
-  if (session && !okNow /* && !isAuthRoute */) {
-    type AppMeta = { provider?: string };
-    const provider = (session.user?.app_metadata as AppMeta | undefined)?.provider;
-    const isOAuth = provider && provider !== 'email' && provider !== 'phone';
-    setShowAuthModal(false);
-    setRegistrationStartStep(isOAuth ? 2 : 4); // OAuth → step 2 | email/pass → step 4
-    setShowRegistration(true);
-  } else if (!session) {
-    // Sin sesión, no mostrar registro forzado
-    setShowRegistration(false);
-  }
-});
+      // Si hay sesión pero aún no podemos entrar, abre el modal adecuado
+      const okNow = canEnter();
+      if (session && !okNow /* && !isAuthRoute */) {
+        type AppMeta = { provider?: string };
+        const provider = (session.user?.app_metadata as AppMeta | undefined)?.provider;
+        const isOAuth = provider && provider !== 'email' && provider !== 'phone';
+        setShowAuthModal(false);
+        setRegistrationStartStep(isOAuth ? 2 : 4); // OAuth → step 2 | email/pass → step 4
+        setShowRegistration(true);
+      } else if (!session) {
+        // Sin sesión, no mostrar registro forzado
+        setShowRegistration(false);
+      }
+    });
 
     return () => {
       cancelled = true;
@@ -143,39 +146,39 @@ const [registrationStartStep, setRegistrationStartStep] = useState<1 | 2 | 3 | 4
   }, []);
 
   // Decidir si enseñamos el pop-up de onboarding (RegistrationModal paso 1)
-useEffect(() => {
-  if (!authReady || userOk === null) return;
+  useEffect(() => {
+    if (!authReady || userOk === null) return;
 
-  // En rutas de auth no mostramos modales
-  if (isAuthRoute) {
+    // En rutas de auth no mostramos modales
+    if (isAuthRoute) {
+      setShowAuthModal(false);
+      setShowRegistration(false);
+      return;
+    }
+
+    // Ya puede entrar → no mostrar nada
+    if (userOk) {
+      setShowAuthModal(false);
+      setShowRegistration(false);
+      return;
+    }
+
+    // Aún no puede entrar
+    if (!hasSession) {
+      // Sin sesión → onboarding paso 1
+      setShowAuthModal(true);
+      setShowRegistration(false);
+      return;
+    }
+
+    // Con sesión → ir directo a personalización (paso 4)
     setShowAuthModal(false);
-    setShowRegistration(false);
-    return;
-  }
+    setRegistrationStartStep(4);
+    setShowRegistration(true);
+  }, [authReady, userOk, hasSession, isAuthRoute]);
 
-  // Perfil completo → no mostrar nada
-  if (userOk) {
-    setShowAuthModal(false);
-    setShowRegistration(false);
-    return;
-  }
-
-  // Perfil incompleto
-  if (!hasSession) {
-    // Sin sesión → onboarding paso 1
-    setShowAuthModal(true);
-    setShowRegistration(false);
-    return;
-  }
-
-  // Con sesión → ir directo a personalización (paso 4)
-  setShowAuthModal(false);
-  setRegistrationStartStep(4);
-  setShowRegistration(true);
-}, [authReady, userOk, hasSession, isAuthRoute]);
-
-  // Mientras el perfil NO esté listo, ocultamos app y mostramos gating (splash + modal),
-  // excepto en /login y /auth/* — y también si YA hay sesión (no gatear con sesión)
+  // Mientras NO pueda entrar, ocultamos app y mostramos gating (splash + modal),
+  // excepto en /login y /auth/*
   const gating = userOk === false && !isAuthRoute;
 
   // Ocultamos la BottomNav también en rutas de auth
@@ -183,16 +186,14 @@ useEffect(() => {
 
   function handleCloseRegistration() {
     setShowRegistration(false);
-    const ok = isUserComplete(loadUser());
-    if (ok) setUserOk(true);
+    if (canEnter()) setUserOk(true);
   }
 
   // Al cerrar el primer modal (paso 1), marcamos visto y re-evaluamos perfil
   function handleCloseAuthModal() {
     setShowAuthModal(false);
     try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
-    const ok = isUserComplete(loadUser());
-    if (ok) setUserOk(true);
+    if (canEnter()) setUserOk(true);
   }
 
   // === Botón de reset SOLO en desarrollo (útil para probar en móvil) ===
@@ -201,7 +202,7 @@ useEffect(() => {
     try {
       localStorage.removeItem(LS_FIRST_RUN);
       localStorage.removeItem(LS_USER);
-      localStorage.removeItem(LS_USER_KEY); // ★ borra también el perfil actual
+      localStorage.removeItem(LS_USER_KEY); // ★ borra también el perfil actual (incluye onboardingDone)
       localStorage.removeItem(LS_SEEN_AUTH);
     } catch {}
     location.reload();
@@ -231,7 +232,7 @@ useEffect(() => {
           </div>
         )}
 
-        {/* Modal de registro (solo tras OAuth) */}
+        {/* Modal de registro / personalización */}
         {showRegistration && (
           <div className="relative z-50">
             <RegistrationModal
@@ -255,7 +256,7 @@ useEffect(() => {
     );
   }
 
-  // App normal cuando el perfil está completo (o estamos en rutas de auth)
+  // App normal cuando ya puede entrar (perfil completo o onboardingDone) o estamos en rutas de auth
   return (
     <>
       <div

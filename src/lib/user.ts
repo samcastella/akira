@@ -25,6 +25,9 @@ export type UserProfile = {
   peso?: number;          // kg
   actividad?: Activity;
   caloriasDiarias?: number;
+
+  /** Flag SOLO LOCAL para skipear/recordar el onboarding */
+  onboardingDone?: boolean;
 };
 
 // ===== Claves de LS (retro-compat) =====
