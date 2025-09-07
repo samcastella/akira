@@ -1,13 +1,9 @@
 // app/layout.tsx
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import BottomNav from "@/components/BottomNav";
 import LayoutClient from "./LayoutClient";
 import { SupabaseSessionProvider } from "@/components/providers/SupabaseSessionProvider";
-
-const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
-const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "Akira - Build Your Habits",
@@ -34,7 +30,22 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         {/* Favicon */}
         <link rel="icon" href="/favicon.ico" />
       </head>
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+      <body
+        className="antialiased"
+        style={{
+          // Usa las variables que antes ponía next/font,
+          // pero con stacks de sistema para evitar fetch a Google Fonts
+          // (por si tu CSS hace: font-family: var(--font-geist-sans); etc.)
+          ["--font-geist-sans" as any]:
+            'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji"',
+          ["--font-geist-mono" as any]:
+            'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+          fontFamily: 'var(--font-geist-sans)',
+          background: "#FAFAFA",
+          color: "#111",
+          minHeight: "100svh",
+        }}
+      >
         <SupabaseSessionProvider>
           <LayoutClient bottomNav={<BottomNav />}>
             {children}

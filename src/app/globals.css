@@ -15,6 +15,15 @@
   --radius-card: 24px;
   --radius-input: 16px;
 
+  /* ====== FUENTES (sustituyen a next/font) ====== */
+  /* Stacks del sistema */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji"; /* CHANGED */
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; /* CHANGED */
+
+  /* Alias de compatibilidad con estilos existentes */
+  --font-geist-sans: var(--font-sans); /* CHANGED */
+  --font-geist-mono: var(--font-mono); /* CHANGED */
+
   /* Pistas para el UA: permitimos claro/oscuro según media query */
   color-scheme: light dark;
 }
@@ -23,8 +32,8 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-sans); /* CHANGED */
+  --font-mono: var(--font-mono); /* CHANGED */
 }
 
 /* Modo oscuro: solo tokens */
@@ -52,9 +61,8 @@ body {
   background: var(--background);
   color: var(--foreground);
 
-  /* Usa las fuentes que cargas en layout (Geist) */
-  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system,
-    Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  /* Usa la variable genérica (ya mapea a la antigua geist) */
+  font-family: var(--font-sans); /* CHANGED */
 
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -288,51 +296,46 @@ details.accordion summary::-webkit-details-marker { display: none; }
 .bottomnav{
   position: fixed; left: 0; right: 0; bottom: 0;
   z-index: 50;
-  display: flex; align-items: stretch;  /* hijos heredan alto */
-  gap: 0;                                /* sin espacios entre celdas */
-  /* height y background se definen inline desde el componente */
+  display: flex; align-items: stretch;
+  gap: 0;
 }
 
 .bn-item{
-  flex: 1 1 0;                           /* TODOS mismo ancho */
-  min-width: 0;                          /* el texto no fuerza ancho */
+  flex: 1 1 0;
+  min-width: 0;
   position: relative;
   display: flex; align-items: stretch; justify-content: center;
   text-decoration: none; color: inherit;
   background: transparent;
 }
 
-/* El fondo blanco del activo se aplica en el CONTENEDOR, así cubre toda el área */
 .bn-item[aria-current="page"]{
   background: #ffffff;
   color: #000000;
 }
 
-/* Contenido interno */
 .bn-pill{
   box-sizing: border-box;
   height: 100%;
   width: 100%;
-  padding: 8px 0 calc(8px + env(safe-area-inset-bottom, 0px)); /* sin padding lateral para cubrir completo */
-  border-radius: 0;                          /* sin esquinas para no revelar fondo */
+  padding: 8px 0 calc(8px + env(safe-area-inset-bottom, 0px));
+  border-radius: 0;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 4px;
   color: inherit;
-  background: transparent;                   /* sin fondo: lo pone el contenedor cuando está activo */
+  background: transparent;
   border: none;
 }
 .bn-pill::before,
 .bn-pill::after{
-  content: none !important;                  /* anula halos antiguos */
+  content: none !important;
 }
 
 /* ====== AKIRA · Tweaks mínimos para Herramientas ====== */
-
-/* Tabbar: scroll suave en móvil y cápsula seleccionada */
 .tabbar {
-  overflow: auto;               /* por si hay muchas pestañas */
+  overflow: auto;
   -webkit-overflow-scrolling: touch;
-  gap: 12px;                    /* un pelín más compacto */
+  gap: 12px;
 }
 .tabbar button {
   transition: background .15s ease, color .15s ease, border-color .15s ease, transform .05s ease;
@@ -358,77 +361,65 @@ details.accordion summary::-webkit-details-marker { display: none; }
   background: rgba(0,0,0,.03);
 }
 
-/* Listas finas dentro de .card (por si se anidan) */
+/* Listas finas dentro de .card */
 .card .list > li + li { border-top: 1px solid var(--line); }
 
-/* Inputs: focus más visible (sobrescribe el genérico de arriba para inputs/textarea) */
+/* Inputs: focus más visible */
 .input:focus, .textarea:focus {
   outline: 2px solid color-mix(in oklab, var(--accent) 10%, transparent);
   outline-offset: 2px;
 }
-/* === HOME: botones y CTA === */
 
-/* Reponemos una variante explícita de primario */
+/* === HOME: botones y CTA === */
 .btn.btn-primary {
   background: var(--accent);
   color: #fff;
   border-color: var(--accent);
 }
-
-/* “Ver programa”: cuando lo pulsas, fondo negro */
 .btn.secondary:active {
   background: #000;
   color: #fff;
   border-color: #000;
 }
-
-/* Icono dentro de botones (texto + icono) */
 .btn .icon {
   display: inline-flex;
   margin-left: 8px;
   line-height: 0;
 }
 
-/* === HOME: imágenes de portada a todo el ancho con ratio 4:5 === */
+/* === HOME: imágenes de portada */
 .card .cover-img {
   width: 100%;
-  aspect-ratio: 4 / 5;   /* 4:5 como definimos en Home */
+  aspect-ratio: 4 / 5;
   object-fit: cover;
   display: block;
 }
 
-/* === HOME: bloque "Pensamiento" vertical en móvil/desktop === */
+/* === HOME: bloque "Pensamiento" */
 .home-thought {
   display: grid;
   grid-template-columns: 1fr;
   gap: 12px;
 }
-/* ===== Scroll utilities (modales y paneles con overflow) ===== */
+
+/* ===== Scroll utilities ===== */
 html {
-  /* navegación entre pantallas más agradable; no afecta a scrollTo({behavior:'auto'}) */
   scroll-behavior: smooth;
 }
-
 .scroll-area {
   overflow-y: auto;
-  -webkit-overflow-scrolling: touch; /* inercia iOS */
-  overscroll-behavior: contain;      /* evita que arrastre el body */
-  scrollbar-gutter: stable both-edges;/* menos “saltos” al aparecer la barra */
-  touch-action: pan-y;               /* gestos verticales más fiables en iOS */
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable both-edges;
+  touch-action: pan-y;
 }
-
-/* Bloquea el scroll del body mientras hay un modal abierto (si lo usas) */
 body.modal-open {
   overflow: hidden;
-  position: fixed;
   width: 100%;
 }
-/* Bloquea el scroll del body mientras hay un modal abierto (si lo usas) */
 body.modal-open {
-  /* Antes tenía: position: fixed; width:100%;  <-- esto rompe <select> en iOS dentro de modales */
-  overflow: hidden; /* suficiente y seguro para iOS */
+  overflow: hidden;
 }
-/* iOS/Safari: asegura puntos en inputs password */
 input[type="password"] {
   -webkit-text-security: disc;
 }

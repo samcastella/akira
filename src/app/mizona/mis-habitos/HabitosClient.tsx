@@ -13,15 +13,6 @@ const LS_ACTIVE_PROGRAMS = 'akira_programs_active_v1';
 type DailyEntry = { done: boolean; doneAt?: number };
 type DailyMap = Record<string, Record<string, DailyEntry>>;
 
-/* ===== Mensajes de felicitación ===== */
-const CONGRATS_MESSAGES = [
-  '¡Genial! Has completado todos los hábitos del día. Puedes sentirte muy orgulloso. Mañana seguimos 💪🏻',
-  '¡Bravo! Día perfecto. Mantén la racha y descansa; mañana repetimos ✨',
-  '¡Lo lograste! Cada check suma. Disfruta esta mini-victoria 🥳',
-  '¡Qué máquina! Todos los hábitos listos por hoy. A por el siguiente día 🚀',
-  '¡Excelente! Cerraste tus hábitos de hoy. Tu constancia marca la diferencia 🙌',
-] as const;
-
 /* ===== Helpers almacenamiento ===== */
 function loadMasterHabits(): HabitMaster[] {
   if (typeof window === 'undefined') return [];
@@ -131,10 +122,6 @@ export default function HabitosClient() {
   // Programas activos (placeholder)
   const [activePrograms, setActivePrograms] = useState<string[]>([]);
 
-  // Felicitación
-  const [showCongrats, setShowCongrats] = useState(false);
-  const [congratsText, setCongratsText] = useState<typeof CONGRATS_MESSAGES[number]>(CONGRATS_MESSAGES[0]);
-  const [lastMsgIndex, setLastMsgIndex] = useState<number | null>(null);
 
   useEffect(() => {
     setMasters(loadMasterHabits());
@@ -211,16 +198,13 @@ export default function HabitosClient() {
       return map;
     });
 
-    if (!wasDone) void confettiBurst(evt);
-    if (!wasDone && completedAllAfter) {
-      void confettiBurst(undefined, true);
-      const pool = CONGRATS_MESSAGES;
-      let idx = Math.floor(Math.random() * pool.length);
-      if (lastMsgIndex !== null && pool.length > 1 && idx === lastMsgIndex) idx = (idx + 1) % pool.length;
-      setLastMsgIndex(idx);
-      setCongratsText(pool[idx]);
-      setShowCongrats(true);
-    }
+  // confeti normal al marcar
+if (!wasDone) void confettiBurst(evt);
+
+// confeti grande cuando quedan todos hechos
+if (!wasDone && completedAllAfter) {
+  void confettiBurst(undefined, true);
+}
   }
 
   const todayHabits: HabitView[] = useMemo(() => {
@@ -480,8 +464,7 @@ export default function HabitosClient() {
         </div>
       </section>
 
-      {/* Modal de felicitación */}
-      <CongratsModal open={showCongrats} text={congratsText} onClose={() => setShowCongrats(false)} />
+
     </main>
   );
 }
