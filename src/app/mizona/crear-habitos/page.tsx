@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
 import CreateHabitBar from '@/components/habits/CreateHabitBar';
 import HabitForm, { HabitMaster } from '@/components/habits/HabitForm';
 import HabitsCreatedList from '@/components/habits/HabitsCreatedList';
@@ -28,7 +29,7 @@ function saveMasterHabits(list: HabitMaster[]) {
 }
 
 /* ===========================
-   Modal base
+   Modal base (con scroll interno)
    =========================== */
 function Modal({
   open,
@@ -45,14 +46,20 @@ function Modal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" aria-modal="true" role="dialog">
       <div className="absolute inset-0 bg-black/30" onClick={onClose} aria-hidden="true" />
-      <div className="relative z-10 w-[92%] max-w-lg rounded-2xl border border-black/10 bg-white shadow-lg">
-        <div className="flex items-center justify-between gap-4 border-b border-black/10 px-5 py-4">
+      <div className="relative z-10 w-[92%] max-w-lg rounded-2xl border border-black/10 bg-white shadow-lg max-h-[85svh] flex flex-col">
+        <div className="flex items-center justify-between gap-4 border-b border-black/10 px-5 py-4 shrink-0">
           <h2 className="text-lg font-semibold">{title ?? 'Selecciona una opción'}</h2>
-          <button onClick={onClose} className="rounded-full border border-black/10 px-3 py-1 text-sm hover:bg-black/5" aria-label="Cerrar">
+          <button
+            onClick={onClose}
+            className="rounded-full border border-black/10 px-3 py-1 text-sm hover:bg-black/5"
+            aria-label="Cerrar"
+          >
             Cerrar
           </button>
         </div>
-        <div className="px-5 py-4">{children}</div>
+        <div className="px-5 py-4 overflow-y-auto" style={{ overscrollBehavior: 'contain' }}>
+          {children}
+        </div>
       </div>
     </div>
   );
@@ -61,15 +68,27 @@ function Modal({
 /* ===========================
    Opciones iniciales (selector)
    =========================== */
-const PRESET_OPTIONS: { key: 'custom' | 'ejercicio' | 'paseo' | 'correr' | 'agua' | 'planning' | 'dientes' | 'casa'; label: string; icon: string }[] = [
-  { key: 'custom', label: 'Crear hábito personalizado', icon: '✨' },
-  { key: 'ejercicio', label: 'Hacer ejercicio', icon: '🏋️‍♂️' },
-  { key: 'paseo', label: 'Paseo diario', icon: '🚶' },
-  { key: 'correr', label: 'Correr', icon: '🏃' },
-  { key: 'agua', label: 'Beber 1,5 litros de agua', icon: '💧' },
-  { key: 'planning', label: 'Hacer mi planning del día', icon: '🗒️' },
-  { key: 'dientes', label: 'Cepillarme los dientes', icon: '🪥' },
-  { key: 'casa', label: 'Arreglar y ordenar la casa', icon: '🧹' },
+type PresetKey =
+  | 'custom'
+  | 'ejercicio'
+  | 'paseo'
+  | 'correr'
+  | 'agua'
+  | 'planning'
+  | 'dientes'
+  | 'casa'
+  | 'fruta';
+
+const PRESET_OPTIONS: { key: PresetKey; label: string; icon: string }[] = [
+  { key: 'custom',   label: 'Crear hábito personalizado',      icon: '✨' },
+  { key: 'fruta',    label: 'Comer 1 pieza de fruta',          icon: '🍎' },
+  { key: 'ejercicio',label: 'Hacer ejercicio',                 icon: '🏋️‍♂️' },
+  { key: 'paseo',    label: 'Paseo diario',                    icon: '🚶' },
+  { key: 'correr',   label: 'Correr',                           icon: '🏃' },
+  { key: 'agua',     label: 'Beber 1,5 litros de agua',        icon: '💧' },
+  { key: 'planning', label: 'Hacer mi planning del día',       icon: '🗒️' },
+  { key: 'dientes',  label: 'Cepillarme los dientes',          icon: '🪥' },
+  { key: 'casa',     label: 'Arreglar y ordenar la casa',      icon: '🧹' },
 ];
 
 /* ===========================
@@ -80,7 +99,7 @@ export default function CrearHabitosPage() {
 
   // Form modal state
   const [openForm, setOpenForm] = useState(false);
-  const [formPreset, setFormPreset] = useState<('custom' | 'ejercicio' | 'paseo' | 'correr' | 'agua' | 'planning' | 'dientes' | 'casa')>('custom');
+  const [formPreset, setFormPreset] = useState<PresetKey>('custom');
   const [editTarget, setEditTarget] = useState<HabitMaster | null>(null);
 
   const [habits, setHabits] = useState<HabitMaster[]>([]);
@@ -89,7 +108,7 @@ export default function CrearHabitosPage() {
     setHabits(loadMasterHabits());
   }, []);
 
-  function handleSelectPreset(key: typeof formPreset) {
+  function handleSelectPreset(key: PresetKey) {
     setOpenSelector(false);
     setFormPreset(key);
     setEditTarget(null);
@@ -116,7 +135,7 @@ export default function CrearHabitosPage() {
 
   function openEdit(h: HabitMaster) {
     setEditTarget(h);
-    setFormPreset((h.presetKey as any) ?? 'custom');
+    setFormPreset((h.presetKey as PresetKey) ?? 'custom');
     setOpenForm(true);
   }
 
@@ -130,11 +149,26 @@ export default function CrearHabitosPage() {
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-6">
+      {/* Menú superior persistente */}
+      <nav className="mb-5 flex flex-wrap gap-3">
+        <Link href="/mizona" className="btn" style={{ background: 'white', color: 'black', border: '1px solid var(--line)' }}>
+          Mis hábitos
+        </Link>
+        <Link href="/mizona/crear-habitos" className="btn" style={{ background: 'black', color: 'white', border: '1px solid black' }}>
+          Crear hábitos
+        </Link>
+        <Link href="/mizona/logros" className="btn" style={{ background: 'white', color: 'black', border: '1px solid var(--line)' }}>
+          Logros
+        </Link>
+        <Link href="/mizona/perfil" className="btn" style={{ background: 'white', color: 'black', border: '1px solid var(--line)' }}>
+          Mi perfil
+        </Link>
+      </nav>
+
       {/* Intro */}
       <p className="mb-5 text-sm leading-relaxed text-black/70">
-        En esta sección podrás crear hábitos personalizados para poderlos incorporar a la sección de
-        <span className="font-semibold"> Mis hábitos </span>
-        en <span className="font-semibold">Mi Zona</span>.
+        En esta sección podrás crear hábitos personalizados para incorporarlos a{' '}
+        <span className="font-semibold">Mis hábitos</span> en <span className="font-semibold">Mi Zona</span>.
       </p>
 
       {/* Barra (+) Crear hábito */}
@@ -182,6 +216,7 @@ export default function CrearHabitosPage() {
           habits={habits}
           onEdit={openEdit}
           onDelete={handleDelete}
+          renderEditUnderBar // <- muestra “Editar” pequeñito bajo cada barra
         />
       </section>
     </main>

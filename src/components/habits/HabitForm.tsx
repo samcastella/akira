@@ -8,7 +8,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 export type HabitMaster = {
   id: string;
   name: string;
-  presetKey?: string;                 // ej: 'agua', 'ejercicio', 'custom'
+  presetKey?: string;                 // ej: 'agua', 'ejercicio', 'custom', 'fruta'
   icon?: string;                      // emoji por ahora
   color?: string;                     // hex pastel
   textColor?: 'black' | 'white';
@@ -16,37 +16,50 @@ export type HabitMaster = {
   endDate?: string;                   // yyyy-mm-dd
   weekend?: boolean;                  // incluye fines de semana (true = incluye S y D)
   perDay?: Record<string, { name?: string }>; // personalización por día
+
+  // NUEVO
+  time?: string;                      // HH:MM (opcional)
+  place?: string;                     // texto libre (opcional)
 };
 
 type Props = {
   mode: 'create' | 'edit';
-  presetKey: 'custom' | 'ejercicio' | 'paseo' | 'correr' | 'agua' | 'planning' | 'dientes' | 'casa';
+  presetKey:
+    | 'custom' | 'ejercicio' | 'paseo' | 'correr'
+    | 'agua'   | 'planning'  | 'dientes' | 'casa'
+    | 'fruta';
   initial?: HabitMaster | null;       // para editar
   onCancel: () => void;
   onSave: (habit: HabitMaster) => void;
 };
 
 /* ===========================
-   Paleta de 20 colores pastel
+   Paleta de colores (pasteles + suaves, en círculos)
    =========================== */
 const PASTEL_COLORS = [
-  '#A8DADC','#BDE0FE','#CDEAC0','#FFE5B4','#FFD6E0',
-  '#D7E3FC','#E2F0CB','#FDE2E4','#E4F1FE','#FFF1BF',
-  '#D1F7C4','#E8EAF6','#F1F8E9','#FFF3E0','#F3E5F5',
-  '#E0F7FA','#F0F4C3','#D7CCC8','#ECEFF1','#FBE9E7',
+  '#FDE68A', // amarillo suave
+  '#FFE6B3', // naranja pastel
+  '#BFEBD6', // verde menta
+  '#C7E2FF', // azul pastel
+  '#E9D5FF', // lila
+  '#FAD9E6', // rosa pastel
+  '#FECACA', // rojo muy suave
+  '#E8EAF6', // indigo muy suave (compat)
+  '#F0F0F0', // gris claro
 ] as const;
 
 /* ===========================
    Presets (icono + color sugerido)
    =========================== */
 const PRESETS: Record<string, { label: string; icon: string; color: string; textColor: 'black' | 'white' }> = {
-  custom:   { label: 'Crear hábito personalizado', icon: '✨', color: '#BDE0FE', textColor: 'black' },
-  ejercicio:{ label: 'Hacer ejercicio',            icon: '🏋️‍♂️', color: '#E2F0CB', textColor: 'black' },
-  paseo:    { label: 'Paseo diario',               icon: '🚶',    color: '#FDE2E4', textColor: 'black' },
-  correr:   { label: 'Correr',                      icon: '🏃',    color: '#FFF1BF', textColor: 'black' },
-  agua:     { label: 'Beber 1,5 litros de agua',   icon: '💧',    color: '#A8DADC', textColor: 'black' },
-  planning: { label: 'Hacer mi planning del día',  icon: '🗒️',    color: '#D7E3FC', textColor: 'black' },
-  dientes:  { label: 'Cepillarme los dientes',     icon: '🪥',    color: '#E4F1FE', textColor: 'black' },
+  custom:   { label: 'Crear hábito personalizado', icon: '✨', color: '#C7E2FF', textColor: 'black' },
+  fruta:    { label: 'Comer 1 pieza de fruta',     icon: '🍎', color: '#FDE68A', textColor: 'black' },
+  ejercicio:{ label: 'Hacer ejercicio',            icon: '🏋️‍♂️', color: '#BFEBD6', textColor: 'black' },
+  paseo:    { label: 'Paseo diario',               icon: '🚶',    color: '#FAD9E6', textColor: 'black' },
+  correr:   { label: 'Correr',                      icon: '🏃',    color: '#FFE6B3', textColor: 'black' },
+  agua:     { label: 'Beber 1,5 litros de agua',   icon: '💧',    color: '#C7E2FF', textColor: 'black' },
+  planning: { label: 'Hacer mi planning del día',  icon: '🗒️',    color: '#E9D5FF', textColor: 'black' },
+  dientes:  { label: 'Cepillarme los dientes',     icon: '🪥',    color: '#FECACA', textColor: 'black' },
   casa:     { label: 'Arreglar y ordenar la casa', icon: '🧹',    color: '#E8EAF6', textColor: 'black' },
 };
 
@@ -62,6 +75,39 @@ const WEEK_DAYS = [
 
 function uid() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+/* ===========================
+   Switch estilo iOS
+   =========================== */
+function IOSwitch({
+  checked,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label?: string;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={checked}
+      onClick={() => onChange(!checked)}
+      className="inline-flex items-center gap-3 select-none"
+    >
+      {label ? <span className="text-sm">{label}</span> : null}
+      <span
+        className="relative inline-block h-6 w-11 rounded-full transition-colors"
+        style={{ background: checked ? '#16a34a' : '#e5e7eb', boxShadow: 'inset 0 0 0 1px rgba(0,0,0,.08)' }}
+      >
+        <span
+          className="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform"
+          style={{ transform: `translateX(${checked ? '1.0rem' : '0'})` }}
+        />
+      </span>
+    </button>
+  );
 }
 
 export default function HabitForm({
@@ -85,6 +131,10 @@ export default function HabitForm({
   const [perDay, setPerDay] = useState<Record<string, { name?: string }>>(
     initial?.perDay ?? {}
   );
+
+  // NUEVO: hora/lugar (opcionales)
+  const [time, setTime] = useState<string>(initial?.time ?? '');
+  const [place, setPlace] = useState<string>(initial?.place ?? '');
 
   useEffect(() => {
     if (!isCustom) {
@@ -124,6 +174,8 @@ export default function HabitForm({
       endDate,
       weekend,              // true = incluye sábado y domingo
       perDay: personalizePerDay ? perDay : undefined,
+      time: time || undefined,
+      place: place.trim() ? place.trim() : undefined,
     };
 
     onSave(base);
@@ -154,6 +206,29 @@ export default function HabitForm({
         </div>
       )}
 
+      {/* Hora & Lugar (opcionales para todos los presets) */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Hora (opcional)</label>
+          <input
+            type="time"
+            className="w-full rounded-xl border border-black/20 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-black/10"
+            value={time}
+            onChange={(e) => setTime(e.target.value)}
+          />
+        </div>
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Lugar (opcional)</label>
+          <input
+            type="text"
+            className="w-full rounded-xl border border-black/20 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-black/10"
+            placeholder="Calle, gimnasio…"
+            value={place}
+            onChange={(e) => setPlace(e.target.value)}
+          />
+        </div>
+      </div>
+
       {/* Fechas */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="space-y-2">
@@ -176,44 +251,45 @@ export default function HabitForm({
         </div>
       </div>
 
-      {/* Fin de semana */}
+      {/* Fin de semana (switch iOS) */}
       <div className="flex items-center justify-between rounded-xl border border-black/10 bg-white px-4 py-3">
         <div className="text-sm">
           <div className="font-medium">¿Incluir fines de semana?</div>
           <div className="text-black/60">Si desactivas, solo contará de Lunes a Viernes.</div>
         </div>
-        <label className="inline-flex cursor-pointer items-center">
-          <input
-            type="checkbox"
-            className="peer sr-only"
-            checked={weekend}
-            onChange={(e) => setWeekend(e.target.checked)}
-          />
-          <span className="h-6 w-11 rounded-full bg-black/20 transition peer-checked:bg-black" />
-          <span className="ml-2 text-sm">{weekend ? 'Sí' : 'No'}</span>
-        </label>
+        <IOSwitch checked={weekend} onChange={setWeekend} />
       </div>
 
-      {/* Color + color de texto (solo custom) */}
+      {/* Color (ahora en circunferencias) + color de texto (solo custom) */}
       {isCustom && (
         <>
           <div className="space-y-2">
             <label className="text-sm font-medium">Color del hábito</label>
-            <div className="grid grid-cols-10 gap-2">
-              {PASTEL_COLORS.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setColor(c)}
-                  className={[
-                    'h-8 w-full rounded-lg border',
-                    color === c ? 'border-black' : 'border-black/20',
-                  ].join(' ')}
-                  style={{ background: c }}
-                  aria-label={`Elegir color ${c}`}
-                  title={c}
-                />
-              ))}
+            <div className="flex flex-wrap gap-10">
+              {PASTEL_COLORS.map((c) => {
+                const selected = color === c;
+                return (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setColor(c)}
+                    className="relative"
+                    aria-label={`Elegir color ${c}`}
+                    title={c}
+                  >
+                    <span
+                      className="block rounded-full"
+                      style={{
+                        width: 28,
+                        height: 28,
+                        background: c,
+                        boxShadow: 'inset 0 0 0 1px rgba(0,0,0,.08)',
+                        border: selected ? '2px solid #111' : '2px solid transparent',
+                      }}
+                    />
+                  </button>
+                );
+              })}
             </div>
             <div className="mt-2 text-xs text-black/60">
               Consejo: usa colores claros tipo pastel para mantener la estética uniforme.
@@ -248,16 +324,8 @@ export default function HabitForm({
           <div className="space-y-2">
             <label className="text-sm font-medium">¿Quieres personalizar el hábito de cada día?</label>
             <div className="flex items-center gap-3">
-              <label className="inline-flex cursor-pointer items-center">
-                <input
-                  type="checkbox"
-                  className="peer sr-only"
-                  checked={personalizePerDay}
-                  onChange={(e) => setPersonalizePerDay(e.target.checked)}
-                />
-                <span className="h-6 w-11 rounded-full bg-black/20 transition peer-checked:bg-black" />
-                <span className="ml-2 text-sm">{personalizePerDay ? 'Sí' : 'No'}</span>
-              </label>
+              <IOSwitch checked={personalizePerDay} onChange={setPersonalizePerDay} />
+              <span className="text-sm text-black/70">{personalizePerDay ? 'Sí' : 'No'}</span>
             </div>
 
             {personalizePerDay && (

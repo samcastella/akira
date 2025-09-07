@@ -24,14 +24,10 @@ export default function HabitsCreatedList({ habits, onEdit, onDelete }: Props) {
       {habits.map((h) => (
         <li
           key={h.id}
-          className="group flex items-center justify-between rounded-2xl border border-black/20 bg-white px-4 py-3"
+          className="rounded-2xl border border-black/20 bg-white px-4 py-3"
         >
-          {/* Barra clicable para editar */}
-          <button
-            onClick={() => onEdit(h)}
-            className="flex w-full items-center justify-between gap-3 text-left"
-            aria-label={`Editar hábito ${h.name}`}
-          >
+          {/* Barra visual del hábito (no clicable) */}
+          <div className="flex w-full items-center justify-between gap-3">
             <span className="flex min-w-0 items-center gap-3">
               {/* Icono */}
               <span className="text-xl shrink-0">{h.icon ?? '🧩'}</span>
@@ -55,23 +51,32 @@ export default function HabitsCreatedList({ habits, onEdit, onDelete }: Props) {
                 className="grid h-6 w-6 place-items-center rounded-full border border-black/40 bg-white text-black/30"
                 title="Check (solo desde Mis hábitos)"
                 aria-hidden
-              >
-                {/* círculo vacío (preview) */}
-              </span>
+              />
             </span>
-          </button>
+          </div>
 
-          {/* Botón eliminar (opcional) */}
-          {!!onDelete && (
+          {/* Fila inferior: “Editar” pequeñito + eliminar (opcional) */}
+          <div className="mt-2 flex items-center justify-between">
             <button
-              onClick={() => onDelete(h.id)}
-              className="ml-3 rounded-full border border-black/10 p-2 text-black/60 hover:bg-black/5"
-              aria-label={`Eliminar hábito ${h.name}`}
-              title="Eliminar"
+              onClick={() => onEdit(h)}
+              className="text-[11px] text-black/60 underline underline-offset-2 hover:text-black"
+              aria-label={`Editar hábito ${h.name}`}
+              title="Editar"
             >
-              <Trash2 size={16} />
+              Editar
             </button>
-          )}
+
+            {!!onDelete && (
+              <button
+                onClick={() => onDelete(h.id)}
+                className="rounded-full border border-black/10 p-2 text-black/60 hover:bg-black/5"
+                aria-label={`Eliminar hábito ${h.name}`}
+                title="Eliminar"
+              >
+                <Trash2 size={16} />
+              </button>
+            )}
+          </div>
         </li>
       ))}
     </ul>
