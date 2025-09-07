@@ -68,7 +68,7 @@ function addDays(d: Date, n: number) {
 /* ===== Tipado de lista para render ===== */
 type HabitView = HabitMaster & { done: boolean };
 
-/* ===== Confeti ===== */
+/* ===== Confeti (opcional) ===== */
 async function confettiBurst(evt?: React.MouseEvent, big = false) {
   try {
     const { default: confetti } = await import('canvas-confetti');
@@ -115,13 +115,17 @@ export default function HabitosClient() {
 
   // Usuario
   const user = (useUserProfile?.() as any) || {};
-  const hasUsername = !!String(user?.username ?? '').trim();
-  const displayName = hasUsername ? `@${String(user.username).trim()}` : String(user?.nombre ?? 'usuario/a').trim();
+  const username = String(user?.username ?? '').trim();
+  const fullName = String(user?.nombre ?? '').trim();
+  const parts = fullName.split(/\s+/).filter(Boolean);
+  const firstName = parts[0] || '';
+  const firstSurname = parts[1] || '';
+  const nameAndSurname = (firstName + (firstSurname ? ' ' + firstSurname : '')).trim();
+  const greetingName = firstName || username || 'usuario/a';
   const avatar = user?.foto as string | undefined;
 
   // Programas activos (placeholder)
   const [activePrograms, setActivePrograms] = useState<string[]>([]);
-
 
   useEffect(() => {
     setMasters(loadMasterHabits());
@@ -198,13 +202,8 @@ export default function HabitosClient() {
       return map;
     });
 
-  // confeti normal al marcar
-if (!wasDone) void confettiBurst(evt);
-
-// confeti grande cuando quedan todos hechos
-if (!wasDone && completedAllAfter) {
-  void confettiBurst(undefined, true);
-}
+    if (!wasDone) void confettiBurst(evt);
+    if (!wasDone && completedAllAfter) void confettiBurst(undefined, true);
   }
 
   const todayHabits: HabitView[] = useMemo(() => {
@@ -250,13 +249,13 @@ if (!wasDone && completedAllAfter) {
   }
   const monthCells = useMemo(() => buildMonthGrid(monthCursor), [monthCursor]);
 
-  // Colores/medidas
+  // Tokens UI
   const BORDER = '#E5E7EB'; // gris claro
   const SIZE = 34;          // diámetro de los círculos
   const FONT = 12;          // tamaño de número
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 py-6" style={{ background: 'white' }}>
+    <main className="mx-auto w-full max-w-3xl px-5 sm:px-6 md:px-8 py-6" style={{ background: 'white' }}>
       {/* Subnavegación */}
       <nav className="mb-4 flex flex-wrap gap-3">
         <Link href="/mizona" className="btn" style={{ background: 'black', color: 'white', border: '1px solid black' }}>
@@ -273,63 +272,104 @@ if (!wasDone && completedAllAfter) {
         </Link>
       </nav>
 
-      {/* Perfil compacto */}
-      <Link href="/mizona/perfil" className="mb-3 flex items-center gap-3 text-inherit" style={{ textDecoration: 'none' }} aria-label="Ir a mi perfil">
-        <span className="rounded-full overflow-hidden flex items-center justify-center" style={{ width: 44, height: 44, border: '1px solid var(--line)', background: '#f7f7f7' }}>
-          {avatar ? <img src={avatar} alt="Foto de perfil" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ fontSize: 18, color: '#9ca3af' }}>👤</span>}
+      {/* Saludo destacado */}
+      <section className="mb-4">
+        <h1 className="text-xl font-extrabold m-0">
+          Hola {greetingName},
+        </h1>
+        <p className="mt-1 text-sm text-black/70">
+          En esta zona podrás ver tus hábitos del día, crear nuevos, ver tus logros y editar tu perfil.
+        </p>
+      </section>
+
+      {/* Perfil compacto (nombre + 1er apellido, @usuario y 'Ver perfil') */}
+      <Link
+        href="/mizona/perfil"
+        className="mb-3 flex items-center gap-3 text-inherit"
+        style={{ textDecoration: 'none' }}
+        aria-label="Ir a mi perfil"
+      >
+        <span
+          className="rounded-full overflow-hidden flex items-center justify-center"
+          style={{ width: 48, height: 48, border: '1px solid var(--line)', background: '#f7f7f7' }}
+        >
+          {avatar ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={avatar} alt="Foto de perfil" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          ) : (
+            <span style={{ fontSize: 18, color: '#9ca3af' }}>👤</span>
+          )}
         </span>
-        <span style={{ fontWeight: 600 }}>{displayName}</span>
+        <span style={{ lineHeight: 1.15 }}>
+          <span style={{ display: 'block', fontWeight: 700 }}>
+            {nameAndSurname || username || 'usuario/a'}
+          </span>
+          {username && (
+            <span style={{ display: 'block', fontSize: 12, color: '#374151' }}>
+              @{username}
+            </span>
+          )}
+          <span style={{ display: 'block', fontSize: 12, color: '#374151', textDecoration: 'underline', marginTop: 2 }}>
+            Ver perfil
+          </span>
+        </span>
       </Link>
 
-      {/* Semáforo semanal */}
-      <div className="mb-4 flex items-center justify-center gap-4">
+      {/* Semáforo semanal + flecha del calendario en la misma línea */}
+      <div className="mb-4 flex items-center justify-center gap-3">
         {(() => {
           const weekStart = mondayOf(new Date());
           const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
           const labels = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
-          return days.map((d, i) => {
-            const k = dateKey(d);
-            const status = dayStatus(k);
-            const bg = status === 'green' ? '#10b981' : status === 'orange' ? '#f59e0b' : status === 'red' ? '#e10600' : '#ffffff';
-            const fg = status === 'gray' ? '#111' : '#fff';
-            return (
-              <div key={k} style={{ textAlign: 'center' }}>
-                <div
-                  title={`${labels[i]} · ${k}`}
-                  style={{
-                    width: 40, height: 40, borderRadius: 999, display: 'grid', placeItems: 'center',
-                    border: `1px solid ${BORDER}`, background: bg, color: fg, fontSize: 13, fontWeight: 700
-                  }}
-                >
-                  {labels[i]}
-                </div>
-              </div>
-            );
-          });
+          return (
+            <>
+              {days.map((d, i) => {
+                const k = dateKey(d);
+                const status = dayStatus(k);
+                const bg = status === 'green'
+                  ? '#10b981'
+                  : status === 'orange'
+                  ? '#f59e0b'
+                  : status === 'red'
+                  ? '#e10600'
+                  : '#ffffff';
+                const fg = status === 'gray' ? '#111' : '#fff';
+                return (
+                  <div key={k} title={`${labels[i]} · ${k}`} style={{ textAlign: 'center' }}>
+                    <div
+                      style={{
+                        width: 40, height: 40, borderRadius: 999,
+                        display: 'grid', placeItems: 'center',
+                        border: `1px solid ${BORDER}`, background: bg, color: fg,
+                        fontSize: 13, fontWeight: 700
+                      }}
+                    >
+                      {labels[i]}
+                    </div>
+                  </div>
+                );
+              })}
+              <button
+                type="button"
+                aria-expanded={monthOpen}
+                onClick={() => setMonthOpen(v => !v)}
+                className="ml-2 text-sm"
+                title={monthOpen ? 'Ocultar calendario' : 'Mostrar calendario'}
+                style={{
+                  lineHeight: 1, padding: '6px 8px',
+                  borderRadius: 8, border: `1px solid ${BORDER}`, background: 'white'
+                }}
+              >
+                {monthOpen ? '▴' : '▾'}
+              </button>
+            </>
+          );
         })()}
-      </div>
-
-      {/* Cabecera DÍAS + toggle calendario */}
-      <div className="mb-2 flex items-center justify-between">
-        <div className="grid grid-cols-7 gap-2 w-full text-center text-[11px] font-semibold">
-          {['L','M','X','J','V','S','D'].map((l) => <div key={l}>{l}</div>)}
-        </div>
-        <button
-          type="button"
-          aria-expanded={monthOpen}
-          onClick={() => setMonthOpen(v => !v)}
-          className="ml-3 text-sm"
-          title={monthOpen ? 'Ocultar calendario' : 'Mostrar calendario'}
-          style={{ lineHeight: 1, padding: '4px 6px', borderRadius: 8, border: `1px solid ${BORDER}`, background: 'white' }}
-        >
-          {monthOpen ? '▴' : '▾'}
-        </button>
       </div>
 
       {/* Calendario mensual (colapsable) */}
       {monthOpen && (
         <section className="mb-6">
-          {/* Etiqueta de mes */}
           <div className="mb-2 text-center text-xs font-medium" aria-live="polite">
             {monthLabel(monthCursor)}
           </div>
@@ -367,7 +407,13 @@ if (!wasDone && completedAllAfter) {
                 if (!k) return <div key={`x-${idx}`} style={{ height: SIZE }} />;
                 const dNum = Number(k.slice(-2));
                 const status = dayStatus(k);
-                const bg = status === 'green' ? '#10b981' : status === 'orange' ? '#f59e0b' : status === 'red' ? '#e10600' : '#ffffff';
+                const bg = status === 'green'
+                  ? '#10b981'
+                  : status === 'orange'
+                  ? '#f59e0b'
+                  : status === 'red'
+                  ? '#e10600'
+                  : '#ffffff';
                 const fg = status === 'gray' ? '#111' : '#fff';
                 const isSelected = k === today;
 
@@ -463,8 +509,6 @@ if (!wasDone && completedAllAfter) {
           Próximamente: “Ir al gym durante 30 días” y otros retos compartidos, con sus checks diarios.
         </div>
       </section>
-
-
     </main>
   );
 }
