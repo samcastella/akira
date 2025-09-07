@@ -7,11 +7,11 @@ import type { HabitMaster } from '@/components/habits/HabitForm';
 import { useUserProfile } from '@/lib/user';
 
 const LS_HABITS_MASTER = 'akira_habits_master_v1';
-const LS_HABITS_DAILY  = 'akira_habits_daily_v1'; // { [yyyy-mm-dd]: { [habitId]: { done, doneAt? } } }
+const LS_HABITS_DAILY  = 'akira_habits_daily_v1';
 const LS_ACTIVE_PROGRAMS = 'akira_programs_active_v1';
 
 type DailyEntry = { done: boolean; doneAt?: number };
-type DailyMap = Record<string, Record<string, DailyEntry>>; // dateKey -> habitId -> entry
+type DailyMap = Record<string, Record<string, DailyEntry>>;
 
 /* ===== Mensajes de felicitación ===== */
 const CONGRATS_MESSAGES = [
@@ -42,7 +42,7 @@ function saveDaily(map: DailyMap) {
   localStorage.setItem(LS_HABITS_DAILY, JSON.stringify(map));
 }
 
-/* ===== Helpers de fechas (LOCAL) ===== */
+/* ===== Fechas (LOCAL) ===== */
 const dateKey = (d = new Date()) => {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -77,7 +77,7 @@ function addDays(d: Date, n: number) {
 /* ===== Tipado de lista para render ===== */
 type HabitView = HabitMaster & { done: boolean };
 
-/* ===== Confeti (import dinámico) ===== */
+/* ===== Confeti ===== */
 async function confettiBurst(evt?: React.MouseEvent, big = false) {
   try {
     const { default: confetti } = await import('canvas-confetti');
@@ -96,28 +96,7 @@ async function confettiBurst(evt?: React.MouseEvent, big = false) {
       scalar: big ? 1.05 : 0.9,
       zIndex: 9999,
     });
-  } catch { /* silencioso */ }
-}
-
-/* ===== Pequeño Modal para el mensaje ===== */
-function CongratsModal({ open, text, onClose }: { open: boolean; text: string; onClose: () => void }) {
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} aria-hidden="true" />
-      <div className="relative z-[101] w-[92%] max-w-md rounded-2xl border border-black/10 bg-white p-5 text-center shadow-lg">
-        <h3 className="mb-2 text-lg font-semibold">¡Felicidades! 🎉</h3>
-        <p className="mb-4 text-sm text-black/80">{text}</p>
-        <button
-          onClick={onClose}
-          className="rounded-xl border border-black bg-black px-4 py-2 text-sm font-medium text-white hover:opacity-90"
-          autoFocus
-        >
-          Cerrar
-        </button>
-      </div>
-    </div>
-  );
+  } catch {}
 }
 
 /* ===== Componente principal ===== */
@@ -140,20 +119,16 @@ export default function HabitosClient() {
       }, ms + 1000);
     };
     schedule();
-    return () => {
-      if (midnightTimer.current) window.clearTimeout(midnightTimer.current);
-    };
+    return () => { if (midnightTimer.current) window.clearTimeout(midnightTimer.current); };
   }, []);
 
-  // Usuario (para avatar y nombre)
+  // Usuario
   const user = (useUserProfile?.() as any) || {};
   const hasUsername = !!String(user?.username ?? '').trim();
-  const displayName = hasUsername
-    ? `@${String(user.username).trim()}`
-    : String(user?.nombre ?? 'usuario/a').trim();
+  const displayName = hasUsername ? `@${String(user.username).trim()}` : String(user?.nombre ?? 'usuario/a').trim();
   const avatar = user?.foto as string | undefined;
 
-  // Programas activos (placeholder visual por ahora)
+  // Programas activos (placeholder)
   const [activePrograms, setActivePrograms] = useState<string[]>([]);
 
   // Felicitación
@@ -170,7 +145,7 @@ export default function HabitosClient() {
     } catch { setActivePrograms([]); }
   }, []);
 
-  // Asegura que para "hoy" existan entradas de todos los hábitos aplicables
+  // Asegura bucket de hoy
   useEffect(() => {
     if (masters.length === 0) return;
     ensureDailyForDate(today);
@@ -204,21 +179,17 @@ export default function HabitosClient() {
       .map(h => h.id);
   }
 
-  // Semáforo: estado por día ('green'|'orange'|'red'|'gray')
+  // Semáforo
   function dayStatus(dKey: string): 'green' | 'orange' | 'red' | 'gray' {
     const ids = applicableMasterIds(dKey);
     if (ids.length === 0) return 'gray';
     const bucket = daily[dKey] ?? {};
     const doneCount = ids.filter(id => bucket[id]?.done).length;
-    if (doneCount === 0) {
-      if (dKey < today) return 'red'; // pasado sin nada hecho
-      return 'orange'; // hoy/futuro sin completar
-    }
-    if (doneCount === ids.length) return 'green';
-    return 'orange';
+    if (doneCount === 0) return dKey < today ? 'red' : 'orange';
+    return doneCount === ids.length ? 'green' : 'orange';
   }
 
-  // ✅ dKey opcional para marcar en cualquier día (por ej. desde el calendario)
+  // Toggle
   function toggleDone(habitId: string, dKey?: string, evt?: React.MouseEvent) {
     const key = dKey ?? today;
     const bucket = daily[key] ?? {};
@@ -245,9 +216,7 @@ export default function HabitosClient() {
       void confettiBurst(undefined, true);
       const pool = CONGRATS_MESSAGES;
       let idx = Math.floor(Math.random() * pool.length);
-      if (lastMsgIndex !== null && pool.length > 1 && idx === lastMsgIndex) {
-        idx = (idx + 1) % pool.length;
-      }
+      if (lastMsgIndex !== null && pool.length > 1 && idx === lastMsgIndex) idx = (idx + 1) % pool.length;
       setLastMsgIndex(idx);
       setCongratsText(pool[idx]);
       setShowCongrats(true);
@@ -266,15 +235,14 @@ export default function HabitosClient() {
   const formatNoYear = (k: string) =>
     new Date(`${k}T00:00:00`).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
 
-  /* ===== Calendario mensual ===== */
+  /* ===== Calendario mensual (colapsable) ===== */
   const [monthCursor, setMonthCursor] = useState<Date>(() => {
-    // Empieza en el mes del "today" (local)
     const t = parseKeyToDate(today);
     return new Date(t.getFullYear(), t.getMonth(), 1);
   });
+  const [monthOpen, setMonthOpen] = useState(false);
 
   useEffect(() => {
-    // Si "today" cambia de mes, mueve el cursor
     const t = parseKeyToDate(today);
     setMonthCursor(new Date(t.getFullYear(), t.getMonth(), 1));
   }, [today]);
@@ -282,111 +250,71 @@ export default function HabitosClient() {
   function monthLabel(d: Date) {
     return d.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
   }
-  function prevMonth() {
-    setMonthCursor(d => new Date(d.getFullYear(), d.getMonth() - 1, 1));
-  }
-  function nextMonth() {
-    setMonthCursor(d => new Date(d.getFullYear(), d.getMonth() + 1, 1));
-  }
+  function prevMonth() { setMonthCursor(d => new Date(d.getFullYear(), d.getMonth() - 1, 1)); }
+  function nextMonth() { setMonthCursor(d => new Date(d.getFullYear(), d.getMonth() + 1, 1)); }
   function buildMonthGrid(base: Date): (string | null)[] {
-    // Lunes a Domingo (7 columnas)
     const y = base.getFullYear();
     const m = base.getMonth();
     const first = new Date(y, m, 1);
     const lastDay = new Date(y, m + 1, 0).getDate();
     const offsetMon0 = (first.getDay() + 6) % 7; // 0=lunes
     const cells: (string | null)[] = [];
-    // huecos previos
     for (let i = 0; i < offsetMon0; i++) cells.push(null);
-    // días del mes
-    for (let d = 1; d <= lastDay; d++) {
-      const k = dateKey(new Date(y, m, d));
-      cells.push(k);
-    }
-    // relleno hasta múltiplo de 7
+    for (let d = 1; d <= lastDay; d++) cells.push(dateKey(new Date(y, m, d)));
     while (cells.length % 7 !== 0) cells.push(null);
     return cells;
   }
   const monthCells = useMemo(() => buildMonthGrid(monthCursor), [monthCursor]);
 
+  // Colores/medidas
+  const BORDER = '#E5E7EB'; // gris claro
+  const SIZE = 34;          // diámetro de los círculos
+  const FONT = 12;          // tamaño de número
+
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-6" style={{ background: 'white' }}>
       {/* Subnavegación */}
       <nav className="mb-4 flex flex-wrap gap-3">
-        <Link
-          href="/mizona"
-          className="btn"
-          style={{ background: 'black', color: 'white', border: '1px solid black' }} // Mis hábitos seleccionado
-        >
+        <Link href="/mizona" className="btn" style={{ background: 'black', color: 'white', border: '1px solid black' }}>
           Mis hábitos
         </Link>
-        <Link
-          href="/mizona/crear-habitos"
-          className="btn"
-          style={{ background: 'white', color: 'black', border: '1px solid var(--line)' }}
-        >
+        <Link href="/mizona/crear-habitos" className="btn" style={{ background: 'white', color: 'black', border: '1px solid var(--line)' }}>
           Crear hábito
         </Link>
-        <Link
-          href="/mizona/logros"
-          className="btn"
-          style={{ background: 'white', color: 'black', border: '1px solid var(--line)' }}
-        >
+        <Link href="/mizona/logros" className="btn" style={{ background: 'white', color: 'black', border: '1px solid var(--line)' }}>
           Logros
         </Link>
-        <Link
-          href="/mizona/perfil"
-          className="btn"
-          style={{ background: 'white', color: 'black', border: '1px solid var(--line)' }}
-        >
+        <Link href="/mizona/perfil" className="btn" style={{ background: 'white', color: 'black', border: '1px solid var(--line)' }}>
           Mi perfil
         </Link>
       </nav>
 
-      {/* Perfil compacto (avatar + nombre/@username, todo clicable) */}
-      <Link
-        href="/mizona/perfil"
-        className="mb-3 flex items-center gap-3 text-inherit"
-        style={{ textDecoration: 'none' }}
-        aria-label="Ir a mi perfil"
-      >
-        <span
-          className="rounded-full overflow-hidden flex items-center justify-center"
-          style={{ width: 44, height: 44, border: '1px solid var(--line)', background: '#f7f7f7' }}
-        >
-          {avatar ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={avatar} alt="Foto de perfil" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-          ) : (
-            <span style={{ fontSize: 18, color: '#9ca3af' }}>👤</span>
-          )}
+      {/* Perfil compacto */}
+      <Link href="/mizona/perfil" className="mb-3 flex items-center gap-3 text-inherit" style={{ textDecoration: 'none' }} aria-label="Ir a mi perfil">
+        <span className="rounded-full overflow-hidden flex items-center justify-center" style={{ width: 44, height: 44, border: '1px solid var(--line)', background: '#f7f7f7' }}>
+          {avatar ? <img src={avatar} alt="Foto de perfil" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ fontSize: 18, color: '#9ca3af' }}>👤</span>}
         </span>
         <span style={{ fontWeight: 600 }}>{displayName}</span>
       </Link>
 
-      {/* Semáforo semanal centrado (sin recuadro) */}
-      <div className="mb-5 flex items-center justify-center gap-4">
+      {/* Semáforo semanal */}
+      <div className="mb-4 flex items-center justify-center gap-4">
         {(() => {
           const weekStart = mondayOf(new Date());
           const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
           const labels = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
           return days.map((d, i) => {
             const k = dateKey(d);
-            const status = dayStatus(k); // 'green'|'orange'|'red'|'gray'
-            const bg =
-              status === 'green' ? '#10b981' :
-              status === 'orange' ? '#f59e0b' :
-              status === 'red' ? '#e10600' : '#ffffff';
+            const status = dayStatus(k);
+            const bg = status === 'green' ? '#10b981' : status === 'orange' ? '#f59e0b' : status === 'red' ? '#e10600' : '#ffffff';
             const fg = status === 'gray' ? '#111' : '#fff';
             return (
               <div key={k} style={{ textAlign: 'center' }}>
                 <div
                   title={`${labels[i]} · ${k}`}
                   style={{
-                    width: 40, height: 40, borderRadius: 999,
-                    display: 'grid', placeItems: 'center',
-                    border: '1px solid #000', background: bg, color: fg,
-                    fontSize: 13, fontWeight: 700
+                    width: 40, height: 40, borderRadius: 999, display: 'grid', placeItems: 'center',
+                    border: `1px solid ${BORDER}`, background: bg, color: fg, fontSize: 13, fontWeight: 700
                   }}
                 >
                   {labels[i]}
@@ -397,78 +325,90 @@ export default function HabitosClient() {
         })()}
       </div>
 
-      {/* ===== Calendario mensual ===== */}
-      <section className="mb-6">
-        <div className="mb-3 flex items-center justify-between">
-          <button
-            type="button"
-            onClick={prevMonth}
-            className="rounded-full border px-3 py-1 text-sm"
-            aria-label="Mes anterior"
-          >
-            ‹
-          </button>
-          <h4 className="text-sm font-semibold" style={{ margin: 0 }}>
+      {/* Cabecera DÍAS + toggle calendario */}
+      <div className="mb-2 flex items-center justify-between">
+        <div className="grid grid-cols-7 gap-2 w-full text-center text-[11px] font-semibold">
+          {['L','M','X','J','V','S','D'].map((l) => <div key={l}>{l}</div>)}
+        </div>
+        <button
+          type="button"
+          aria-expanded={monthOpen}
+          onClick={() => setMonthOpen(v => !v)}
+          className="ml-3 text-sm"
+          title={monthOpen ? 'Ocultar calendario' : 'Mostrar calendario'}
+          style={{ lineHeight: 1, padding: '4px 6px', borderRadius: 8, border: `1px solid ${BORDER}`, background: 'white' }}
+        >
+          {monthOpen ? '▴' : '▾'}
+        </button>
+      </div>
+
+      {/* Calendario mensual (colapsable) */}
+      {monthOpen && (
+        <section className="mb-6">
+          {/* Etiqueta de mes */}
+          <div className="mb-2 text-center text-xs font-medium" aria-live="polite">
             {monthLabel(monthCursor)}
-          </h4>
-          <button
-            type="button"
-            onClick={nextMonth}
-            className="rounded-full border px-3 py-1 text-sm"
-            aria-label="Mes siguiente"
-          >
-            ›
-          </button>
-        </div>
+          </div>
 
-        {/* Cabecera L M X J V S D */}
-        <div className="grid grid-cols-7 gap-2 mb-2 text-center text-[11px] font-semibold">
-          {['L','M','X','J','V','S','D'].map((l) => (
-            <div key={l}>{l}</div>
-          ))}
-        </div>
+          <div className="relative">
+            {/* Flechas laterales, a media altura, sin borde */}
+            <button
+              type="button"
+              onClick={prevMonth}
+              aria-label="Mes anterior"
+              className="absolute left-0"
+              style={{
+                top: '50%', transform: 'translateY(-50%)',
+                background: 'transparent', border: 'none', padding: 6, cursor: 'pointer', zIndex: 2, fontSize: 18
+              }}
+            >
+              ‹
+            </button>
+            <button
+              type="button"
+              onClick={nextMonth}
+              aria-label="Mes siguiente"
+              className="absolute right-0"
+              style={{
+                top: '50%', transform: 'translateY(-50%)',
+                background: 'transparent', border: 'none', padding: 6, cursor: 'pointer', zIndex: 2, fontSize: 18
+              }}
+            >
+              ›
+            </button>
 
-        {/* Celdas */}
-        <div className="grid grid-cols-7 gap-2">
-          {monthCells.map((k, idx) => {
-            if (!k) {
-              return <div key={`x-${idx}`} style={{ height: 40 }} />;
-            }
-            const dNum = Number(k.slice(-2)); // día del mes
-            const status = dayStatus(k);
-            const bg =
-              status === 'green' ? '#10b981' :
-              status === 'orange' ? '#f59e0b' :
-              status === 'red' ? '#e10600' : '#ffffff';
-            const fg = status === 'gray' ? '#111' : '#fff';
-            const isSelected = k === today;
+            {/* Grid del mes */}
+            <div className="grid grid-cols-7 gap-2 px-6">
+              {monthCells.map((k, idx) => {
+                if (!k) return <div key={`x-${idx}`} style={{ height: SIZE }} />;
+                const dNum = Number(k.slice(-2));
+                const status = dayStatus(k);
+                const bg = status === 'green' ? '#10b981' : status === 'orange' ? '#f59e0b' : status === 'red' ? '#e10600' : '#ffffff';
+                const fg = status === 'gray' ? '#111' : '#fff';
+                const isSelected = k === today;
 
-            return (
-              <button
-                key={k}
-                onClick={() => setToday(k)}
-                title={k}
-                aria-label={`Ir al ${k}`}
-                className="w-full"
-                style={{
-                  height: 40,
-                  display: 'grid',
-                  placeItems: 'center',
-                  borderRadius: 999,
-                  border: '1px solid #000',
-                  background: bg,
-                  color: fg,
-                  fontWeight: 700,
-                  outline: isSelected ? '2px solid #111' : 'none',
-                  outlineOffset: 2,
-                }}
-              >
-                {dNum}
-              </button>
-            );
-          })}
-        </div>
-      </section>
+                return (
+                  <button
+                    key={k}
+                    onClick={() => setToday(k)}
+                    title={k}
+                    aria-label={`Ir al ${k}`}
+                    style={{
+                      height: SIZE, width: SIZE, margin: '0 auto',
+                      display: 'grid', placeItems: 'center',
+                      borderRadius: 999, border: `1px solid ${BORDER}`,
+                      background: bg, color: fg, fontWeight: 700, fontSize: FONT,
+                      outline: isSelected ? `2px solid ${BORDER}` : 'none', outlineOffset: 2,
+                    }}
+                  >
+                    {dNum}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Título de hoy */}
       <h3 style={{ marginTop: 0, marginBottom: 10 }}>
@@ -541,11 +481,7 @@ export default function HabitosClient() {
       </section>
 
       {/* Modal de felicitación */}
-      <CongratsModal
-        open={showCongrats}
-        text={congratsText}
-        onClose={() => setShowCongrats(false)}
-      />
+      <CongratsModal open={showCongrats} text={congratsText} onClose={() => setShowCongrats(false)} />
     </main>
   );
 }
