@@ -212,12 +212,11 @@ export default function CrearHabitosPage() {
       <section className="mt-8">
         <h3 className="mb-3 text-base font-semibold">Hábitos creados</h3>
 
-        <HabitsCreatedList
-          habits={habits}
-          onEdit={openEdit}
-          onDelete={handleDelete}
-          renderEditUnderBar // <- muestra “Editar” pequeñito bajo cada barra
-        />
+       <HabitsCreatedList
+  habits={habits}
+  onEdit={openEdit}
+  onDelete={handleDelete}
+/>
       </section>
     </main>
   );
