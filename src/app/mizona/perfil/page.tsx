@@ -1,9 +1,9 @@
 // src/app/mizona/perfil/page.tsx
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
-import { Camera } from 'lucide-react';
+import { Camera, X } from 'lucide-react';
 import { logoutAndResetApp } from '@/lib/logout';
 import { useUserProfile, upsertProfile, saveUserMerge, Sex, normalizeUsername } from '@/lib/user';
 
@@ -21,6 +21,7 @@ type Profile = {
   email?: string;
   telefono?: string;
   peso?: number;
+  estatura?: number; // ⬅️ NUEVO (cm)
   foto?: string; // dataURL/URL
 };
 
@@ -48,6 +49,12 @@ export default function PerfilPage() {
   const [savedOpen, setSavedOpen] = useState(false); // pop-up guardado
   const [saving, setSaving] = useState(false);
 
+  // Modal/visor de foto
+  const [photoModalOpen, setPhotoModalOpen] = useState(false);
+  const [tempPhoto, setTempPhoto] = useState<string | undefined>(undefined);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const modalFileInputRef = useRef<HTMLInputElement | null>(null);
+
   // Hidrata el formulario con el perfil global cuando no estamos editando
   useEffect(() => {
     if (!editing && user) {
@@ -60,16 +67,43 @@ export default function PerfilPage() {
   }
 
   // === Redimensionar a máx 200 px antes de guardar ===
-  async function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
+  async function onPickFile(e: React.ChangeEvent<HTMLInputElement>, applyDirect = true) {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const dataURL = await readFileAsDataURL(file);
     const resized = await resizeImageDataURL(dataURL, 200); // max 200 px lado mayor
-    handleChange('foto', resized);
+
+    if (applyDirect) {
+      // Modo formulario: aplicamos directamente
+      handleChange('foto', resized);
+    } else {
+      // Modo modal: lo dejamos en temp y mostramos botón Guardar
+      setTempPhoto(resized);
+    }
   }
 
+  function openPhotoModal() {
+    // Abre el modal mostrando la foto actual
+    setTempPhoto(undefined);
+    setPhotoModalOpen(true);
+  }
+
+  function closePhotoModal() {
+    setTempPhoto(undefined);
+    setPhotoModalOpen(false);
+  }
+
+  function applyTempPhoto() {
+    if (tempPhoto) {
+      handleChange('foto', tempPhoto);
+    }
+    closePhotoModal();
+  }
+
+  // Guardado con timeout de seguridad para evitar “Guardando…” infinito
   async function save() {
+    if (saving) return; // evita doble envío
     setSaving(true);
     try {
       // Normalización suave (+ username normalizado)
@@ -80,32 +114,44 @@ export default function PerfilPage() {
         tiktok: profile.tiktok?.trim() || undefined,
         username: profile.username ? normalizeUsername(profile.username) : undefined,
         fechaNacimiento: profile.fechaNacimiento || undefined,
-        // mantenemos edad si existiera por compatibilidad, pero no la forzamos
+        // Sanitizar numéricos
+        peso: typeof profile.peso === 'number' ? profile.peso : profile.peso ? Number(profile.peso) : undefined,
+        estatura:
+          typeof profile.estatura === 'number'
+            ? profile.estatura
+            : profile.estatura
+            ? Number(profile.estatura)
+            : undefined,
       };
 
-      // 1) Escribe en Supabase (propaga a otros dispositivos)
-      await upsertProfile(payload as any);
+      // Timeout de 12s: si Supabase no responde, guardamos local y seguimos
+      const upsertWithTimeout = Promise.race([
+        upsertProfile(payload as any),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 12000)),
+      ]);
 
-      // 2) Refleja local y dispara evento para la UI actual
-      const updated = saveUserMerge(payload as any);
+      try {
+        // 1) Escribe en Supabase (propaga a otros dispositivos)
+        await upsertWithTimeout;
+        // 2) Refleja local y dispara evento para la UI actual
+        const updated = saveUserMerge(payload as any);
+        setProfile(updated as Profile);
+      } catch (err: any) {
+        const code = String(err?.code || err?.status || '');
+        const msg = String(err?.message || '');
 
-      setProfile(updated as Profile);
-      setSavedOpen(true);
-      setEditing(false);
-    } catch (err: any) {
-      const code = String(err?.code || err?.status || '');
-      const msg = String(err?.message || '');
+        // Username duplicado → no cierres el editor ni sigas con guardado local
+        if (code === '23505' || /duplicate|unique/i.test(msg)) {
+          try { alert('Ese nombre de usuario ya está en uso. Prueba con otro.'); } catch {}
+          setSaving(false);
+          return;
+        }
 
-      // Username duplicado → no cierres el editor ni sigas con guardado local
-      if (code === '23505' || /duplicate|unique/i.test(msg)) {
-        try { alert('Ese nombre de usuario ya está en uso. Prueba con otro.'); } catch {}
-        setSaving(false);
-        return;
+        console.warn('[PerfilPage] upsertProfile falló o tardó demasiado, guardo local y continúo', err);
+        const updated = saveUserMerge(payload as any);
+        setProfile(updated as Profile);
       }
 
-      console.warn('[PerfilPage] upsertProfile falló, guardo local y continúo', err);
-      const updated = saveUserMerge(profile as any);
-      setProfile(updated as Profile);
       setSavedOpen(true);
       setEditing(false);
     } finally {
@@ -138,13 +184,18 @@ export default function PerfilPage() {
           <div className="space-y-3 text-sm">
             {/* Avatar */}
             <div className="flex items-center gap-3">
-              <div
+              <button
+                type="button"
+                onClick={openPhotoModal}
                 className="rounded-full overflow-hidden"
+                title="Ver/editar foto"
+                aria-label="Ver/editar foto"
                 style={{
                   width: 80,
                   height: 80,
                   border: '1px solid var(--line)',
                   background: '#f7f7f7',
+                  cursor: 'pointer',
                 }}
               >
                 {profile.foto ? (
@@ -152,11 +203,11 @@ export default function PerfilPage() {
                   <img
                     src={profile.foto}
                     alt="Foto de perfil"
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                   />
                 ) : null}
-              </div>
-              <div className="muted">Tu foto de perfil</div>
+              </button>
+              <div className="muted">Tu foto de perfil (toca para ampliar / cambiar)</div>
             </div>
 
             <Row label="Usuario" value={profile.username || '—'} />
@@ -168,6 +219,7 @@ export default function PerfilPage() {
 
             <Row label="Sexo" value={profile.sexo || '—'} />
             <Row label="Peso (kg)" value={profile.peso ?? '—'} />
+            <Row label="Estatura (cm)" value={profile.estatura ?? '—'} /> {/* ⬅️ NUEVO */}
             <Row label="Calorías diarias" value={profile.caloriasDiarias ?? '—'} />
 
             {/* Instagram con formateo y enlace normalizado */}
@@ -201,13 +253,18 @@ export default function PerfilPage() {
           >
             {/* Avatar + selector de archivo con overlay de cámara */}
             <div className="flex items-center gap-3">
-              <div
+              <button
+                type="button"
+                onClick={openPhotoModal}
                 className="relative rounded-full overflow-hidden"
+                title="Ver/editar foto"
+                aria-label="Ver/editar foto"
                 style={{
                   width: 96,
                   height: 96,
                   border: '1px solid var(--line)',
                   background: '#f7f7f7',
+                  cursor: 'pointer',
                 }}
               >
                 {profile.foto ? (
@@ -220,11 +277,10 @@ export default function PerfilPage() {
                 ) : null}
 
                 {/* Botón cámara (overlay) */}
-                <label
-                  htmlFor="fotoInput"
+                <span
+                  className="absolute bottom-1 right-1 rounded-full shadow"
                   title="Cambiar foto"
                   aria-label="Cambiar foto"
-                  className="absolute bottom-1 right-1 rounded-full shadow"
                   style={{
                     background: 'white',
                     border: '1px solid var(--line)',
@@ -232,12 +288,11 @@ export default function PerfilPage() {
                     height: 32,
                     display: 'grid',
                     placeItems: 'center',
-                    cursor: 'pointer',
                   }}
                 >
                   <Camera size={18} />
-                </label>
-              </div>
+                </span>
+              </button>
 
               <div>
                 {/* Mantengo también el botón textual por accesibilidad */}
@@ -246,9 +301,10 @@ export default function PerfilPage() {
                 </label>
                 <input
                   id="fotoInput"
+                  ref={fileInputRef}
                   type="file"
                   accept="image/*"
-                  onChange={onPickFile}
+                  onChange={(e) => onPickFile(e, true)}
                   className="hidden"
                 />
               </div>
@@ -310,6 +366,20 @@ export default function PerfilPage() {
                 value={profile.peso ?? ''}
                 onChange={(e) =>
                   handleChange('peso', e.target.value ? Number(e.target.value) : undefined)
+                }
+              />
+            </Field>
+
+            <Field label="Estatura (cm)">
+              <input
+                type="number"
+                min={80}
+                max={250}
+                step={1}
+                className="input text-[16px]"
+                value={profile.estatura ?? ''}
+                onChange={(e) =>
+                  handleChange('estatura', e.target.value ? Number(e.target.value) : undefined)
                 }
               />
             </Field>
@@ -416,6 +486,76 @@ export default function PerfilPage() {
               >
                 Aceptar
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* === Ventana flotante de foto === */}
+      {photoModalOpen && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl p-4"
+            style={{ width: 'min(92vw, 420px)' }}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="font-semibold">Foto de perfil</h3>
+              <button
+                type="button"
+                className="p-1 rounded hover:bg-black/5"
+                aria-label="Cerrar"
+                onClick={closePhotoModal}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div
+              className="rounded-lg overflow-hidden"
+              style={{ border: '1px solid var(--line)', background: '#f7f7f7' }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={tempPhoto || profile.foto || ''}
+                alt="Vista previa de foto"
+                style={{
+                  width: '100%',
+                  height: 280,
+                  objectFit: 'cover',
+                  display: (tempPhoto || profile.foto) ? 'block' : 'none',
+                }}
+              />
+              {!tempPhoto && !profile.foto && (
+                <div className="h-[280px] grid place-items-center text-sm muted">Sin foto</div>
+              )}
+            </div>
+
+            <div className="mt-4 flex gap-2 justify-end">
+              <label className="btn secondary" htmlFor="modalFotoInput">
+                Subir foto
+              </label>
+              <input
+                id="modalFotoInput"
+                ref={modalFileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={(e) => onPickFile(e, false)}
+                className="hidden"
+              />
+
+              <button type="button" className="btn secondary" onClick={closePhotoModal}>
+                Cerrar
+              </button>
+
+              {tempPhoto && (
+                <button type="button" className="btn" onClick={applyTempPhoto}>
+                  Guardar
+                </button>
+              )}
             </div>
           </div>
         </div>
