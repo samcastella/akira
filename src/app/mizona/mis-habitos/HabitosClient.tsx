@@ -171,17 +171,6 @@ export default function HabitosClient() {
       .map(h => h.id);
   }
 
-  // Semáforo — añadimos estado 'white' para días futuros (fondo blanco)
-  function dayStatus(dKey: string): 'green' | 'orange' | 'red' | 'gray' | 'white' {
-    if (dKey > today) return 'white'; // futuro: blanco hasta que llegue el día
-    const ids = applicableMasterIds(dKey);
-    if (ids.length === 0) return 'gray';
-    const bucket = daily[dKey] ?? {};
-    const doneCount = ids.filter(id => bucket[id]?.done).length;
-    if (doneCount === 0) return dKey < today ? 'red' : 'orange';
-    return doneCount === ids.length ? 'green' : 'orange';
-  }
-
   // Toggle
   function toggleDone(habitId: string, dKey?: string, evt?: React.MouseEvent) {
     const key = dKey ?? today;
@@ -217,41 +206,6 @@ export default function HabitosClient() {
       .map(h => ({ ...h, done: !!bucket[h.id]?.done }));
   }, [masters, daily, today]);
 
-  const formatNoYear = (k: string) =>
-    new Date(`${k}T00:00:00`).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
-
-  /* ===== Calendario mensual (colapsable) ===== */
-  const [monthCursor, setMonthCursor] = useState<Date>(() => {
-    const t = parseKeyToDate(today);
-    return new Date(t.getFullYear(), t.getMonth(), 1);
-  });
-  const [monthOpen, setMonthOpen] = useState(false);
-
-  useEffect(() => {
-    const t = parseKeyToDate(today);
-    setMonthCursor(new Date(t.getFullYear(), t.getMonth(), 1));
-  }, [today]);
-
-  function monthLabel(d: Date) {
-    return d.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
-  }
-  function prevMonth() { setMonthCursor(d => new Date(d.getFullYear(), d.getMonth() - 1, 1)); }
-  function nextMonth() { setMonthCursor(d => new Date(d.getFullYear(), d.getMonth() + 1, 1)); }
-  function buildMonthGrid(base: Date): (string | null)[] {
-    const y = base.getFullYear();
-    const m = base.getMonth();
-    const first = new Date(y, m, 1);
-    const lastDay = new Date(y, m + 1, 0).getDate();
-    const offsetMon0 = (first.getDay() + 6) % 7; // 0=lunes
-    const cells: (string | null)[] = [];
-    for (let i = 0; i < offsetMon0; i++) cells.push(null);
-    for (let d = 1; d <= lastDay; d++) cells.push(dateKey(new Date(y, m, d)));
-    while (cells.length % 7 !== 0) cells.push(null);
-    return cells;
-  }
-  const monthCells = useMemo(() => buildMonthGrid(monthCursor), [monthCursor]);
-
-  // Tokens UI
   const BORDER = '#E5E7EB'; // gris claro
 
   /* ====== RENDER ====== */
@@ -265,7 +219,7 @@ export default function HabitosClient() {
         </p>
       </section>
 
-      {/* Botones (después) */}
+      {/* Botones (añadido Calendarios) */}
       <nav className="mb-4 flex flex-wrap gap-3">
         <Link href="/mizona" className="btn" style={{ background: 'black', color: 'white', border: '1px solid black' }}>
           Mis hábitos
@@ -279,13 +233,14 @@ export default function HabitosClient() {
         <Link href="/mizona/perfil" className="btn" style={{ background: 'white', color: 'black', border: '1px solid var(--line)' }}>
           Mi perfil
         </Link>
+        {/* NUEVO */}
+        <Link href="/mizona/calendarios" className="btn" style={{ background: 'white', color: 'black', border: '1px solid var(--line)' }}>
+          Calendarios
+        </Link>
       </nav>
 
-      {/* Tarjeta de perfil con borde gris y botón negro alineado a la derecha */}
-      <div
-        className="mb-5 rounded-2xl"
-        style={{ border: `1px solid ${BORDER}`, padding: 12 }}
-      >
+      {/* Tarjeta de perfil con borde gris y botón negro alineado a la derecha (sin cambios) */}
+      <div className="mb-5 rounded-2xl" style={{ border: `1px solid ${BORDER}`, padding: 12 }}>
         <div className="flex items-center gap-3">
           <span
             className="rounded-full overflow-hidden flex items-center justify-center"
@@ -301,9 +256,7 @@ export default function HabitosClient() {
 
           <div className="min-w-0 flex-1">
             <div className="font-bold truncate">{nameAndSurname || username || 'usuario/a'}</div>
-            {username && (
-              <div className="text-xs text-black/70 truncate">@{username}</div>
-            )}
+            {username && <div className="text-xs text-black/70 truncate">@{username}</div>}
           </div>
 
           <Link
@@ -317,157 +270,20 @@ export default function HabitosClient() {
         </div>
       </div>
 
-      {/* Bloque “semáforo semanal” y control del calendario con el MISMO ancho que el calendario */}
-      <div className="mb-4">
-        <div className="mx-auto" style={{ maxWidth: 720 }}>
-          {/* Semáforo semanal en grid 7 columnas, celdas cuadradas */}
-          <div className="grid grid-cols-7 gap-2">
-            {(() => {
-              const weekStart = mondayOf(new Date());
-              const labels = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
-              return Array.from({ length: 7 }, (_, i) => {
-                const d = addDays(weekStart, i);
-                const k = dateKey(d);
-                const status = dayStatus(k);
-                const bg =
-                  status === 'green' ? '#10b981' :
-                  status === 'orange' ? '#f59e0b' :
-                  status === 'red' ? '#e10600' :
-                  /* gray/white */ '#ffffff';
-                const fg = (status === 'gray' || status === 'white') ? '#111' : '#fff';
-                return (
-                  <div key={k} className="w-full">
-                    <div
-                      title={`${labels[i]} · ${k}`}
-                      style={{
-                        width: '100%',
-                        aspectRatio: '1 / 1',
-                        borderRadius: 999,
-                        display: 'grid',
-                        placeItems: 'center',
-                        border: `1px solid ${BORDER}`,
-                        background: bg,
-                        color: fg,
-                        fontSize: 13,
-                        fontWeight: 700,
-                        userSelect: 'none',
-                      }}
-                    >
-                      {labels[i]}
-                    </div>
-                  </div>
-                );
-              });
-            })()}
-          </div>
-
-          {/* Botón de desplegar calendario alineado al ancho */}
-          <div className="mt-2 flex justify-end">
-            <button
-              type="button"
-              aria-expanded={monthOpen}
-              onClick={() => setMonthOpen(v => !v)}
-              className="text-sm"
-              title={monthOpen ? 'Ocultar calendario' : 'Mostrar calendario'}
-              style={{
-                lineHeight: 1, padding: '6px 8px',
-                borderRadius: 8, border: `1px solid ${BORDER}`, background: 'white'
-              }}
-            >
-              {monthOpen ? '▴' : '▾'}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Calendario mensual (colapsable) */}
-      {monthOpen && (
-        <section className="mb-6">
-          <div className="mb-2 text-center text-xs font-medium" aria-live="polite">
-            {monthLabel(monthCursor)}
-          </div>
-
-          <div className="mx-auto relative" style={{ maxWidth: 720 }}>
-            {/* Flechas laterales, a media altura, sin borde */}
-            <button
-              type="button"
-              onClick={prevMonth}
-              aria-label="Mes anterior"
-              className="absolute left-0"
-              style={{
-                top: '50%', transform: 'translateY(-50%)',
-                background: 'transparent', border: 'none', padding: 6, cursor: 'pointer', zIndex: 2, fontSize: 18
-              }}
-            >
-              ‹
-            </button>
-            <button
-              type="button"
-              onClick={nextMonth}
-              aria-label="Mes siguiente"
-              className="absolute right-0"
-              style={{
-                top: '50%', transform: 'translateY(-50%)',
-                background: 'transparent', border: 'none', padding: 6, cursor: 'pointer', zIndex: 2, fontSize: 18
-              }}
-            >
-              ›
-            </button>
-
-            {/* Grid del mes en 7 columnas, celdas cuadradas al 100% del ancho */}
-            <div className="grid grid-cols-7 gap-2 px-6">
-              {monthCells.map((k, idx) => {
-                if (!k) return <div key={`x-${idx}`} style={{ width: '100%', aspectRatio: '1 / 1' }} />;
-                const dNum = Number(k.slice(-2));
-                const status = dayStatus(k);
-                const bg =
-                  status === 'green' ? '#10b981' :
-                  status === 'orange' ? '#f59e0b' :
-                  status === 'red' ? '#e10600' :
-                  /* gray/white */ '#ffffff';
-                const fg = (status === 'gray' || status === 'white') ? '#111' : '#fff';
-                const isSelected = k === today;
-
-                return (
-                  <button
-                    key={k}
-                    onClick={() => setToday(k)}
-                    title={k}
-                    aria-label={`Ir al ${k}`}
-                    style={{
-                      width: '100%',
-                      aspectRatio: '1 / 1',
-                      display: 'grid', placeItems: 'center',
-                      borderRadius: 999, border: `1px solid ${BORDER}`,
-                      background: bg, color: fg, fontWeight: 700, fontSize: 12,
-                      outline: isSelected ? `2px solid ${BORDER}` : 'none', outlineOffset: 2,
-                    }}
-                  >
-                    {dNum}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </section>
-      )}
+      {/* ⛳️ Se ha eliminado el semáforo y el calendario de esta página */}
 
       {/* Título de hoy */}
       <h3 style={{ marginTop: 0, marginBottom: 10 }}>
-        ¿Qué tenemos para hoy {formatNoYear(today)}?
+        ¿Qué tenemos para hoy {new Date(`${today}T00:00:00`).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}?
       </h3>
 
-      {/* Hábitos creados por ti */}
+      {/* Hábitos creados por ti (sin cambios) */}
       <section className="mb-6">
         <h4 style={{ margin: '6px 0 8px 0' }}>Hábitos creados por ti</h4>
         {masters.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-black/20 px-4 py-6 text-center text-sm text-black/60">
             No tienes hábitos creados todavía. Ve a{' '}
             <Link href="/mizona/crear-habitos" className="font-medium underline">Crear mis hábitos</Link>.
-          </div>
-        ) : todayHabits.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-black/20 px-4 py-6 text-center text-sm text-black/60">
-            No hay hábitos programados para hoy (según rango o fin de semana).
           </div>
         ) : (
           <ul className="space-y-3">
