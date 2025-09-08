@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
-import RequireAuth from '@/components/auth/RequireAuth';
+// import RequireAuth from '@/components/auth/RequireAuth'; // ← eliminado
 
 /* ===========================
    Tipos
@@ -66,22 +66,17 @@ function stripAt(s: string) {
 }
 
 /* ===========================
-   Página Amigos (protegida)
+   Página Amigos (sin exigir login)
    =========================== */
 export default function AmigosPage() {
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
   const [tab, setTab] = useState<'crear' | 'unirse' | 'retos' | 'buscar' | 'ranking'>('crear');
 
-  // Scroll siempre arriba al entrar en la página
-  useEffect(() => {
-    if (typeof window !== 'undefined') window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-  }, []);
-  // Y también al cambiar de pestaña
-  useEffect(() => {
-    if (typeof window !== 'undefined') window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-  }, [tab]);
+  // Scroll siempre arriba al entrar y al cambiar de pestaña
+  useEffect(() => { window?.scrollTo?.({ top: 0, left: 0, behavior: 'auto' }); }, []);
+  useEffect(() => { window?.scrollTo?.({ top: 0, left: 0, behavior: 'auto' }); }, [tab]);
 
-  // Obtener userId de sesión (sin forzar ningún flujo de login)
+  // Obtener userId de sesión (sin forzar login)
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -92,7 +87,7 @@ export default function AmigosPage() {
     return () => { alive = false; };
   }, []);
 
-  // Sube/actualiza mi perfil público con lo que haya en local (nombre/rrss)
+  // Sube/actualiza mi perfil público con lo que haya en local (si hay sesión)
   useEffect(() => {
     if (!sessionUserId) return;
     let cancelled = false;
@@ -119,56 +114,54 @@ export default function AmigosPage() {
     return () => { cancelled = true; };
   }, [sessionUserId]);
 
+  const logged = !!sessionUserId;
+
   return (
-    <RequireAuth redirectTo="/login?redirect=/amigos">
-      {!sessionUserId ? (
-        <main className="container" style={{ paddingTop: 24, paddingBottom: 24 }}>
-          <h2 className="page-title">Mis amigos</h2>
-          <p className="text-sm muted">Cargando tu sesión…</p>
-        </main>
-      ) : (
-        <main className="container" style={{ paddingTop: 24, paddingBottom: 24 }}>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="page-title">Mis amigos</h2>
-            <Link href="/" className="btn secondary">
-              Volver
-            </Link>
-          </div>
+    <main className="container" style={{ paddingTop: 24, paddingBottom: 24 }}>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="page-title">Mis amigos</h2>
+        <Link href="/mizona" className="btn secondary">Volver</Link>
+      </div>
 
-          {/* Tabs */}
-          <div className="flex gap-2 mb-4 flex-wrap">
-            <button className={`btn ${tab === 'crear' ? '' : 'secondary'}`} onClick={() => setTab('crear')}>
-              Crear reto
-            </button>
-            <button className={`btn ${tab === 'unirse' ? '' : 'secondary'}`} onClick={() => setTab('unirse')}>
-              Unirse con código
-            </button>
-            <button className={`btn ${tab === 'retos' ? '' : 'secondary'}`} onClick={() => setTab('retos')}>
-              Retos con amigos
-            </button>
-            <button className={`btn ${tab === 'buscar' ? '' : 'secondary'}`} onClick={() => setTab('buscar')}>
-              Buscar amigos
-            </button>
-            <button className={`btn ${tab === 'ranking' ? '' : 'secondary'}`} onClick={() => setTab('ranking')}>
-              Ranking
-            </button>
-          </div>
-
-          {tab === 'crear' && <CreateChallenge userId={sessionUserId} onCreated={() => setTab('retos')} />}
-          {tab === 'unirse' && <JoinChallenge />}
-          {tab === 'retos' && <MyChallenges userId={sessionUserId} />}
-          {tab === 'buscar' && <Friends userId={sessionUserId} />}
-          {tab === 'ranking' && <RankingPlaceholder />}
-        </main>
+      {!logged && (
+        <div className="mb-3 rounded-xl border p-3 text-xs" style={{ borderColor: 'var(--line)', background: '#fff' }}>
+          Estás navegando <b>sin iniciar sesión</b>. Puedes explorar usuarios, pero para
+          crear/unirte a retos o conectar con amigos necesitas <Link className="underline" href="/login?redirect=/mizona/amigos">iniciar sesión</Link>.
+        </div>
       )}
-    </RequireAuth>
+
+      {/* Tabs */}
+      <div className="flex gap-2 mb-4 flex-wrap">
+        <button className={`btn ${tab === 'crear' ? '' : 'secondary'}`} onClick={() => setTab('crear')}>
+          Crear reto
+        </button>
+        <button className={`btn ${tab === 'unirse' ? '' : 'secondary'}`} onClick={() => setTab('unirse')}>
+          Unirse con código
+        </button>
+        <button className={`btn ${tab === 'retos' ? '' : 'secondary'}`} onClick={() => setTab('retos')}>
+          Retos con amigos
+        </button>
+        <button className={`btn ${tab === 'buscar' ? '' : 'secondary'}`} onClick={() => setTab('buscar')}>
+          Buscar amigos
+        </button>
+        <button className={`btn ${tab === 'ranking' ? '' : 'secondary'}`} onClick={() => setTab('ranking')}>
+          Ranking
+        </button>
+      </div>
+
+      {tab === 'crear'   && <CreateChallenge userId={sessionUserId ?? undefined} onCreated={() => setTab('retos')} />}
+      {tab === 'unirse'  && <JoinChallenge   userId={sessionUserId ?? undefined} />}
+      {tab === 'retos'   && <MyChallenges    userId={sessionUserId ?? undefined} />}
+      {tab === 'buscar'  && <Friends         userId={sessionUserId ?? undefined} />}
+      {tab === 'ranking' && <RankingPlaceholder />}
+    </main>
   );
 }
 
 /* ===========================
    Crear reto (Supabase)
    =========================== */
-function CreateChallenge({ userId, onCreated }: { userId: string; onCreated?: () => void }) {
+function CreateChallenge({ userId, onCreated }: { userId?: string; onCreated?: () => void }) {
   const [title, setTitle] = useState('');
   const [start, setStart] = useState<string>('');
   const [end, setEnd] = useState<string>('');
@@ -194,6 +187,7 @@ function CreateChallenge({ userId, onCreated }: { userId: string; onCreated?: ()
   }
 
   async function create() {
+    if (!userId) return;
     if (!title || !start || !end || days.length === 0) return;
 
     // Genera código único con reintentos mínimos
@@ -210,45 +204,46 @@ function CreateChallenge({ userId, onCreated }: { userId: string; onCreated?: ()
       .insert({ owner_id: userId, title, start, end, code })
       .select('id, code')
       .single();
-    if (e1) {
-      console.error(e1);
-      return;
-    }
+    if (e1) { console.error(e1); return; }
 
     // 2) days
     const payload = days.map((d) => ({ challenge_id: ch.id, day: d.date, title: d.title }));
     const { error: e2 } = await supabase.from('challenge_days').insert(payload);
-    if (e2) {
-      console.error(e2);
-    }
+    if (e2) { console.error(e2); }
 
     // 3) me as member
     const { error: e3 } = await supabase.from('challenge_members').insert({ challenge_id: ch.id, user_id: userId });
-    if (e3) {
-      console.error(e3);
-    }
+    if (e3) { console.error(e3); }
 
     setCode(ch.code);
     setCreatedOpen(true);
   }
 
+  const disabled = !userId;
+
   return (
     <section className="space-y-3 text-sm" style={{ border: '1px solid var(--line)', borderRadius: 'var(--radius-card)', padding: 16 }}>
       <h3 className="font-semibold text-base">Crear reto conjunto</h3>
 
+      {disabled && (
+        <div className="text-xs mb-1">
+          Inicia sesión para crear un reto. <Link className="underline" href="/login?redirect=/mizona/amigos">Ir a login</Link>.
+        </div>
+      )}
+
       <label className="block">
         <span className="text-xs font-medium">Nombre del reto</span>
-        <input className="input mt-1 text-[16px]" placeholder="Entrenar, Correr, Meditar…" value={title} onChange={(e) => setTitle(e.target.value)} />
+        <input className="input mt-1 text-[16px]" placeholder="Entrenar, Correr, Meditar…" value={title} onChange={(e) => setTitle(e.target.value)} disabled={disabled} />
       </label>
 
       <div className="grid grid-cols-2 gap-3">
         <label className="block">
           <span className="text-xs font-medium">Inicio del reto</span>
-          <input type="date" className="input mt-1 text-[16px]" value={start} onChange={(e) => setStart(e.target.value)} />
+          <input type="date" className="input mt-1 text-[16px]" value={start} onChange={(e) => setStart(e.target.value)} disabled={disabled} />
         </label>
         <label className="block">
           <span className="text-xs font-medium">Final del reto</span>
-          <input type="date" className="input mt-1 text-[16px]" value={end} onChange={(e) => setEnd(e.target.value)} />
+          <input type="date" className="input mt-1 text-[16px]" value={end} onChange={(e) => setEnd(e.target.value)} disabled={disabled} />
         </label>
       </div>
 
@@ -259,7 +254,7 @@ function CreateChallenge({ userId, onCreated }: { userId: string; onCreated?: ()
             {days.map((d, i) => (
               <li key={d.date} className="flex items-center gap-2">
                 <span className="text-xs shrink-0 w-[96px]">{d.date}</span>
-                <input className="input text-[14px] flex-1" value={d.title} onChange={(e) => updateDay(i, e.target.value)} />
+                <input className="input text-[14px] flex-1" value={d.title} onChange={(e) => updateDay(i, e.target.value)} disabled={disabled} />
               </li>
             ))}
           </ul>
@@ -267,7 +262,7 @@ function CreateChallenge({ userId, onCreated }: { userId: string; onCreated?: ()
       )}
 
       <div className="flex gap-2">
-        <button className="btn" onClick={create} disabled={!title || !start || !end}>
+        <button className="btn" onClick={create} disabled={disabled || !title || !start || !end}>
           Crear reto
         </button>
         <button
@@ -320,11 +315,12 @@ function CreateChallenge({ userId, onCreated }: { userId: string; onCreated?: ()
 /* ===========================
    Unirse con código (Supabase RPC)
    =========================== */
-function JoinChallenge() {
+function JoinChallenge({ userId }: { userId?: string }) {
   const [code, setCode] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
 
   async function join() {
+    if (!userId) { setMsg('Debes iniciar sesión para unirte.'); return; }
     try {
       const { data, error } = await supabase.rpc('join_challenge_by_code', { p_code: code.trim().toUpperCase() });
       if (error) throw error;
@@ -338,11 +334,12 @@ function JoinChallenge() {
   return (
     <section className="space-y-3 text-sm" style={{ border: '1px solid var(--line)', borderRadius: 'var(--radius-card)', padding: 16 }}>
       <h3 className="font-semibold text-base">Unirse a un reto</h3>
+      {!userId && <div className="text-xs">Inicia sesión para unirte a un reto.</div>}
       <label className="block">
         <span className="text-xs font-medium">Código del reto</span>
-        <input className="input mt-1 text-[16px]" value={code} onChange={(e) => setCode(e.target.value)} placeholder="ABC123" />
+        <input className="input mt-1 text-[16px]" value={code} onChange={(e) => setCode(e.target.value)} placeholder="ABC123" disabled={!userId} />
       </label>
-      <button className="btn" onClick={join} disabled={!code.trim()}>
+      <button className="btn" onClick={join} disabled={!userId || !code.trim()}>
         Unirme
       </button>
       {msg && <p className="text-xs mt-1">{msg}</p>}
@@ -353,38 +350,40 @@ function JoinChallenge() {
 /* ===========================
    Retos con amigos (listado + editor)
    =========================== */
-function MyChallenges({ userId }: { userId: string }) {
+function MyChallenges({ userId }: { userId?: string }) {
   const [list, setList] = useState<(ChallengeRow & { members_count: number })[]>([]);
 
-  async function refresh() {
-    // retos donde soy miembro
-    const { data: mems } = await supabase.from('challenge_members').select('challenge_id').eq('user_id', userId);
-    const ids = (mems || []).map((m) => m.challenge_id);
-    if (!ids.length) {
-      setList([]);
-      return;
-    }
-    const { data: challenges } = await supabase
-      .from('challenges')
-      .select('id, code, owner_id, title, start, end')
-      .in('id', ids)
-      .order('start', { ascending: false });
-
-    // contar miembros
-    const { data: members } = await supabase.from('challenge_members').select('challenge_id, user_id').in('challenge_id', ids);
-    const counts: Record<string, number> = {};
-    members?.forEach((m) => (counts[m.challenge_id] = (counts[m.challenge_id] || 0) + 1));
-
-    setList((challenges || []).map((c) => ({ ...c, members_count: counts[c.id] || 1 })));
-  }
-
   useEffect(() => {
-    let alive = true;
+    if (!userId) { setList([]); return; }
     (async () => {
-      await refresh();
+      // retos donde soy miembro
+      const { data: mems } = await supabase.from('challenge_members').select('challenge_id').eq('user_id', userId);
+      const ids = (mems || []).map((m) => m.challenge_id);
+      if (!ids.length) { setList([]); return; }
+
+      const { data: challenges } = await supabase
+        .from('challenges')
+        .select('id, code, owner_id, title, start, end')
+        .in('id', ids)
+        .order('start', { ascending: false });
+
+      // contar miembros
+      const { data: members } = await supabase.from('challenge_members').select('challenge_id, user_id').in('challenge_id', ids);
+      const counts: Record<string, number> = {};
+      members?.forEach((m) => (counts[m.challenge_id] = (counts[m.challenge_id] || 0) + 1));
+
+      setList((challenges || []).map((c) => ({ ...c, members_count: counts[c.id] || 1 })));
     })();
-    return () => { alive = false; };
   }, [userId]);
+
+  if (!userId) {
+    return (
+      <section className="text-sm" style={{ border: '1px solid var(--line)', borderRadius: 'var(--radius-card)', padding: 16 }}>
+        <h3 className="font-semibold text-base mb-1">Retos con amigos</h3>
+        <p className="text-xs muted">Inicia sesión para ver tus retos.</p>
+      </section>
+    );
+  }
 
   return (
     <section style={{ border: '1px solid var(--line)', borderRadius: 'var(--radius-card)', padding: 16 }}>
@@ -468,7 +467,7 @@ function EditorDays({ challengeId, ownerId }: { challengeId: string; ownerId: st
 /* ===========================
    Amigos: buscar / conectar / aceptar
    =========================== */
-function Friends({ userId }: { userId: string }) {
+function Friends({ userId }: { userId?: string }) {
   const [dir, setDir] = useState<Record<string, PublicProfile>>({});
   const [q, setQ] = useState('');
   const [pendingIn, setPendingIn] = useState<string[]>([]);
@@ -483,6 +482,12 @@ function Friends({ userId }: { userId: string }) {
       const map: Record<string, PublicProfile> = {};
       (users || []).forEach((u) => (map[u.user_id] = u));
       setDir(map);
+
+      if (!userId) { // sin sesión: no consultar friendships
+        setPendingIn([]);
+        setFriends([]);
+        return;
+      }
 
       // solicitudes recibidas
       const { data: pendIn } = await supabase
@@ -529,6 +534,7 @@ function Friends({ userId }: { userId: string }) {
   }, [dir, q, userId]);
 
   async function sendRequest(targetId: string) {
+    if (!userId) return;
     if (friends.includes(targetId)) return;
     await supabase.from('friendships').upsert({ requester: userId, addressee: targetId, status: 'pending' });
     // reflejar UI un poco
@@ -536,16 +542,24 @@ function Friends({ userId }: { userId: string }) {
   }
 
   async function acceptRequest(fromId: string) {
+    if (!userId) return;
     await supabase.from('friendships').update({ status: 'accepted' }).eq('requester', fromId).eq('addressee', userId);
     setPendingIn((prev) => prev.filter((x) => x !== fromId));
     setFriends((prev) => [...prev, fromId]);
   }
+
+  const disabled = !userId;
 
   return (
     <section className="grid md:grid-cols-2 gap-4">
       {/* Buscar y enviar solicitud */}
       <div className="space-y-3 text-sm" style={{ border: '1px solid var(--line)', borderRadius: 'var(--radius-card)', padding: 16 }}>
         <h3 className="font-semibold text-base">Buscar usuarios</h3>
+        {!userId && (
+          <div className="text-xs">
+            Puedes explorar perfiles sin iniciar sesión. Para conectar, <Link className="underline" href="/login?redirect=/mizona/amigos">inicia sesión</Link>.
+          </div>
+        )}
         <input className="input text-[16px]" placeholder="Nombre, apellido o Instagram…" value={q} onChange={(e) => setQ(e.target.value)} />
         <ul className="space-y-2 max-h-[280px] overflow-auto pr-1">
           {results.map((u) => (
@@ -573,7 +587,7 @@ function Friends({ userId }: { userId: string }) {
                   )}
                 </div>
               </div>
-              <button className="btn" onClick={() => sendRequest(u.user_id)}>
+              <button className="btn" onClick={() => sendRequest(u.user_id)} disabled={disabled}>
                 Conectar
               </button>
             </li>
@@ -597,7 +611,7 @@ function Friends({ userId }: { userId: string }) {
                   <span className="text-sm font-semibold">
                     {u.nombre} {u.apellido}
                   </span>
-                  <button className="btn" onClick={() => acceptRequest(id)}>
+                  <button className="btn" onClick={() => acceptRequest(id)} disabled={disabled}>
                     Aceptar
                   </button>
                 </li>
