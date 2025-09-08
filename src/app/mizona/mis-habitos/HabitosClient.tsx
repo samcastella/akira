@@ -1,8 +1,9 @@
+// src/app/mizona/HabitosClient.tsx
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Check } from 'lucide-react';
+import { Check, ArrowRight } from 'lucide-react';
 import type { HabitMaster } from '@/components/habits/HabitForm';
 import { useUserProfile } from '@/lib/user';
 
@@ -170,8 +171,9 @@ export default function HabitosClient() {
       .map(h => h.id);
   }
 
-  // Semáforo
-  function dayStatus(dKey: string): 'green' | 'orange' | 'red' | 'gray' {
+  // Semáforo — añadimos estado 'white' para días futuros (fondo blanco)
+  function dayStatus(dKey: string): 'green' | 'orange' | 'red' | 'gray' | 'white' {
+    if (dKey > today) return 'white'; // futuro: blanco hasta que llegue el día
     const ids = applicableMasterIds(dKey);
     if (ids.length === 0) return 'gray';
     const bucket = daily[dKey] ?? {};
@@ -251,12 +253,19 @@ export default function HabitosClient() {
 
   // Tokens UI
   const BORDER = '#E5E7EB'; // gris claro
-  const SIZE = 34;          // diámetro de los círculos
-  const FONT = 12;          // tamaño de número
 
+  /* ====== RENDER ====== */
   return (
     <main className="mx-auto w-full max-w-3xl px-5 sm:px-6 md:px-8 py-6" style={{ background: 'white' }}>
-      {/* Subnavegación */}
+      {/* Saludo destacado (primero) */}
+      <section className="mb-4">
+        <h1 className="text-xl font-extrabold m-0">Hola {greetingName},</h1>
+        <p className="mt-1 text-sm text-black/70">
+          En esta zona podrás ver tus hábitos del día, crear nuevos, ver tus logros y editar tu perfil.
+        </p>
+      </section>
+
+      {/* Botones (después) */}
       <nav className="mb-4 flex flex-wrap gap-3">
         <Link href="/mizona" className="btn" style={{ background: 'black', color: 'white', border: '1px solid black' }}>
           Mis hábitos
@@ -272,99 +281,103 @@ export default function HabitosClient() {
         </Link>
       </nav>
 
-      {/* Saludo destacado */}
-      <section className="mb-4">
-        <h1 className="text-xl font-extrabold m-0">
-          Hola {greetingName},
-        </h1>
-        <p className="mt-1 text-sm text-black/70">
-          En esta zona podrás ver tus hábitos del día, crear nuevos, ver tus logros y editar tu perfil.
-        </p>
-      </section>
-
-      {/* Perfil compacto (nombre + 1er apellido, @usuario y 'Ver perfil') */}
-      <Link
-        href="/mizona/perfil"
-        className="mb-3 flex items-center gap-3 text-inherit"
-        style={{ textDecoration: 'none' }}
-        aria-label="Ir a mi perfil"
+      {/* Tarjeta de perfil con borde gris y botón negro alineado a la derecha */}
+      <div
+        className="mb-5 rounded-2xl"
+        style={{ border: `1px solid ${BORDER}`, padding: 12 }}
       >
-        <span
-          className="rounded-full overflow-hidden flex items-center justify-center"
-          style={{ width: 48, height: 48, border: '1px solid var(--line)', background: '#f7f7f7' }}
-        >
-          {avatar ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={avatar} alt="Foto de perfil" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-          ) : (
-            <span style={{ fontSize: 18, color: '#9ca3af' }}>👤</span>
-          )}
-        </span>
-        <span style={{ lineHeight: 1.15 }}>
-          <span style={{ display: 'block', fontWeight: 700 }}>
-            {nameAndSurname || username || 'usuario/a'}
+        <div className="flex items-center gap-3">
+          <span
+            className="rounded-full overflow-hidden flex items-center justify-center"
+            style={{ width: 56, height: 56, border: `1px solid ${BORDER}`, background: '#f7f7f7' }}
+          >
+            {avatar ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={avatar} alt="Foto de perfil" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            ) : (
+              <span style={{ fontSize: 20, color: '#9ca3af' }}>👤</span>
+            )}
           </span>
-          {username && (
-            <span style={{ display: 'block', fontSize: 12, color: '#374151' }}>
-              @{username}
-            </span>
-          )}
-          <span style={{ display: 'block', fontSize: 12, color: '#374151', textDecoration: 'underline', marginTop: 2 }}>
-            Ver perfil
-          </span>
-        </span>
-      </Link>
 
-      {/* Semáforo semanal + flecha del calendario en la misma línea */}
-      <div className="mb-4 flex items-center justify-center gap-3">
-        {(() => {
-          const weekStart = mondayOf(new Date());
-          const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
-          const labels = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
-          return (
-            <>
-              {days.map((d, i) => {
+          <div className="min-w-0 flex-1">
+            <div className="font-bold truncate">{nameAndSurname || username || 'usuario/a'}</div>
+            {username && (
+              <div className="text-xs text-black/70 truncate">@{username}</div>
+            )}
+          </div>
+
+          <Link
+            href="/mizona/perfil"
+            className="btn"
+            style={{ background: 'black', color: 'white', border: '1px solid black', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+            aria-label="Ver perfil"
+          >
+            Ver perfil <ArrowRight size={16} />
+          </Link>
+        </div>
+      </div>
+
+      {/* Bloque “semáforo semanal” y control del calendario con el MISMO ancho que el calendario */}
+      <div className="mb-4">
+        <div className="mx-auto" style={{ maxWidth: 720 }}>
+          {/* Semáforo semanal en grid 7 columnas, celdas cuadradas */}
+          <div className="grid grid-cols-7 gap-2">
+            {(() => {
+              const weekStart = mondayOf(new Date());
+              const labels = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+              return Array.from({ length: 7 }, (_, i) => {
+                const d = addDays(weekStart, i);
                 const k = dateKey(d);
                 const status = dayStatus(k);
-                const bg = status === 'green'
-                  ? '#10b981'
-                  : status === 'orange'
-                  ? '#f59e0b'
-                  : status === 'red'
-                  ? '#e10600'
-                  : '#ffffff';
-                const fg = status === 'gray' ? '#111' : '#fff';
+                const bg =
+                  status === 'green' ? '#10b981' :
+                  status === 'orange' ? '#f59e0b' :
+                  status === 'red' ? '#e10600' :
+                  /* gray/white */ '#ffffff';
+                const fg = (status === 'gray' || status === 'white') ? '#111' : '#fff';
                 return (
-                  <div key={k} title={`${labels[i]} · ${k}`} style={{ textAlign: 'center' }}>
+                  <div key={k} className="w-full">
                     <div
+                      title={`${labels[i]} · ${k}`}
                       style={{
-                        width: 40, height: 40, borderRadius: 999,
-                        display: 'grid', placeItems: 'center',
-                        border: `1px solid ${BORDER}`, background: bg, color: fg,
-                        fontSize: 13, fontWeight: 700
+                        width: '100%',
+                        aspectRatio: '1 / 1',
+                        borderRadius: 999,
+                        display: 'grid',
+                        placeItems: 'center',
+                        border: `1px solid ${BORDER}`,
+                        background: bg,
+                        color: fg,
+                        fontSize: 13,
+                        fontWeight: 700,
+                        userSelect: 'none',
                       }}
                     >
                       {labels[i]}
                     </div>
                   </div>
                 );
-              })}
-              <button
-                type="button"
-                aria-expanded={monthOpen}
-                onClick={() => setMonthOpen(v => !v)}
-                className="ml-2 text-sm"
-                title={monthOpen ? 'Ocultar calendario' : 'Mostrar calendario'}
-                style={{
-                  lineHeight: 1, padding: '6px 8px',
-                  borderRadius: 8, border: `1px solid ${BORDER}`, background: 'white'
-                }}
-              >
-                {monthOpen ? '▴' : '▾'}
-              </button>
-            </>
-          );
-        })()}
+              });
+            })()}
+          </div>
+
+          {/* Botón de desplegar calendario alineado al ancho */}
+          <div className="mt-2 flex justify-end">
+            <button
+              type="button"
+              aria-expanded={monthOpen}
+              onClick={() => setMonthOpen(v => !v)}
+              className="text-sm"
+              title={monthOpen ? 'Ocultar calendario' : 'Mostrar calendario'}
+              style={{
+                lineHeight: 1, padding: '6px 8px',
+                borderRadius: 8, border: `1px solid ${BORDER}`, background: 'white'
+              }}
+            >
+              {monthOpen ? '▴' : '▾'}
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Calendario mensual (colapsable) */}
@@ -374,7 +387,7 @@ export default function HabitosClient() {
             {monthLabel(monthCursor)}
           </div>
 
-          <div className="relative">
+          <div className="mx-auto relative" style={{ maxWidth: 720 }}>
             {/* Flechas laterales, a media altura, sin borde */}
             <button
               type="button"
@@ -401,20 +414,18 @@ export default function HabitosClient() {
               ›
             </button>
 
-            {/* Grid del mes */}
+            {/* Grid del mes en 7 columnas, celdas cuadradas al 100% del ancho */}
             <div className="grid grid-cols-7 gap-2 px-6">
               {monthCells.map((k, idx) => {
-                if (!k) return <div key={`x-${idx}`} style={{ height: SIZE }} />;
+                if (!k) return <div key={`x-${idx}`} style={{ width: '100%', aspectRatio: '1 / 1' }} />;
                 const dNum = Number(k.slice(-2));
                 const status = dayStatus(k);
-                const bg = status === 'green'
-                  ? '#10b981'
-                  : status === 'orange'
-                  ? '#f59e0b'
-                  : status === 'red'
-                  ? '#e10600'
-                  : '#ffffff';
-                const fg = status === 'gray' ? '#111' : '#fff';
+                const bg =
+                  status === 'green' ? '#10b981' :
+                  status === 'orange' ? '#f59e0b' :
+                  status === 'red' ? '#e10600' :
+                  /* gray/white */ '#ffffff';
+                const fg = (status === 'gray' || status === 'white') ? '#111' : '#fff';
                 const isSelected = k === today;
 
                 return (
@@ -424,10 +435,11 @@ export default function HabitosClient() {
                     title={k}
                     aria-label={`Ir al ${k}`}
                     style={{
-                      height: SIZE, width: SIZE, margin: '0 auto',
+                      width: '100%',
+                      aspectRatio: '1 / 1',
                       display: 'grid', placeItems: 'center',
                       borderRadius: 999, border: `1px solid ${BORDER}`,
-                      background: bg, color: fg, fontWeight: 700, fontSize: FONT,
+                      background: bg, color: fg, fontWeight: 700, fontSize: 12,
                       outline: isSelected ? `2px solid ${BORDER}` : 'none', outlineOffset: 2,
                     }}
                   >
