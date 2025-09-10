@@ -1,4 +1,4 @@
-// src/app/mizona/HabitosClient.tsx
+// src/app/mizona/mis-habitos/HabitosClient.tsx
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -6,6 +6,12 @@ import Link from 'next/link';
 import { Check, ArrowRight } from 'lucide-react';
 import type { HabitMaster } from '@/components/habits/HabitForm';
 import { useUserProfile } from '@/lib/user';
+
+/* === NUEVO: bloque de programa activo === */
+import ProgramActiveCard from '@/components/programs/ProgramActiveCard';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { getActiveProgram } from '../../../lib/programService';
+/* ======================================= */
 
 const LS_HABITS_MASTER = 'akira_habits_master_v1';
 const LS_HABITS_DAILY  = 'akira_habits_daily_v1';
@@ -91,6 +97,63 @@ async function confettiBurst(evt?: React.MouseEvent, big = false) {
   } catch {}
 }
 
+/* ===== Sección NUEVA: Programa activo ===== */
+function ActiveProgramSection() {
+  // ⬇️ SIN genéricos: dejamos que TS infiera el tipo correcto
+  const supabase = useMemo(() => createClientComponentClient(), []);
+  const [hasActive, setHasActive] = useState<boolean | null>(null); // null=cargando
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const { data } = await supabase.auth.getUser();
+        const uid = data.user?.id ?? null;
+
+        if (!uid) {
+          if (mounted) setHasActive(false);
+          return;
+        }
+
+        // Por ahora comprobamos el slug lectura-30; ProgramActiveCard ya re-fetchea el resto
+        const active = await getActiveProgram(supabase, uid, 'lectura-30');
+        if (!mounted) return;
+        setHasActive(!!active && !!active.is_active);
+      } catch {
+        if (!mounted) return;
+        setHasActive(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, [supabase]);
+
+  if (hasActive === null) {
+    return (
+      <div className="card">
+        <div className="text-sm">Comprobando tu programa activo…</div>
+      </div>
+    );
+  }
+
+  if (hasActive) {
+    return <ProgramActiveCard />;
+  }
+
+  // Estado vacío
+  return (
+    <div className="card">
+      <div className="text-xs uppercase tracking-wide muted">Programa activo</div>
+      <h2 className="mt-1 text-lg font-extrabold leading-tight">Empieza un programa</h2>
+      <p className="mt-2 text-sm muted">
+        Aún no has activado ningún programa. Empieza con <strong>Lectura 30</strong> y te guiaré día a día.
+      </p>
+      <div className="mt-4">
+        <Link href="/programas" className="btn">Ver programas</Link>
+      </div>
+    </div>
+  );
+}
+
 /* ===== Componente principal ===== */
 export default function HabitosClient() {
   const [masters, setMasters] = useState<HabitMaster[]>([]);
@@ -125,7 +188,7 @@ export default function HabitosClient() {
   const greetingName = firstName || username || 'usuario/a';
   const avatar = user?.foto as string | undefined;
 
-  // Programas activos (placeholder)
+  // Programas activos (localStorage legacy – mantenemos lectura, pero ya no se usa para UI)
   const [activePrograms, setActivePrograms] = useState<string[]>([]);
 
   useEffect(() => {
@@ -270,6 +333,11 @@ export default function HabitosClient() {
         </div>
       </div>
 
+      {/* === NUEVO: Bloque Programa Activo === */}
+      <section className="mb-6">
+        <ActiveProgramSection />
+      </section>
+
       {/* ⛳️ Se ha eliminado el semáforo y el calendario de esta página */}
 
       {/* Título de hoy */}
@@ -320,8 +388,8 @@ export default function HabitosClient() {
         )}
       </section>
 
-      {/* Programas activos (placeholder) */}
-      {activePrograms?.map((p) => (
+      {/* Programas activos (placeholder legacy) — lo dejamos pero ya no se muestra nada aquí */}
+      {activePrograms?.length > 0 && activePrograms.map((p) => (
         <section key={p} className="mb-6">
           <h4 style={{ margin: '6px 0 8px 0' }}>Programa activo: {p}</h4>
           <div className="rounded-2xl border border-dashed border-black/20 px-4 py-6 text-center text-sm text-black/60">

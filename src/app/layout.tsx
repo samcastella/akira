@@ -41,22 +41,29 @@ export default function RootLayout({
       <body
         className="antialiased"
         style={{
+          // fuentes del sistema (sin next/font)
           ["--font-geist-sans" as any]:
             'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji"',
           ["--font-geist-mono" as any]:
             'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
           fontFamily: "var(--font-geist-sans)",
-          background: "#FAFAFA",
-          color: "#111",
-          minHeight: "100svh",
-          display: "flex",
-          flexDirection: "column",
+
+          // Usa tokens para respetar dark mode del SO
+          background: "var(--background)",
+          color: "var(--foreground)",
+
+          // ❌ quita minHeight 100svh y flex; el main hará 100dvh desde CSS
+          // minHeight: "100svh",
+          // display: "flex",
+          // flexDirection: "column",
         }}
       >
         <SupabaseSessionProvider>
           <LayoutClient bottomNav={<BottomNav />}>
-            {/* 👇 Esto garantiza que el contenido de cualquier subpágina (ej. /mizona/amigos) se renderice */}
-            <div className="flex-1">{children}</div>
+            {/* El contenido principal vive en <main>, que ya tiene padding-bottom en global.css */}
+            <main className="app-main" id="app-main">
+              {children}
+            </main>
           </LayoutClient>
         </SupabaseSessionProvider>
       </body>

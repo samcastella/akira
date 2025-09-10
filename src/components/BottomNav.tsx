@@ -18,9 +18,9 @@ export default function BottomNav() {
 
   return (
     <nav
-      className="bottomnav"
+      className="bottomnav fixed bottom-0 left-0 right-0 z-50"
       style={{
-        // altura incluye el safe-area; SIN padding-bottom aquí
+        // altura incluye el safe-area
         height: `calc(${NAV_HEIGHT}px + env(safe-area-inset-bottom, 0px))`,
         background: COLORS.accent, // amarillo
       }}
