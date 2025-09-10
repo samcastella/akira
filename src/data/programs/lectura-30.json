@@ -1,0 +1,265 @@
+{
+  "slug": "lectura-30",
+  "title": "Programa de Lectura: de 0 a 100 en 30 días",
+  "shortDescription": "Aprende a disfrutar de la lectura paso a paso. Empiezas con 1 página al día y terminas leyendo 20–25 minutos con constancia y motivación.",
+  "howItWorks": "Este programa combina hábitos atómicos y neurociencia para ayudarte a convertirte en lector. Empiezas con acciones muy pequeñas para reducir la fricción y, día a día, refuerzas señales (hora, lugar, ritual), compromiso social y recompensas. El objetivo no es solo leer más, sino consolidar tu identidad de lector y mantenerla en el tiempo.",
+  "durationDays": 30,
+  "meta": {
+    "createdAt": "2025-09-09T00:00:00Z",
+    "language": "es",
+    "version": "1.0"
+  },
+  "days": [
+    {
+      "day": 1,
+      "tasks": [
+        { "id": "d1_t1", "label": "Escoge un libro", "detail": "Busca uno de menos de 200–300 páginas. Si puedes, ve a una librería: activa curiosidad y motivación.", "tags": ["setup"] },
+        { "id": "d1_t2", "label": "Elige lugar y hora", "detail": "Señal clara = espacio fijo + alarma 5 min antes de tu hora fijada de lectura.", "tags": ["setup"] },
+        { "id": "d1_t3", "label": "Marca tus hábitos en Mi Zona", "detail": "Abre Mi Zona y marca los hábitos completados para registrar tu avance.", "tags": ["check"] }
+      ]
+    },
+    {
+      "day": 2,
+      "tasks": [
+        { "id": "d2_t1", "label": "Lee 1 página", "detail": "Empieza pequeño: lo importante es repetir, no la cantidad.", "tags": ["lectura"] },
+        { "id": "d2_t2", "label": "Registra el libro", "detail": "Anótalo en la app (Herramientas → Registro de libros) para reforzar el compromiso.", "tags": ["registro"] },
+        { "id": "d2_t3", "label": "Comparte el inicio", "detail": "Comparte la portada en redes o WhatsApp con la palabra “Empezamos”.", "tags": ["social"] },
+        { "id": "d2_t4", "label": "Marca tus hábitos en Mi Zona", "detail": "Registra lo hecho hoy para mantener tu racha.", "tags": ["check"] }
+      ]
+    },
+    {
+      "day": 3,
+      "tasks": [
+        { "id": "d3_t1", "label": "Lee 5 minutos", "detail": "Usa un cronómetro: entrenas atención sostenida.", "tags": ["lectura"] },
+        { "id": "d3_t2", "label": "Cuéntaselo a alguien cercano", "detail": "Verbalizar refuerza identidad: “soy lector”.", "tags": ["social"] },
+        { "id": "d3_t3", "label": "Marca tus hábitos en Mi Zona", "detail": "No olvides marcar para consolidar tu progreso.", "tags": ["check"] }
+      ]
+    },
+    {
+      "day": 4,
+      "tasks": [
+        { "id": "d4_t1", "label": "Lee 5 minutos", "detail": "Repetición = conexiones neuronales más fuertes.", "tags": ["lectura"] },
+        { "id": "d4_t2", "label": "Piensa en una recompensa", "detail": "Planifica un premio sano al cumplir la semana (cine, paseo, comida saludable).", "tags": ["recompensa"] },
+        { "id": "d4_t3", "label": "Marca tus hábitos en Mi Zona", "detail": "Registra tu avance diario.", "tags": ["check"] }
+      ]
+    },
+    {
+      "day": 5,
+      "tasks": [
+        { "id": "d5_t1", "label": "Lee 5 minutos", "detail": "Aunque leas poco: mejor algo que nada.", "tags": ["lectura"] },
+        { "id": "d5_t2", "label": "Micro-recompensa", "detail": "Tras leer, escucha tu canción favorita.", "tags": ["recompensa"] },
+        { "id": "d5_t3", "label": "Marca tus hábitos en Mi Zona", "detail": "Refuerza la constancia con tu check.", "tags": ["check"] }
+      ]
+    },
+    {
+      "day": 6,
+      "tasks": [
+        { "id": "d6_t1", "label": "Lee 5 minutos", "detail": "Ya consolidando el hábito.", "tags": ["lectura"] },
+        { "id": "d6_t2", "label": "Reflexiona", "detail": "Escribe en “Mis notas” cómo te sientes tras 6 días.", "tags": ["reflexion"] },
+        { "id": "d6_t3", "label": "Marca tus hábitos en Mi Zona", "detail": "Haz tu check diario.", "tags": ["check"] }
+      ]
+    },
+    {
+      "day": 7,
+      "tasks": [
+        { "id": "d7_t1", "label": "Lee 5 minutos", "detail": "El hábito empieza a sentirse natural.", "tags": ["lectura"] },
+        { "id": "d7_t2", "label": "Comparte tus avances", "detail": "Publica que llevas 7 días cumpliendo.", "tags": ["social"] },
+        { "id": "d7_t3", "label": "Disfruta tu recompensa", "detail": "Celebra lo planeado en Día 4.", "tags": ["recompensa"] },
+        { "id": "d7_t4", "label": "Marca tus hábitos en Mi Zona", "detail": "Cierra tu primera semana marcando el check.", "tags": ["check"] }
+      ]
+    },
+    {
+      "day": 8,
+      "tasks": [
+        { "id": "d8_t1", "label": "Lee 10 minutos", "detail": "Subimos intensidad: tu cerebro ya tolera más foco.", "tags": ["lectura"] },
+        { "id": "d8_t2", "label": "Haz visible tu progreso", "detail": "Crea un calendario de 30 días y tacha los primeros 8.", "tags": ["visual"] },
+        { "id": "d8_t3", "label": "Marca tus hábitos en Mi Zona", "detail": "Refuerza tu constancia marcando el check.", "tags": ["check"] }
+      ]
+    },
+    {
+      "day": 9,
+      "tasks": [
+        { "id": "d9_t1", "label": "Lee 10 minutos", "detail": "Mantén hora y lugar fijos.", "tags": ["lectura"] },
+        { "id": "d9_t2", "label": "Inicia un ritual", "detail": "Prepara un café, té o agua antes de empezar.", "tags": ["ritual"] },
+        { "id": "d9_t3", "label": "Marca tus hábitos en Mi Zona", "detail": "Haz check después de tu sesión.", "tags": ["check"] }
+      ]
+    },
+    {
+      "day": 10,
+      "tasks": [
+        { "id": "d10_t1", "label": "Lee 10 minutos", "detail": "Recuerda: mejor poco que nada.", "tags": ["lectura"] },
+        { "id": "d10_t2", "label": "Micro-recompensa", "detail": "Tras leer, date 5 min para estirarte o pasear.", "tags": ["recompensa"] },
+        { "id": "d10_t3", "label": "Marca tus hábitos en Mi Zona", "detail": "Refuerza tu avance con el check diario.", "tags": ["check"] }
+      ]
+    },
+    {
+      "day": 11,
+      "tasks": [
+        { "id": "d11_t1", "label": "Lee 12 minutos", "detail": "Tu foco mejora con cada repetición.", "tags": ["lectura"] },
+        { "id": "d11_t2", "label": "Sin distracciones", "detail": "Deja el móvil en otra habitación en modo no molestar.", "tags": ["entorno"] },
+        { "id": "d11_t3", "label": "Marca tus hábitos en Mi Zona", "detail": "Completa tu registro diario.", "tags": ["check"] }
+      ]
+    },
+    {
+      "day": 12,
+      "tasks": [
+        { "id": "d12_t1", "label": "Lee 12 minutos", "detail": "Mantén constancia, tu resistencia aumenta.", "tags": ["lectura"] },
+        { "id": "d12_t2", "label": "Respiración consciente", "detail": "Haz 3 ciclos antes de abrir el libro: inspira 4s, mantén 7s, expira 8s.", "tags": ["respiracion"] },
+        { "id": "d12_t3", "label": "Refuerza ritual", "detail": "Prepara bebida + coloca el libro visible la noche anterior.", "tags": ["ritual"] },
+        { "id": "d12_t4", "label": "Micro-recompensa", "detail": "Tras leer, date una ducha o baño relajante, sin prisa.", "tags": ["recompensa"] },
+        { "id": "d12_t5", "label": "Marca tus hábitos en Mi Zona", "detail": "Haz check tras tu sesión.", "tags": ["check"] }
+      ]
+    },
+    {
+      "day": 13,
+      "tasks": [
+        { "id": "d13_t1", "label": "Lee 15 minutos", "detail": "Tu resistencia ya es mayor.", "tags": ["lectura"] },
+        { "id": "d13_t2", "label": "Escribe una idea clave", "detail": "Anotar fija mejor la memoria. También puedes copiar una frase que te haya gustado.", "tags": ["escritura"] },
+        { "id": "d13_t3", "label": "Marca tus hábitos en Mi Zona", "detail": "Haz check para cerrar el día.", "tags": ["check"] }
+      ]
+    },
+    {
+      "day": 14,
+      "tasks": [
+        { "id": "d14_t1", "label": "Lee 15 minutos", "detail": "Llegaste a 2 semanas de constancia.", "tags": ["lectura"] },
+        { "id": "d14_t2", "label": "Revisión del libro", "detail": "¿Te gusta? Si no, cámbialo. No fuerces rechazo.", "tags": ["reflexion"] },
+        { "id": "d14_t3", "label": "Premio saludable", "detail": "Celebra tu constancia con algo que disfrutes.", "tags": ["recompensa"] },
+        { "id": "d14_t4", "label": "Marca tus hábitos en Mi Zona", "detail": "Completa el check de fin de semana.", "tags": ["check"] }
+      ]
+    },
+    {
+      "day": 15,
+      "tasks": [
+        { "id": "d15_t1", "label": "Lee 15 minutos", "detail": "Tu cerebro entra más fácil en flujo.", "tags": ["lectura"] },
+        { "id": "d15_t2", "label": "Refina ritual", "detail": "Añade música suave o ambiental como parte del ritual.", "tags": ["ritual"] },
+        { "id": "d15_t3", "label": "Comparte tus avances", "detail": "Orgullo + compromiso social = refuerzo.", "tags": ["social"] },
+        { "id": "d15_t4", "label": "Marca tus hábitos en Mi Zona", "detail": "Haz check tras la sesión de hoy.", "tags": ["check"] }
+      ]
+    },
+    {
+      "day": 16,
+      "tasks": [
+        { "id": "d16_t1", "label": "Lee 15 minutos", "detail": "Constancia = fuerza, sigue avanzando.", "tags": ["lectura"] },
+        { "id": "d16_t2", "label": "Explora tu próximo libro", "detail": "Investiga qué leer después y regístralo en la app.", "tags": ["exploracion"] },
+        { "id": "d16_t3", "label": "Marca tus hábitos en Mi Zona", "detail": "Completa tu registro diario.", "tags": ["check"] }
+      ]
+    },
+    {
+      "day": 17,
+      "tasks": [
+        { "id": "d17_t1", "label": "Lee 15 minutos", "detail": "Hora y lugar fijos = automatización.", "tags": ["lectura"] },
+        { "id": "d17_t2", "label": "Haz balance", "detail": "Pasa las páginas desde el inicio hasta donde estás y siente el progreso.", "tags": ["reflexion"] },
+        { "id": "d17_t3", "label": "Micro-recompensa", "detail": "Tras leer, regálate un snack sano.", "tags": ["recompensa"] },
+        { "id": "d17_t4", "label": "Marca tus hábitos en Mi Zona", "detail": "No olvides tu check diario.", "tags": ["check"] }
+      ]
+    },
+    {
+      "day": 18,
+      "tasks": [
+        { "id": "d18_t1", "label": "Lee 15 minutos", "detail": "Si no puedes, al menos 5. Mantén continuidad.", "tags": ["lectura"] },
+        { "id": "d18_t2", "label": "Subraya o anota", "detail": "Copia una frase que te inspire para reforzar la memoria.", "tags": ["escritura"] },
+        { "id": "d18_t3", "label": "Marca tus hábitos en Mi Zona", "detail": "Haz check para reforzar la constancia.", "tags": ["check"] }
+      ]
+    },
+    {
+      "day": 19,
+      "tasks": [
+        { "id": "d19_t1", "label": "Lee 15 minutos", "detail": "El músculo lector sigue creciendo.", "tags": ["lectura"] },
+        { "id": "d19_t2", "label": "Varía el entorno", "detail": "Lee en otro lugar (parque, terraza, cafetería tranquila…).", "tags": ["entorno"] },
+        { "id": "d19_t3", "label": "Marca tus hábitos en Mi Zona", "detail": "Completa el check del día.", "tags": ["check"] }
+      ]
+    },
+    {
+      "day": 20,
+      "tasks": [
+        { "id": "d20_t1", "label": "Lee 15 minutos", "detail": "Tu identidad se refuerza cada día.", "tags": ["lectura"] },
+        { "id": "d20_t2", "label": "Escribe emociones", "detail": "Anota cómo te hace sentir leer hoy.", "tags": ["reflexion"] },
+        { "id": "d20_t3", "label": "Marca tus hábitos en Mi Zona", "detail": "Haz tu check como siempre.", "tags": ["check"] }
+      ]
+    },
+    {
+      "day": 21,
+      "tasks": [
+        { "id": "d21_t1", "label": "Lee 15 minutos", "detail": "¡Tres semanas cumplidas!", "tags": ["lectura"] },
+        { "id": "d21_t2", "label": "Celebra con tu ritual", "detail": "Música + bebida + lugar fijo = tu momento único.", "tags": ["ritual"] },
+        { "id": "d21_t3", "label": "Premio de 3 semanas", "detail": "Haz algo especial (actividad, comida, paseo).", "tags": ["recompensa"] },
+        { "id": "d21_t4", "label": "Marca tus hábitos en Mi Zona", "detail": "Completa tu check final de semana.", "tags": ["check"] }
+      ]
+    },
+    {
+      "day": 22,
+      "tasks": [
+        { "id": "d22_t1", "label": "Lee 20–25 min", "detail": "Ya tienes más capacidad de foco. Si un día no puedes, recuerda: mejor 2 min que nada.", "tags": ["lectura"] },
+        { "id": "d22_t2", "label": "Marca tus hábitos en Mi Zona", "detail": "Completa tu registro del día.", "tags": ["check"] }
+      ]
+    },
+    {
+      "day": 23,
+      "tasks": [
+        { "id": "d23_t1", "label": "Lee 20–25 min", "detail": "Mantén el ritmo de lectura.", "tags": ["lectura"] },
+        { "id": "d23_t2", "label": "Celebra tu primer libro", "detail": "Si lo acabaste, compártelo en redes o con amigos. Si aún no, celebra al terminarlo.", "tags": ["social"] },
+        { "id": "d23_t3", "label": "Marca tus hábitos en Mi Zona", "detail": "Haz tu check diario.", "tags": ["check"] }
+      ]
+    },
+    {
+      "day": 24,
+      "tasks": [
+        { "id": "d24_t1", "label": "Lee 20–25 min", "detail": "Constancia = solidez. Confía en tu sistema.", "tags": ["lectura"] },
+        { "id": "d24_t2", "label": "Haz cuentas", "detail": "Revisa todas las páginas leídas hasta ahora y siéntete orgulloso.", "tags": ["reflexion"] },
+        { "id": "d24_t3", "label": "Marca tus hábitos en Mi Zona", "detail": "Haz tu check diario.", "tags": ["check"] }
+      ]
+    },
+    {
+      "day": 25,
+      "tasks": [
+        { "id": "d25_t1", "label": "Lee 20–25 min", "detail": "Tu sistema ya manda más que tu motivación.", "tags": ["lectura"] },
+        { "id": "d25_t2", "label": "Reflexión negativa", "detail": "Escribe cómo te sentirías si dejaras de leer. Visualizar pérdida refuerza compromiso.", "tags": ["reflexion"] },
+        { "id": "d25_t3", "label": "Marca tus hábitos en Mi Zona", "detail": "Haz check del día.", "tags": ["check"] }
+      ]
+    },
+    {
+      "day": 26,
+      "tasks": [
+        { "id": "d26_t1", "label": "Lee 20–25 min", "detail": "Tu disciplina ya es fuerte, sigue avanzando.", "tags": ["lectura"] },
+        { "id": "d26_t2", "label": "Comparte experiencia", "detail": "Explica a alguien qué cambió en ti desde que empezaste.", "tags": ["social"] },
+        { "id": "d26_t3", "label": "Marca tus hábitos en Mi Zona", "detail": "Refuerza con tu check diario.", "tags": ["check"] }
+      ]
+    },
+    {
+      "day": 27,
+      "tasks": [
+        { "id": "d27_t1", "label": "Lee 20–25 min", "detail": "Último empujón antes de la recta final.", "tags": ["lectura"] },
+        { "id": "d27_t2", "label": "Haz tu ritual especial", "detail": "Añade un detalle nuevo (vela, luz distinta) para hacerlo memorable.", "tags": ["ritual"] },
+        { "id": "d27_t3", "label": "Micro-recompensa", "detail": "Tras leer, regálate 10 min de relax consciente.", "tags": ["recompensa"] },
+        { "id": "d27_t4", "label": "Marca tus hábitos en Mi Zona", "detail": "Completa tu check.", "tags": ["check"] }
+      ]
+    },
+    {
+      "day": 28,
+      "tasks": [
+        { "id": "d28_t1", "label": "Lee 20–25 min", "detail": "Mantén la cima del hábito, ya casi terminas.", "tags": ["lectura"] },
+        { "id": "d28_t2", "label": "Gran celebración", "detail": "Haz una actividad especial y reconoce tu esfuerzo.", "tags": ["recompensa"] },
+        { "id": "d28_t3", "label": "Marca tus hábitos en Mi Zona", "detail": "Haz tu check final de semana.", "tags": ["check"] }
+      ]
+    },
+    {
+      "day": 29,
+      "tasks": [
+        { "id": "d29_t1", "label": "Lee 20–25 min", "detail": "Penúltimo día, disfrútalo.", "tags": ["lectura"] },
+        { "id": "d29_t2", "label": "Comparte tu logro", "detail": "Motiva a otros con tu ejemplo.", "tags": ["social"] },
+        { "id": "d29_t3", "label": "Mensaje clave", "detail": "Mañana terminas el reto, pero recuerda: no acaba, empieza tu vida como lector.", "tags": ["motivacion"] },
+        { "id": "d29_t4", "label": "Marca tus hábitos en Mi Zona", "detail": "Haz tu check diario.", "tags": ["check"] }
+      ]
+    },
+    {
+      "day": 30,
+      "tasks": [
+        { "id": "d30_t1", "label": "Lee 20–25 min (30 opcional)", "detail": "Meta cumplida: ya eres lector. Lee un poco más si lo disfrutas.", "tags": ["lectura"] },
+        { "id": "d30_t2", "label": "Compromiso escrito", "detail": "Escribe y firma en un papel: “Me comprometo a seguir siendo lector”. Pégalo en un lugar visible.", "tags": ["compromiso"] },
+        { "id": "d30_t3", "label": "Plan futuro", "detail": "Elige YA tu próximo libro y abre la primera página aunque solo leas un párrafo.", "tags": ["futuro"] },
+        { "id": "d30_t4", "label": "Mantén el hábito", "detail": "Desde mañana, check diario 'He leído hoy'.", "tags": ["continuidad"] },
+        { "id": "d30_t5", "label": "Marca tus hábitos en Mi Zona", "detail": "Haz tu último check del programa.", "tags": ["check"] }
+      ]
+    }
+  ]
+}
