@@ -34,7 +34,7 @@ const AVAILABLE_PROGRAM_SLUGS = new Set<string>([
 const ALL_PROGRAMS: Program[] = [
   {
     id: 'read-30',
-    slug: 'conviertete-en-lector',
+    slug: 'lectura',
     title: 'Conviértete en lector',
     description:
       'Programa basado en neurociencia con tareas diarias para que disfrutes del proceso de convertirte en lector',
