@@ -18,7 +18,7 @@ export default function ProgramDetail({
   title,
   shortDescription,
   howItWorks,
-  startHref = "/programas/lectura/dia-1",
+  startHref = "/habitos/lectura/dia-1",
   slug,
 }: ProgramDetailProps) {
   const [open, setOpen] = useState(false);

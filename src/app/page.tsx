@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import ThoughtModal from '@/components/ThoughtModal';
-import { PROGRAMS } from '@/lib/programs';
+import { PROGRAMS } from '@/data/programs';
 import { Dumbbell, BookOpen, PiggyBank, Brain } from 'lucide-react';
 
 /* ===== Pensamiento del día ===== */

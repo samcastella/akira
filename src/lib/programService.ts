@@ -1,26 +1,26 @@
-// src/lib/programService.ts
-// Servicios para Programas guiados (Lectura 30 días) con sincronización Supabase.
-// Fuente de contenidos: JSON local. Fuente de estado: Supabase (multi-dispositivo).
+// Servicios para Programas guiados con sincronización Supabase.
+// Fuente de metadatos: src/data/programs.ts
+// Fuente de contenidos detallados: JSON local (ej. lectura-30.json).
+// Fuente de estado: Supabase (multi-dispositivo).
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-// Ruta correcta del JSON (evitamos alias @ por ahora)
+import { getBySlug, type ProgramMeta } from "@/data/programs";
+
+// JSON del programa Lectura
 import lecturaProgramRaw from "../data/programs/lectura-30.json";
 
 // ---------- Tipos de contenido (JSON) ----------
 export type ProgramTaskDef = {
-  id: string;           // p.ej. "d1_t2"
-  label: string;        // texto corto (negrita en la UI)
-  detail: string;       // texto largo para el pop-up
+  id: string;    // p.ej. "d1_t2"
+  label: string; // texto corto
+  detail: string;
   tags?: string[];
 };
 export type ProgramDayDef = { day: number; tasks: ProgramTaskDef[] };
-export type ProgramDef = {
-  slug: string;
-  title: string;
-  shortDescription: string;
+
+export type ProgramDef = ProgramMeta & {
   howItWorks: string;
-  durationDays: number;
-  days: ProgramDayDef[];
+  daysDef: ProgramDayDef[];
 };
 
 // ---------- Tipos de estado (Supabase) ----------
@@ -46,17 +46,16 @@ export type UserTaskRow = {
 export const TABLE_PROGRAMS = "user_programs";
 export const TABLE_TASKS = "user_program_tasks";
 
-// Normaliza el JSON a ProgramDef aunque falten campos opcionales
-function normalizeProgramDef(input: any): ProgramDef {
-  const slug = String(input?.slug ?? "lectura-30");
-  const title = String(input?.title ?? "Conviértete en lector");
-  const shortDescription = String(
-    input?.shortDescription ?? "30 días para crear el hábito de leer."
-  );
+// Normaliza el JSON + enlaza con metadatos del catálogo
+function normalizeProgramDef(slug: string, input: any): ProgramDef {
+  const meta = getBySlug(slug);
+  if (!meta) throw new Error(`No se encontró metadato para ${slug}`);
+
   const howItWorks = String(
-    input?.howItWorks ?? "Completa las mini-tareas diarias y avanza automáticamente."
+    input?.howItWorks ??
+      "Completa las mini-tareas diarias y avanza automáticamente."
   );
-  const days: ProgramDayDef[] = Array.isArray(input?.days)
+  const daysDef: ProgramDayDef[] = Array.isArray(input?.days)
     ? input.days.map((d: any, idx: number) => ({
         day: typeof d?.day === "number" ? d.day : idx + 1,
         tasks: Array.isArray(d?.tasks)
@@ -69,24 +68,26 @@ function normalizeProgramDef(input: any): ProgramDef {
           : [],
       }))
     : [];
-  const durationDays =
-    Number(input?.durationDays) ||
-    Number(input?.totalDays) ||
-    days.length ||
-    30;
 
-  return { slug, title, shortDescription, howItWorks, durationDays, days };
+  return {
+    ...meta,
+    howItWorks,
+    daysDef,
+  };
 }
 
-// Carga la definición del programa por slug (extensible a futuro)
-const lecturaProgram: ProgramDef = normalizeProgramDef(lecturaProgramRaw as any);
+// Solo tenemos lectura por ahora
+const lecturaProgram: ProgramDef = normalizeProgramDef(
+  "lectura-30",
+  lecturaProgramRaw as any
+);
 
 export function getProgramDef(slug: string): ProgramDef {
   if (slug === lecturaProgram.slug) return lecturaProgram;
   throw new Error(`Programa no soportado: ${slug}`);
 }
 
-// Helpers de cache (no autoritativos)
+// ---------- Helpers de cache local ----------
 const LS_ACTIVE_KEY = "akira_program_active"; // { slug, startedAt, currentDay }
 
 function writeLocalActive(slug: string, startedAt: string, currentDay: number) {
@@ -113,9 +114,8 @@ export function clearLocalActive() {
   } catch {}
 }
 
-// ---------- Servicios de estado ----------
+// ---------- Servicios de estado Supabase ----------
 
-// Obtiene el programa activo del usuario (si existe)
 export async function getActiveProgram(
   supabase: SupabaseClient,
   userId: string,
@@ -129,7 +129,7 @@ export async function getActiveProgram(
     .eq("is_active", true)
     .maybeSingle();
 
-  if (error && (error as any).code !== "PGRST116") throw error; // PGRST116 = no rows
+  if (error && (error as any).code !== "PGRST116") throw error;
   if (!data) return null;
 
   const row = data as unknown as ActiveProgramRow;
@@ -137,7 +137,6 @@ export async function getActiveProgram(
   return row;
 }
 
-// Inicia (o re-inicia suave) el programa para el usuario
 export async function startProgram(
   supabase: SupabaseClient,
   userId: string,
@@ -164,22 +163,20 @@ export async function startProgram(
   return row;
 }
 
-// Reinicia el programa (borra progreso de tareas del usuario para ese programa)
 export async function resetProgram(
   supabase: SupabaseClient,
   userId: string,
   slug: string
 ): Promise<void> {
   const { error: delErr } = await supabase
-    .from(TABLE_TASKS) // <- sin genéricos
+    .from(TABLE_TASKS)
     .delete()
     .eq("user_id", userId)
     .eq("program_slug", slug);
-
   if (delErr) throw delErr;
 
   const { error: upErr } = await supabase
-    .from(TABLE_PROGRAMS) // <- sin genéricos
+    .from(TABLE_PROGRAMS)
     .upsert(
       {
         user_id: userId,
@@ -190,12 +187,13 @@ export async function resetProgram(
       },
       { onConflict: "user_id,program_slug" }
     );
-
   if (upErr) throw upErr;
+
   writeLocalActive(slug, new Date().toISOString(), 1);
 }
 
-// Asegura que existen filas de tareas para un día (se crean “on demand”)
+// ---------- Gestión de tareas ----------
+
 async function ensureDayTaskRows(
   supabase: SupabaseClient,
   userId: string,
@@ -203,12 +201,11 @@ async function ensureDayTaskRows(
   day: number,
   def: ProgramDef
 ): Promise<void> {
-  const dayDef = def.days.find((d) => d.day === day);
+  const dayDef = def.daysDef.find((d) => d.day === day);
   if (!dayDef) throw new Error(`Día ${day} no existe en ${slug}`);
 
-  // ¿Ya hay filas de ese día?
   const { data: existing, error: exErr } = await supabase
-    .from(TABLE_TASKS) // <- sin genéricos
+    .from(TABLE_TASKS)
     .select("task_id")
     .eq("user_id", userId)
     .eq("program_slug", slug)
@@ -217,7 +214,6 @@ async function ensureDayTaskRows(
   if (exErr) throw exErr;
   if (existing && existing.length >= dayDef.tasks.length) return;
 
-  // Insertar faltantes (idempotente por PK compuesta)
   const toInsert = dayDef.tasks
     .filter((t) => !existing?.some((e: any) => e.task_id === t.id))
     .map<UserTaskRow>((t) => ({
@@ -231,13 +227,12 @@ async function ensureDayTaskRows(
 
   if (toInsert.length) {
     const { error: insErr } = await supabase
-      .from(TABLE_TASKS) // <- sin genéricos
+      .from(TABLE_TASKS)
       .insert(toInsert);
     if (insErr) throw insErr;
   }
 }
 
-// Devuelve las tareas del día con su estado (completadas o no)
 export type TaskWithStatus = ProgramTaskDef & {
   day: number;
   completed: boolean;
@@ -253,9 +248,8 @@ export async function getDayTasks(
   const def = getProgramDef(slug);
   await ensureDayTaskRows(supabase, userId, slug, day, def);
 
-  // Leer estados
   const { data: rows, error } = await supabase
-    .from(TABLE_TASKS) // <- sin genéricos
+    .from(TABLE_TASKS)
     .select("*")
     .eq("user_id", userId)
     .eq("program_slug", slug)
@@ -263,7 +257,7 @@ export async function getDayTasks(
 
   if (error) throw error;
 
-  const dayDef = def.days.find((d) => d.day === day)!;
+  const dayDef = def.daysDef.find((d) => d.day === day)!;
   const map = new Map(
     (rows as UserTaskRow[] | null)?.map((r) => [r.task_id, r]) || []
   );
@@ -279,7 +273,6 @@ export async function getDayTasks(
   });
 }
 
-// Marca / desmarca una tarea y, si procede, avanza de día automáticamente
 export async function toggleTask(
   supabase: SupabaseClient,
   userId: string,
@@ -288,9 +281,8 @@ export async function toggleTask(
   taskId: string,
   completed: boolean
 ): Promise<{ advanced: boolean; nextDay: number | null }> {
-  // Upsert de la fila de task
   const { error: upErr } = await supabase
-    .from(TABLE_TASKS) // <- sin genéricos
+    .from(TABLE_TASKS)
     .upsert(
       {
         user_id: userId,
@@ -304,9 +296,8 @@ export async function toggleTask(
     );
   if (upErr) throw upErr;
 
-  // ¿Quedan pendientes en el día?
   const { data: pending, error: pendErr } = await supabase
-    .from(TABLE_TASKS) // <- sin genéricos
+    .from(TABLE_TASKS)
     .select("task_id")
     .eq("user_id", userId)
     .eq("program_slug", slug)
@@ -316,31 +307,37 @@ export async function toggleTask(
   if (pendErr) throw pendErr;
 
   if (!pending || pending.length === 0) {
-    // Avanzar current_day = day + 1
     const { data: prog, error: selErr } = await supabase
-      .from(TABLE_PROGRAMS) // <- sin genéricos
+      .from(TABLE_PROGRAMS)
       .select("*")
       .eq("user_id", userId)
       .eq("program_slug", slug)
       .maybeSingle();
     if (selErr) throw selErr;
 
-    const next = Math.max(day + 1, (prog as ActiveProgramRow | null)?.current_day ?? day + 1);
+    const next = Math.max(
+      day + 1,
+      (prog as ActiveProgramRow | null)?.current_day ?? day + 1
+    );
     const { error: updErr } = await supabase
-      .from(TABLE_PROGRAMS) // <- sin genéricos
+      .from(TABLE_PROGRAMS)
       .update({ current_day: next })
       .eq("user_id", userId)
       .eq("program_slug", slug);
     if (updErr) throw updErr;
 
-    writeLocalActive(slug, (prog as ActiveProgramRow | null)?.started_at ?? new Date().toISOString(), next);
+    writeLocalActive(
+      slug,
+      (prog as ActiveProgramRow | null)?.started_at ??
+        new Date().toISOString(),
+      next
+    );
     return { advanced: true, nextDay: next };
   }
 
   return { advanced: false, nextDay: null };
 }
 
-// Progreso para barra: días completados / totales
 export async function getProgress(
   supabase: SupabaseClient,
   userId: string,
@@ -349,16 +346,15 @@ export async function getProgress(
   const def = getProgramDef(slug);
 
   const { data: prog, error: pErr } = await supabase
-    .from(TABLE_PROGRAMS) // <- sin genéricos
+    .from(TABLE_PROGRAMS)
     .select("*")
     .eq("user_id", userId)
     .eq("program_slug", slug)
     .maybeSingle();
   if (pErr) throw pErr;
 
-  // Contar días sin pendientes
   const { data: rows, error: rErr } = await supabase
-    .from(TABLE_TASKS) // <- sin genéricos
+    .from(TABLE_TASKS)
     .select("day, completed")
     .eq("user_id", userId)
     .eq("program_slug", slug);
@@ -373,7 +369,7 @@ export async function getProgress(
   });
 
   let daysCompleted = 0;
-  for (const dayDef of def.days) {
+  for (const dayDef of def.daysDef) {
     const acc = byDay.get(dayDef.day);
     if (acc && acc.total >= dayDef.tasks.length && acc.done === acc.total) {
       daysCompleted += 1;
@@ -382,7 +378,7 @@ export async function getProgress(
 
   return {
     daysCompleted,
-    totalDays: def.durationDays,
+    totalDays: def.days,
     currentDay: (prog as ActiveProgramRow | null)?.current_day ?? 1,
   };
 }

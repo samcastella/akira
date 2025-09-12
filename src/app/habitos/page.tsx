@@ -19,11 +19,16 @@ type Program = {
   days: number;
   type: ProgramType;
   category: Category;
-  thumbnail?: string; // opcional
+  thumbnail?: string;
 };
 
 const LS_SAVED = 'akira_saved_programs_v1';
-const LS_ACTIVE = 'akira_programs_active_v1'; // ya lo usas en la app
+const LS_ACTIVE = 'akira_programs_active_v1';
+
+/** 🔒 Slugs de programas que YA existen en la app */
+const AVAILABLE_PROGRAM_SLUGS = new Set<string>([
+  'conviertete-en-lector', // lectura (único disponible por ahora)
+]);
 
 // Datos demo (puedes moverlos a src/data más adelante)
 const ALL_PROGRAMS: Program[] = [
@@ -36,7 +41,7 @@ const ALL_PROGRAMS: Program[] = [
     days: 30,
     type: 'good',
     category: 'productividad',
-    thumbnail: '/images/programs/reading.jpg', // si no existe, renderizamos un color neutro
+    thumbnail: '/images/programs/reading.jpg',
   },
   {
     id: 'morning-21',
@@ -160,8 +165,11 @@ function ProgramCard({
   saved: boolean;
   onToggleSave: (id: string) => void;
 }) {
+  const isAvailable = AVAILABLE_PROGRAM_SLUGS.has(program.slug);
+  const href = isAvailable ? `/programas/${program.slug}` : '/404';
+
   return (
-    <div className="w-full flex items-start gap-3 py-3">
+    <Link href={href} className="w-full flex items-start gap-3 py-3">
       {/* Thumb */}
       <div className="w-24 h-24 shrink-0 rounded-xl overflow-hidden bg-neutral-100">
         {program.thumbnail ? (
@@ -191,17 +199,17 @@ function ProgramCard({
 
       {/* Guardar */}
       <button
+        type="button"
         aria-label={saved ? 'Quitar de guardados' : 'Guardar programa'}
-        onClick={() => onToggleSave(program.id)}
+        onClick={(e) => {
+          e.preventDefault(); // evitar navegar al hacer click en el icono
+          onToggleSave(program.id);
+        }}
         className="p-2 rounded-full hover:bg-neutral-100 active:scale-95 transition"
       >
-        {saved ? (
-          <BookmarkCheck className="w-5 h-5" />
-        ) : (
-          <Bookmark className="w-5 h-5" />
-        )}
+        {saved ? <BookmarkCheck className="w-5 h-5" /> : <Bookmark className="w-5 h-5" />}
       </button>
-    </div>
+    </Link>
   );
 }
 
@@ -219,19 +227,26 @@ export default function HabitosPage() {
     setActiveCount(loadActiveCount());
   }, []);
 
+  // Solo “existen” los programas cuyo slug esté en AVAILABLE_PROGRAM_SLUGS
+  const existingPrograms = useMemo(
+    () => ALL_PROGRAMS.filter((p) => AVAILABLE_PROGRAM_SLUGS.has(p.slug)),
+    []
+  );
+
   const filtered = useMemo(() => {
+    const base = existingPrograms; // bebemos solo de los ya hechos
     const q = query.trim().toLowerCase();
-    if (!q) return ALL_PROGRAMS;
-    return ALL_PROGRAMS.filter(
+    if (!q) return base;
+    return base.filter(
       (p) =>
         p.title.toLowerCase().includes(q) ||
         p.description.toLowerCase().includes(q) ||
         p.category.toLowerCase().includes(q)
     );
-  }, [query]);
+  }, [query, existingPrograms]);
 
-  const good = filtered.filter((p) => p.type === 'good');
-  const bad = filtered.filter((p) => p.type === 'bad');
+  const good = filtered.filter((p) => p.type === 'good'); // ← aquí saldrá Lectura
+  const bad: Program[] = []; // de momento no hay disponibles
 
   const toggleSave = (id: string) => {
     const next = new Set(saved);
@@ -241,7 +256,7 @@ export default function HabitosPage() {
     saveSaved(next);
   };
 
-  const allCount = ALL_PROGRAMS.length;
+  const allCount = existingPrograms.length; // ← 1
   const savedCount = saved.size;
 
   return (
@@ -289,14 +304,18 @@ export default function HabitosPage() {
         subtitle="Programas amables basados en neurociencia para eliminar los malos hábitos de una vez por todas"
       />
       <div className="divide-y divide-neutral-100">
-        {bad.map((p) => (
-          <ProgramCard
-            key={p.id}
-            program={p}
-            saved={saved.has(p.id)}
-            onToggleSave={toggleSave}
-          />
-        ))}
+        {bad.length === 0 ? (
+          <p className="text-sm text-neutral-500 py-2">Próximamente</p>
+        ) : (
+          bad.map((p) => (
+            <ProgramCard
+              key={p.id}
+              program={p}
+              saved={saved.has(p.id)}
+              onToggleSave={toggleSave}
+            />
+          ))
+        )}
       </div>
       <button
         onClick={() => setSoonOpen(true)}
@@ -305,26 +324,26 @@ export default function HabitosPage() {
         Ver todo <ChevronRight className="w-4 h-4" />
       </button>
 
-      {/* Sección 3: Por categoría */}
+      {/* Sección 3: Por categoría (1 por fila, sin bordes redondeados) */}
       <SectionTitle title="Por categoría" />
-      <div className="grid grid-cols-2 gap-3 mb-10">
+      <div className="grid grid-cols-1 gap-3 mb-10">
         {[
           { label: 'Salud', cat: 'salud' as const, img: '/images/cat/health.jpg' },
           { label: 'Bienestar', cat: 'bienestar' as const, img: '/images/cat/wellbeing.jpg' },
           { label: 'Productividad', cat: 'productividad' as const, img: '/images/cat/productivity.jpg' },
           { label: 'Malos hábitos', cat: 'malos-habitos' as const, img: '/images/cat/badhabits.jpg' },
         ].map((c) => (
-          <button
+          <Link
             key={c.cat}
-            onClick={() => setSoonOpen(true)}
-            className="relative rounded-2xl overflow-hidden h-28 w-full text-left active:scale-[0.99] transition"
+            href="/404"
+            className="relative overflow-hidden h-28 w-full text-left active:scale-[0.99] transition"
           >
             {c.img ? (
               <Image
                 src={c.img}
                 alt={c.label}
-                width={640}
-                height={320}
+                width={1280}
+                height={640}
                 className="w-full h-full object-cover"
               />
             ) : (
@@ -334,7 +353,7 @@ export default function HabitosPage() {
             <div className="absolute left-3 bottom-2 text-white text-lg font-semibold drop-shadow">
               {c.label}
             </div>
-          </button>
+          </Link>
         ))}
       </div>
 
