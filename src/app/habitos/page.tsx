@@ -25,9 +25,9 @@ type Program = {
 const LS_SAVED = 'akira_saved_programs_v1';
 const LS_ACTIVE = 'akira_programs_active_v1';
 
-/** 🔒 Slugs de programas que YA existen en la app */
+/** Slugs que YA existen en la app */
 const AVAILABLE_PROGRAM_SLUGS = new Set<string>([
-  'conviertete-en-lector', // lectura (único disponible por ahora)
+  'lectura', // ← lectura disponible
 ]);
 
 // Datos demo (puedes moverlos a src/data más adelante)
@@ -122,9 +122,7 @@ function SectionTitle({
   return (
     <div className="mb-3">
       <h2 className="text-2xl font-semibold tracking-tight">{title}</h2>
-      {subtitle && (
-        <p className="text-sm text-neutral-500 mt-1">{subtitle}</p>
-      )}
+      {subtitle && <p className="text-sm text-neutral-500 mt-1">{subtitle}</p>}
     </div>
   );
 }
@@ -202,7 +200,7 @@ function ProgramCard({
         type="button"
         aria-label={saved ? 'Quitar de guardados' : 'Guardar programa'}
         onClick={(e) => {
-          e.preventDefault(); // evitar navegar al hacer click en el icono
+          e.preventDefault();
           onToggleSave(program.id);
         }}
         className="p-2 rounded-full hover:bg-neutral-100 active:scale-95 transition"
@@ -245,7 +243,7 @@ export default function HabitosPage() {
     );
   }, [query, existingPrograms]);
 
-  const good = filtered.filter((p) => p.type === 'good'); // ← aquí saldrá Lectura
+  const good = filtered.filter((p) => p.type === 'good'); // aquí saldrá Lectura
   const bad: Program[] = []; // de momento no hay disponibles
 
   const toggleSave = (id: string) => {
@@ -256,7 +254,7 @@ export default function HabitosPage() {
     saveSaved(next);
   };
 
-  const allCount = existingPrograms.length; // ← 1
+  const allCount = existingPrograms.length; // 1
   const savedCount = saved.size;
 
   return (
@@ -272,7 +270,7 @@ export default function HabitosPage() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Buscar programas…"
-          className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-[15px] outline-none focus:ring-2 focus:ring-black/10"
+          className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-[16px] outline-none focus:ring-2 focus:ring-black/10" // ← 16px para evitar zoom iOS
         />
       </div>
 
@@ -338,17 +336,13 @@ export default function HabitosPage() {
             href="/404"
             className="relative overflow-hidden h-28 w-full text-left active:scale-[0.99] transition"
           >
-            {c.img ? (
-              <Image
-                src={c.img}
-                alt={c.label}
-                width={1280}
-                height={640}
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <div className="w-full h-full bg-neutral-100" />
-            )}
+            <Image
+              src={c.img}
+              alt={c.label}
+              width={1920}
+              height={640}
+              className="w-full h-full object-cover"
+            />
             <div className="absolute inset-0 bg-black/25" />
             <div className="absolute left-3 bottom-2 text-white text-lg font-semibold drop-shadow">
               {c.label}
@@ -357,33 +351,63 @@ export default function HabitosPage() {
         ))}
       </div>
 
-      {/* Sección 4: Tus programas */}
+      {/* Sección 4: Tus programas (con imágenes y sin borde) */}
       <SectionTitle title="Tus programas" />
       <div className="grid grid-cols-3 gap-3">
+        {/* Guardado */}
         <button
           onClick={() => setSoonOpen(true)}
-          className="rounded-2xl border border-neutral-200 p-3 text-left hover:bg-neutral-50 active:scale-[0.99] transition"
+          className="rounded-2xl p-2 text-left active:scale-[0.99] transition"
         >
+          <div className="w-full aspect-square rounded-xl overflow-hidden mb-2">
+            <Image
+              src="/images/ui/programs-saved.jpg"
+              alt="Programas guardados"
+              width={1000}
+              height={1000}
+              className="w-full h-full object-cover"
+            />
+          </div>
           <div className="text-[13px] font-medium">Guardado</div>
           <div className="text-neutral-500 text-[12px] mt-1">
             {savedCount} programas
           </div>
         </button>
 
+        {/* Activos */}
         <button
           onClick={() => setSoonOpen(true)}
-          className="rounded-2xl border border-neutral-200 p-3 text-left hover:bg-neutral-50 active:scale-[0.99] transition"
+          className="rounded-2xl p-2 text-left active:scale-[0.99] transition"
         >
+          <div className="w-full aspect-square rounded-xl overflow-hidden mb-2">
+            <Image
+              src="/images/ui/programs-active.jpg"
+              alt="Programas activos"
+              width={1000}
+              height={1000}
+              className="w-full h-full object-cover"
+            />
+          </div>
           <div className="text-[13px] font-medium">Programas activos</div>
           <div className="text-neutral-500 text-[12px] mt-1">
             {activeCount} activos
           </div>
         </button>
 
+        {/* Todos */}
         <Link
           href="/404"
-          className="rounded-2xl border border-neutral-200 p-3 text-left hover:bg-neutral-50 active:scale-[0.99] transition"
+          className="rounded-2xl p-2 text-left active:scale-[0.99] transition"
         >
+          <div className="w-full aspect-square rounded-xl overflow-hidden mb-2">
+            <Image
+              src="/images/ui/programs-all.jpg"
+              alt="Todos los programas"
+              width={1000}
+              height={1000}
+              className="w-full h-full object-cover"
+            />
+          </div>
           <div className="text-[13px] font-medium">Todos los programas</div>
           <div className="text-neutral-500 text-[12px] mt-1">
             {allCount} en total
