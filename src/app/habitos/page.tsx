@@ -270,7 +270,7 @@ export default function HabitosPage() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Buscar programas…"
-          className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-[16px] outline-none focus:ring-2 focus:ring-black/10" // ← 16px para evitar zoom iOS
+          className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-[16px] outline-none focus:ring-2 focus:ring-black/10" // 16px evita zoom iOS
         />
       </div>
 
@@ -353,11 +353,11 @@ export default function HabitosPage() {
 
       {/* Sección 4: Tus programas (con imágenes y sin borde) */}
       <SectionTitle title="Tus programas" />
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-3 gap-3 items-start">
         {/* Guardado */}
         <button
           onClick={() => setSoonOpen(true)}
-          className="rounded-2xl p-2 text-left active:scale-[0.99] transition"
+          className="block rounded-2xl p-2 text-left active:scale-[0.99] transition"
         >
           <div className="w-full aspect-square rounded-xl overflow-hidden mb-2">
             <Image
@@ -377,7 +377,7 @@ export default function HabitosPage() {
         {/* Activos */}
         <button
           onClick={() => setSoonOpen(true)}
-          className="rounded-2xl p-2 text-left active:scale-[0.99] transition"
+          className="block rounded-2xl p-2 text-left active:scale-[0.99] transition"
         >
           <div className="w-full aspect-square rounded-xl overflow-hidden mb-2">
             <Image
@@ -397,7 +397,7 @@ export default function HabitosPage() {
         {/* Todos */}
         <Link
           href="/404"
-          className="rounded-2xl p-2 text-left active:scale-[0.99] transition"
+          className="block rounded-2xl p-2 text-left active:scale-[0.99] transition"
         >
           <div className="w-full aspect-square rounded-xl overflow-hidden mb-2">
             <Image
