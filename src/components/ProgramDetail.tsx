@@ -15,7 +15,7 @@ import {
   ChevronUp,
   Lock,
   X,
-  Play, // icono para "Empezar programa"
+  Play,
 } from 'lucide-react';
 
 type JsonTask = { id?: string; label: string; detail?: string; tags?: string[] };
@@ -38,7 +38,7 @@ type DayProgressV2 = Record<number, Record<string, boolean>>;
 type ActiveProgram = { startedAt: string; progress: DayProgressV2 };
 
 const LS_ACTIVE = 'akira_programs_active_v1';
-const LS_ACTIVE_COMPAT = 'akira_program_active'; // usado por ProgramService/Mi Zona
+const LS_ACTIVE_COMPAT = 'akira_program_active';
 
 const DATA_LOADERS: Record<string, () => Promise<ProgramJson>> = {
   'lectura-30': async () => {
@@ -82,12 +82,9 @@ function escapeHtml(s: string) {
 }
 function renderLightMarkdown(input: string) {
   let html = escapeHtml(input ?? '');
-  // **negrita**
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  // *cursiva*
-  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-  // saltos de línea
-  html = html.replace(/\n/g, '<br/>');
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>'); // **bold**
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');            // *italic*
+  html = html.replace(/\n/g, '<br/>');                          // line breaks
   return html;
 }
 const MD: FC<{ children: string; className?: string }> = ({ children, className }) => (
@@ -99,7 +96,7 @@ type Props = {
   slug: string;
   imageSrc?: string;
   title: string;
-  shortDescription: string; // se oculta en esta vista
+  shortDescription: string; // oculto en esta vista
   howItWorks: string;
 };
 
@@ -107,7 +104,7 @@ export default function ProgramDetail({
   slug,
   imageSrc,
   title,
-  shortDescription: _shortDescription, // oculto aquí
+  shortDescription: _shortDescription,
   howItWorks,
 }: Props) {
   const router = useRouter();
@@ -168,7 +165,6 @@ export default function ProgramDetail({
 
   const tasks: JsonTask[] = dayData?.tasks ?? [];
 
-  /** Lee el progreso del día visualizado como mapa taskId->done */
   function getDayProgressMap(dayNum: number): Record<string, boolean> {
     const entry = activeMap[slug];
     if (!entry) return {};
@@ -192,14 +188,12 @@ export default function ProgramDetail({
   }
   const dayProgressMap = getDayProgressMap(viewedDay);
 
-  // % progreso por días transcurridos
   const progressPct = useMemo(() => {
     if (!active?.startedAt || totalDays === 0) return 0;
     const passed = Math.min(totalDays, Math.max(0, daysBetween(active.startedAt, todayKey()) + 1));
     return Math.round((passed / totalDays) * 100);
   }, [active?.startedAt, totalDays]);
 
-  /** Empezar programa: crea entrada limpia para el slug */
   function startProgram() {
     setActiveMap((prev) => {
       const next = { ...prev, [slug]: { startedAt: todayKey(), progress: {} } };
@@ -209,14 +203,13 @@ export default function ProgramDetail({
     });
   }
 
-  /** Reinicio: dejar el programa en estado NO iniciado */
   function requestReset() {
     setConfirmOpen(true);
   }
   function confirmReset() {
     setActiveMap((prev) => {
       const next = { ...prev };
-      delete next[slug]; // elimina el programa activo => no iniciado
+      delete next[slug];
       saveActive(next);
       try { localStorage.removeItem(LS_ACTIVE_COMPAT); } catch {}
       return next;
@@ -229,38 +222,41 @@ export default function ProgramDetail({
     setConfirmOpen(false);
   }
 
-  // Vista SOLO LECTURA aquí: los checks se hacen en Mi Zona
   function toggleTaskOpen(task: JsonTask, index: number) {
     const taskId = task.id ?? `task_${index}`;
     setOpenTasks((p) => ({ ...p, [taskId]: !p[taskId] }));
   }
 
-  // Row de acordeón
+  // Row de acordeón (headers un poco más marcados)
   const ARow: FC<{ label: string; open: boolean; onClick: () => void }> = ({
     label,
     open,
     onClick,
   }) => (
-    <button onClick={onClick} className="w-full flex items-center justify-between py-3" aria-expanded={open}>
-      <span className="text-[15px] font-medium">{label}</span>
+    <button
+      onClick={onClick}
+      className="w-full flex items-center justify-between py-3"
+      aria-expanded={open}
+    >
+      <span className="text-[15px] font-semibold text-neutral-800">{label}</span>
       {open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
     </button>
   );
 
   return (
-    <div className="px-4 pb-24 bg-white"> {/* sin pt -> sin margen arriba */}
+    <div className="px-4 pb-24 bg-white">
       {/* Hero 16:9 full-bleed con botón Volver sobre la imagen */}
       {imageSrc && (
-        <div className="-mx-4 mb-4 relative">
+        <div className="-mx-4 mb-5 relative">
           <div className="relative w-full aspect-[16/9]">
             <Image src={imageSrc} alt={title} fill className="object-cover" priority />
           </div>
 
-          {/* Botón Volver overlay (estilo ghost/pill como el resto de la app) */}
+          {/* Botón Volver overlay con mejor contraste */}
           <div className="absolute top-3 right-3">
             <button
               onClick={() => { try { router.back(); } catch { location.href = '/habitos'; } }}
-              className="inline-flex items-center gap-1.5 text-[13px] font-medium px-3.5 py-2 rounded-full border border-neutral-200 bg-white/80 backdrop-blur shadow-sm hover:bg-white active:scale-[0.98]"
+              className="inline-flex items-center gap-1.5 text-[13px] font-medium px-3.5 py-2 rounded-full border border-neutral-300 bg-white/85 backdrop-blur-md shadow-md hover:bg-white active:scale-[0.98]"
             >
               <ChevronLeft className="w-4 h-4" />
               Volver
@@ -270,7 +266,7 @@ export default function ProgramDetail({
       )}
 
       {/* Título y chip */}
-      <h1 className="text-2xl font-semibold">{title}</h1>
+      <h1 className="text-2xl font-semibold text-neutral-900">{title}</h1>
       {data?.durationDays ? (
         <div className="mt-1 inline-flex items-center gap-2">
           <span className="text-xs px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-700">
@@ -279,17 +275,14 @@ export default function ProgramDetail({
         </div>
       ) : null}
 
-      {/* Introducción (sin borde ni “Introducción”) */}
-      <div className="mt-2">
-        {/* Más pequeño y con Markdown */}
-        <MD className="text-[13px] text-neutral-700 mt-1 leading-relaxed">
-          {howItWorks}
-        </MD>
+      {/* Introducción — más aire y tono un pelín más oscuro */}
+      <div className="mt-4">
+        <MD className="text-[13px] text-neutral-800 leading-relaxed">{howItWorks}</MD>
 
         {(data?.accordions?.whatYouWillDo?.length ||
           data?.accordions?.whatYouWillGet?.length ||
           data?.accordions?.howToUse?.length) && (
-          <div className="mt-3 divide-y divide-neutral-200">
+          <div className="mt-4 divide-y divide-neutral-200">
             {data?.accordions?.whatYouWillDo?.length ? (
               <div className="py-2">
                 <ARow
@@ -298,7 +291,7 @@ export default function ProgramDetail({
                   onClick={() => setOpenAcc((s) => ({ ...s, do: !s.do }))}
                 />
                 {openAcc.do && (
-                  <ul className="pl-4 list-disc text-[13px] text-neutral-700 space-y-1">
+                  <ul className="pl-4 list-disc text-[13px] text-neutral-800 space-y-1">
                     {data!.accordions!.whatYouWillDo!.map((li, i) => (
                       <li key={`do_${i}`}>
                         <MD className="text-[13px] leading-relaxed">{li}</MD>
@@ -317,10 +310,10 @@ export default function ProgramDetail({
                   onClick={() => setOpenAcc((s) => ({ ...s, get: !s.get }))}
                 />
                 {openAcc.get && (
-                  <ul className="pl-4 list-disc text-[13px] text-neutral-700 space-y-1">
+                  <ul className="pl-4 list-disc text-[14px] text-neutral-900 space-y-1">
                     {data!.accordions!.whatYouWillGet!.map((li, i) => (
                       <li key={`get_${i}`}>
-                        <MD className="text-[13px] leading-relaxed">{li}</MD>
+                        <MD className="text-[14px] leading-relaxed">{li}</MD>
                       </li>
                     ))}
                   </ul>
@@ -336,7 +329,7 @@ export default function ProgramDetail({
                   onClick={() => setOpenAcc((s) => ({ ...s, use: !s.use }))}
                 />
                 {openAcc.use && (
-                  <ul className="pl-4 list-disc text-[13px] text-neutral-700 space-y-1">
+                  <ul className="pl-4 list-disc text-[13px] text-neutral-800 space-y-1">
                     {data!.accordions!.howToUse!.map((li, i) => (
                       <li key={`use_${i}`}>
                         <MD className="text-[13px] leading-relaxed">{li}</MD>
@@ -350,12 +343,12 @@ export default function ProgramDetail({
         )}
       </div>
 
-      {/* CTA */}
-      <div className="mt-4 flex items-center gap-2">
+      {/* CTA — más respiración */}
+      <div className="mt-6 flex items-center gap-2">
         {!started ? (
           <button
             onClick={startProgram}
-            className="inline-flex items-center gap-2 rounded-2xl px-5 py-3 text-sm font-semibold bg-black text-white shadow-sm active:scale-[0.98]"
+            className="inline-flex items-center gap-2 rounded-2xl px-5 py-3.5 text-[15px] font-semibold bg-black text-white shadow-md active:scale-[0.98]"
           >
             <Play className="w-4 h-4" />
             Empezar programa
@@ -399,7 +392,7 @@ export default function ProgramDetail({
       {/* Progreso + Navegación: solo si iniciado */}
       {started && data && totalDays > 0 && (
         <>
-          <div className="mt-6">
+          <div className="mt-8">
             <div className="flex items-center justify-between mb-2">
               <div className="text-sm font-medium">
                 Progreso: Día {Math.min(currentDay, totalDays)} / {totalDays}
@@ -454,7 +447,7 @@ export default function ProgramDetail({
 
       {/* Lista de tareas: solo si iniciado */}
       {started && data && totalDays > 0 && (
-        <div className="mt-3">
+        <div className="mt-4">
           {tasks.length === 0 ? (
             <div className="text-sm text-neutral-600 border border-dashed border-neutral-300 rounded-2xl p-4">
               Hoy desconectas de la app. Disfruta tu día sin móvil.
@@ -484,7 +477,7 @@ export default function ProgramDetail({
 
                       <div className="flex-1">
                         {/* Label con Markdown ligero */}
-                        <div className="text-[15px]">
+                        <div className="text-[15px] text-neutral-900">
                           <MD className="text-[15px]">{t.label}</MD>
                         </div>
                         {/* toggle detalle */}
@@ -501,7 +494,7 @@ export default function ProgramDetail({
                           </button>
                         )}
                         {t.detail && isOpen && (
-                          <MD className="text-[13px] text-neutral-600 mt-1">
+                          <MD className="text-[13px] text-neutral-700 mt-1">
                             {t.detail}
                           </MD>
                         )}
