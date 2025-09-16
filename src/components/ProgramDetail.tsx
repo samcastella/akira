@@ -1,6 +1,7 @@
 // src/components/ProgramDetail.tsx
 'use client';
 
+import type { FC } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
@@ -14,7 +15,7 @@ import {
   ChevronUp,
   Lock,
   X,
-  Play, // <- icono para "Empezar programa"
+  Play, // icono para "Empezar programa"
 } from 'lucide-react';
 
 type JsonTask = { id?: string; label: string; detail?: string; tags?: string[] };
@@ -74,6 +75,25 @@ function saveActive(obj: Record<string, ActiveProgram>) {
   if (typeof window === 'undefined') return;
   localStorage.setItem(LS_ACTIVE, JSON.stringify(obj));
 }
+
+/* ---------- Mini-render Markdown seguro (negrita/cursiva/line breaks) ---------- */
+function escapeHtml(s: string) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function renderLightMarkdown(input: string) {
+  let html = escapeHtml(input ?? '');
+  // **negrita**
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  // *cursiva*
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  // saltos de línea
+  html = html.replace(/\n/g, '<br/>');
+  return html;
+}
+const MD: FC<{ children: string; className?: string }> = ({ children, className }) => (
+  <span className={className} dangerouslySetInnerHTML={{ __html: renderLightMarkdown(children) }} />
+);
+/* ------------------------------------------------------------------------------ */
 
 type Props = {
   slug: string;
@@ -216,7 +236,7 @@ export default function ProgramDetail({
   }
 
   // Row de acordeón
-  const ARow: React.FC<{ label: string; open: boolean; onClick: () => void }> = ({
+  const ARow: FC<{ label: string; open: boolean; onClick: () => void }> = ({
     label,
     open,
     onClick,
@@ -261,7 +281,10 @@ export default function ProgramDetail({
 
       {/* Introducción (sin borde ni “Introducción”) */}
       <div className="mt-2">
-        <p className="text-[14px] text-neutral-700 mt-1 leading-relaxed">{howItWorks}</p>
+        {/* Más pequeño y con Markdown */}
+        <MD className="text-[13px] text-neutral-700 mt-1 leading-relaxed">
+          {howItWorks}
+        </MD>
 
         {(data?.accordions?.whatYouWillDo?.length ||
           data?.accordions?.whatYouWillGet?.length ||
@@ -269,10 +292,18 @@ export default function ProgramDetail({
           <div className="mt-3 divide-y divide-neutral-200">
             {data?.accordions?.whatYouWillDo?.length ? (
               <div className="py-2">
-                <ARow label="¿Qué vas a hacer?" open={openAcc.do} onClick={() => setOpenAcc((s) => ({ ...s, do: !s.do }))} />
+                <ARow
+                  label="¿Qué vas a hacer?"
+                  open={openAcc.do}
+                  onClick={() => setOpenAcc((s) => ({ ...s, do: !s.do }))}
+                />
                 {openAcc.do && (
-                  <ul className="pl-4 list-disc text-[14px] text-neutral-700 space-y-1">
-                    {data!.accordions!.whatYouWillDo!.map((li, i) => <li key={`do_${i}`}>{li}</li>)}
+                  <ul className="pl-4 list-disc text-[13px] text-neutral-700 space-y-1">
+                    {data!.accordions!.whatYouWillDo!.map((li, i) => (
+                      <li key={`do_${i}`}>
+                        <MD className="text-[13px] leading-relaxed">{li}</MD>
+                      </li>
+                    ))}
                   </ul>
                 )}
               </div>
@@ -280,10 +311,18 @@ export default function ProgramDetail({
 
             {data?.accordions?.whatYouWillGet?.length ? (
               <div className="py-2">
-                <ARow label="¿Qué vas a conseguir?" open={openAcc.get} onClick={() => setOpenAcc((s) => ({ ...s, get: !s.get }))} />
+                <ARow
+                  label="¿Qué vas a conseguir?"
+                  open={openAcc.get}
+                  onClick={() => setOpenAcc((s) => ({ ...s, get: !s.get }))}
+                />
                 {openAcc.get && (
-                  <ul className="pl-4 list-disc text-[14px] text-neutral-700 space-y-1">
-                    {data!.accordions!.whatYouWillGet!.map((li, i) => <li key={`get_${i}`}>{li}</li>)}
+                  <ul className="pl-4 list-disc text-[13px] text-neutral-700 space-y-1">
+                    {data!.accordions!.whatYouWillGet!.map((li, i) => (
+                      <li key={`get_${i}`}>
+                        <MD className="text-[13px] leading-relaxed">{li}</MD>
+                      </li>
+                    ))}
                   </ul>
                 )}
               </div>
@@ -291,10 +330,18 @@ export default function ProgramDetail({
 
             {data?.accordions?.howToUse?.length ? (
               <div className="py-2">
-                <ARow label="¿Cómo se usa?" open={openAcc.use} onClick={() => setOpenAcc((s) => ({ ...s, use: !s.use }))} />
+                <ARow
+                  label="¿Cómo se usa?"
+                  open={openAcc.use}
+                  onClick={() => setOpenAcc((s) => ({ ...s, use: !s.use }))}
+                />
                 {openAcc.use && (
-                  <ul className="pl-4 list-disc text-[14px] text-neutral-700 space-y-1">
-                    {data!.accordions!.howToUse!.map((li, i) => <li key={`use_${i}`}>{li}</li>)}
+                  <ul className="pl-4 list-disc text-[13px] text-neutral-700 space-y-1">
+                    {data!.accordions!.howToUse!.map((li, i) => (
+                      <li key={`use_${i}`}>
+                        <MD className="text-[13px] leading-relaxed">{li}</MD>
+                      </li>
+                    ))}
                   </ul>
                 )}
               </div>
@@ -332,8 +379,18 @@ export default function ProgramDetail({
             <h3 className="text-lg font-semibold">¿Estás seguro?</h3>
             <p className="text-sm text-neutral-600 mt-2">Esto dejará el programa como no iniciado.</p>
             <div className="mt-4 grid grid-cols-2 gap-2">
-              <button onClick={cancelReset} className="rounded-xl border border-neutral-200 py-2 text-sm font-medium hover:bg-neutral-50">Cancelar</button>
-              <button onClick={confirmReset} className="rounded-xl bg-red-600 text-white py-2 text-sm font-semibold hover:bg-red-700">Reiniciar</button>
+              <button
+                onClick={cancelReset}
+                className="rounded-xl border border-neutral-200 py-2 text-sm font-medium hover:bg-neutral-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmReset}
+                className="rounded-xl bg-red-600 text-white py-2 text-sm font-semibold hover:bg-red-700"
+              >
+                Reiniciar
+              </button>
             </div>
           </div>
         </div>
@@ -344,7 +401,9 @@ export default function ProgramDetail({
         <>
           <div className="mt-6">
             <div className="flex items-center justify-between mb-2">
-              <div className="text-sm font-medium">Progreso: Día {Math.min(currentDay, totalDays)} / {totalDays}</div>
+              <div className="text-sm font-medium">
+                Progreso: Día {Math.min(currentDay, totalDays)} / {totalDays}
+              </div>
               <div className="text-sm text-neutral-500">{progressPct}%</div>
             </div>
             <div className="h-2 w-full rounded-full bg-neutral-200 overflow-hidden">
@@ -357,7 +416,9 @@ export default function ProgramDetail({
               onClick={() => setViewedDay((d) => Math.max(1, d - 1))}
               disabled={viewedDay <= 1}
               className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border ${
-                viewedDay <= 1 ? 'text-neutral-400 border-neutral-200 cursor-not-allowed' : 'text-neutral-700 border-neutral-300 hover:bg-neutral-50'
+                viewedDay <= 1
+                  ? 'text-neutral-400 border-neutral-200 cursor-not-allowed'
+                  : 'text-neutral-700 border-neutral-300 hover:bg-neutral-50'
               }`}
               aria-label="Día anterior"
             >
@@ -370,12 +431,22 @@ export default function ProgramDetail({
               onClick={() => setViewedDay((d) => Math.min(currentDay, d + 1))}
               disabled={viewedDay >= currentDay}
               className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border ${
-                viewedDay >= currentDay ? 'text-neutral-400 border-neutral-200 cursor-not-allowed' : 'text-neutral-700 border-neutral-300 hover:bg-neutral-50'
+                viewedDay >= currentDay
+                  ? 'text-neutral-400 border-neutral-200 cursor-not-allowed'
+                  : 'text-neutral-700 border-neutral-300 hover:bg-neutral-50'
               }`}
               aria-label="Día siguiente"
-              title={viewedDay >= currentDay ? 'El plan se revela día a día. Se desbloquea mañana.' : 'Ir al siguiente día'}
+              title={
+                viewedDay >= currentDay
+                  ? 'El plan se revela día a día. Se desbloquea mañana.'
+                  : 'Ir al siguiente día'
+              }
             >
-              {viewedDay >= currentDay ? <>Bloqueado <Lock className="w-4 h-4" /></> : <>Siguiente <ChevronRight className="w-4 h-4" /></>}
+              {viewedDay >= currentDay ? (
+                <>Bloqueado <Lock className="w-4 h-4" /></>
+              ) : (
+                <>Siguiente <ChevronRight className="w-4 h-4" /></>
+              )}
             </button>
           </div>
         </>
@@ -404,21 +475,35 @@ export default function ProgramDetail({
                         aria-label="Los checks se hacen en Mi Zona"
                         title="Los checks se hacen en Mi Zona"
                       >
-                        {done ? <CheckCircle2 className="w-5 h-5 text-green-600" /> : <Circle className="w-5 h-5 text-neutral-400" />}
+                        {done ? (
+                          <CheckCircle2 className="w-5 h-5 text-green-600" />
+                        ) : (
+                          <Circle className="w-5 h-5 text-neutral-400" />
+                        )}
                       </button>
 
                       <div className="flex-1">
-                        <div className="text-[15px]">{t.label}</div>
+                        {/* Label con Markdown ligero */}
+                        <div className="text-[15px]">
+                          <MD className="text-[15px]">{t.label}</MD>
+                        </div>
+                        {/* toggle detalle */}
                         {t.detail && (
                           <button
                             onClick={() => toggleTaskOpen(t, i)}
                             className="mt-1 inline-flex items-center gap-1 text-[13px] text-neutral-700 hover:underline"
                           >
-                            {isOpen ? <>Ocultar <ChevronUp className="w-3 h-3" /></> : <>Ver detalle <ChevronDown className="w-3 h-3" /></>}
+                            {isOpen ? (
+                              <>Ocultar <ChevronUp className="w-3 h-3" /></>
+                            ) : (
+                              <>Ver detalle <ChevronDown className="w-3 h-3" /></>
+                            )}
                           </button>
                         )}
                         {t.detail && isOpen && (
-                          <div className="text-[13px] text-neutral-600 mt-1">{t.detail}</div>
+                          <MD className="text-[13px] text-neutral-600 mt-1">
+                            {t.detail}
+                          </MD>
                         )}
                       </div>
                     </div>
