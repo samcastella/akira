@@ -1,6 +1,8 @@
+// src/components/ProgramDetail.tsx
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import {
   RotateCcw,
@@ -30,13 +32,11 @@ type ProgramJson = {
   days: JsonDay[];
 };
 
-type DayProgressV2 = Record<number, Record<string, boolean>>; // day -> (taskId -> done)
-type ActiveProgram = {
-  startedAt: string; // YYYY-MM-DD
-  progress: DayProgressV2;
-};
+type DayProgressV2 = Record<number, Record<string, boolean>>;
+type ActiveProgram = { startedAt: string; progress: DayProgressV2 };
 
 const LS_ACTIVE = 'akira_programs_active_v1';
+const LS_ACTIVE_COMPAT = 'akira_program_active'; // usado por ProgramService/Mi Zona
 
 const DATA_LOADERS: Record<string, () => Promise<ProgramJson>> = {
   'lectura-30': async () => {
@@ -86,22 +86,21 @@ export default function ProgramDetail({
   slug,
   imageSrc,
   title,
-  shortDescription: _shortDescription, // no se muestra aquí
+  shortDescription: _shortDescription, // oculto aquí
   howItWorks,
 }: Props) {
+  const router = useRouter();
+
   const [data, setData] = useState<ProgramJson | null>(null);
   const [activeMap, setActiveMap] = useState<Record<string, ActiveProgram>>({});
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [infoOpen, setInfoOpen] = useState(false); // pop-up checks en Mi Zona
+  const [infoOpen, setInfoOpen] = useState(false);
 
-  // acordeones (hero)
   const [openAcc, setOpenAcc] = useState<{ do: boolean; get: boolean; use: boolean }>({
     do: false,
     get: false,
     use: false,
   });
-
-  // control de despliegue por tarea (detalle “+”)
   const [openTasks, setOpenTasks] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
@@ -130,7 +129,7 @@ export default function ProgramDetail({
 
   const currentDay = useMemo(() => {
     if (!active?.startedAt || totalDays <= 0) return 1;
-    const delta = daysBetween(active.startedAt, todayKey()); // 0=primer día
+    const delta = daysBetween(active.startedAt, todayKey());
     return Math.min(totalDays, Math.max(1, delta + 1));
   }, [active?.startedAt, totalDays]);
 
@@ -141,11 +140,7 @@ export default function ProgramDetail({
 
   const dayData = useMemo(() => {
     if (!data || totalDays === 0) return null;
-    return (
-      data.days.find((d) => d.day === viewedDay) ??
-      data.days[viewedDay - 1] ??
-      null
-    );
+    return data.days.find((d) => d.day === viewedDay) ?? data.days[viewedDay - 1] ?? null;
   }, [data, viewedDay, totalDays]);
 
   const tasks: JsonTask[] = dayData?.tasks ?? [];
@@ -164,46 +159,42 @@ export default function ProgramDetail({
         migrated[id] = Boolean(raw[i]);
       });
       const next = { ...activeMap };
-      next[slug] = {
-        ...entry,
-        progress: { ...entry.progress, [dayNum]: migrated },
-      };
+      next[slug] = { ...entry, progress: { ...entry.progress, [dayNum]: migrated } };
       saveActive(next);
       setActiveMap(next);
       return migrated;
     }
     return raw as Record<string, boolean>;
   }
-
   const dayProgressMap = getDayProgressMap(viewedDay);
 
   const progressPct = useMemo(() => {
     if (!active?.startedAt || totalDays === 0) return 0;
-    const passed = Math.min(
-      totalDays,
-      Math.max(0, daysBetween(active.startedAt, todayKey()) + 1)
-    );
+    const passed = Math.min(totalDays, Math.max(0, daysBetween(active.startedAt, todayKey()) + 1));
     return Math.round((passed / totalDays) * 100);
   }, [active?.startedAt, totalDays]);
 
   function startProgram() {
-    const next = { ...activeMap };
-    if (!next[slug]) {
-      next[slug] = { startedAt: todayKey(), progress: {} };
+    setActiveMap((prev) => {
+      const next = { ...prev, [slug]: { startedAt: todayKey(), progress: {} } };
       saveActive(next);
-      setActiveMap(next);
-    }
+      // mantener compat limpio
+      try { localStorage.removeItem(LS_ACTIVE_COMPAT); } catch {}
+      return next;
+    });
   }
 
   function requestReset() {
     setConfirmOpen(true);
   }
   function confirmReset() {
-    // Reinicia desde hoy y limpia progreso del programa
-    const next = { ...activeMap };
-    next[slug] = { startedAt: todayKey(), progress: {} };
-    saveActive(next);
-    setActiveMap(next);
+    // Reinicia desde hoy y limpia cualquier caché compatible
+    setActiveMap((prev) => {
+      const next = { ...prev, [slug]: { startedAt: todayKey(), progress: {} } };
+      saveActive(next);
+      try { localStorage.removeItem(LS_ACTIVE_COMPAT); } catch {}
+      return next;
+    });
     setOpenTasks({});
     setViewedDay(1);
     setConfirmOpen(false);
@@ -214,20 +205,15 @@ export default function ProgramDetail({
 
   function toggleTaskOpen(task: JsonTask, index: number) {
     const taskId = task.id ?? `task_${index}`;
-    setOpenTasks((prev) => ({ ...prev, [taskId]: !prev[taskId] }));
+    setOpenTasks((p) => ({ ...p, [taskId]: !p[taskId] }));
   }
 
-  // helpers acordeones
   const ARow: React.FC<{ label: string; open: boolean; onClick: () => void }> = ({
     label,
     open,
     onClick,
   }) => (
-    <button
-      onClick={onClick}
-      className="w-full flex items-center justify-between py-3"
-      aria-expanded={open}
-    >
+    <button onClick={onClick} className="w-full flex items-center justify-between py-3" aria-expanded={open}>
       <span className="text-[15px] font-medium">{label}</span>
       {open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
     </button>
@@ -235,22 +221,26 @@ export default function ProgramDetail({
 
   return (
     <div className="px-4 pb-24 pt-4 bg-white">
-      {/* Hero 16:9 full-bleed (sin huecos laterales ni arriba) */}
+      {/* Top bar: botón Volver */}
+      <div className="flex items-center justify-end mb-2">
+        <button
+          onClick={() => { try { router.back(); } catch { location.href = '/habitos'; } }}
+          className="text-sm font-medium px-3 py-1.5 rounded-lg border border-neutral-300 hover:bg-neutral-50"
+        >
+          Volver
+        </button>
+      </div>
+
+      {/* Hero 16:9 full-bleed */}
       {imageSrc && (
         <div className="-mx-4 mb-4">
           <div className="relative w-full aspect-[16/9]">
-            <Image
-              src={imageSrc}
-              alt={title}
-              fill
-              className="object-cover"
-              priority
-            />
+            <Image src={imageSrc} alt={title} fill className="object-cover" priority />
           </div>
         </div>
       )}
 
-      {/* Título y chip de duración */}
+      {/* Título y chip */}
       <h1 className="text-2xl font-semibold">{title}</h1>
       {data?.durationDays ? (
         <div className="mt-1 inline-flex items-center gap-2">
@@ -260,11 +250,9 @@ export default function ProgramDetail({
         </div>
       ) : null}
 
-      {/* Introducción (sin borde y sin título “Introducción”) */}
+      {/* Introducción (sin borde ni título) */}
       <div className="mt-2">
-        <p className="text-[14px] text-neutral-700 mt-1 leading-relaxed">
-          {howItWorks}
-        </p>
+        <p className="text-[14px] text-neutral-700 mt-1 leading-relaxed">{howItWorks}</p>
 
         {(data?.accordions?.whatYouWillDo?.length ||
           data?.accordions?.whatYouWillGet?.length ||
@@ -272,16 +260,10 @@ export default function ProgramDetail({
           <div className="mt-3 divide-y divide-neutral-200">
             {data?.accordions?.whatYouWillDo?.length ? (
               <div className="py-2">
-                <ARow
-                  label="¿Qué vas a hacer?"
-                  open={openAcc.do}
-                  onClick={() => setOpenAcc((s) => ({ ...s, do: !s.do }))}
-                />
+                <ARow label="¿Qué vas a hacer?" open={openAcc.do} onClick={() => setOpenAcc((s) => ({ ...s, do: !s.do }))} />
                 {openAcc.do && (
                   <ul className="pl-4 list-disc text-[14px] text-neutral-700 space-y-1">
-                    {data!.accordions!.whatYouWillDo!.map((li, i) => (
-                      <li key={`do_${i}`}>{li}</li>
-                    ))}
+                    {data!.accordions!.whatYouWillDo!.map((li, i) => <li key={`do_${i}`}>{li}</li>)}
                   </ul>
                 )}
               </div>
@@ -289,16 +271,10 @@ export default function ProgramDetail({
 
             {data?.accordions?.whatYouWillGet?.length ? (
               <div className="py-2">
-                <ARow
-                  label="¿Qué vas a conseguir?"
-                  open={openAcc.get}
-                  onClick={() => setOpenAcc((s) => ({ ...s, get: !s.get }))}
-                />
+                <ARow label="¿Qué vas a conseguir?" open={openAcc.get} onClick={() => setOpenAcc((s) => ({ ...s, get: !s.get }))} />
                 {openAcc.get && (
                   <ul className="pl-4 list-disc text-[14px] text-neutral-700 space-y-1">
-                    {data!.accordions!.whatYouWillGet!.map((li, i) => (
-                      <li key={`get_${i}`}>{li}</li>
-                    ))}
+                    {data!.accordions!.whatYouWillGet!.map((li, i) => <li key={`get_${i}`}>{li}</li>)}
                   </ul>
                 )}
               </div>
@@ -306,16 +282,10 @@ export default function ProgramDetail({
 
             {data?.accordions?.howToUse?.length ? (
               <div className="py-2">
-                <ARow
-                  label="¿Cómo se usa?"
-                  open={openAcc.use}
-                  onClick={() => setOpenAcc((s) => ({ ...s, use: !s.use }))}
-                />
+                <ARow label="¿Cómo se usa?" open={openAcc.use} onClick={() => setOpenAcc((s) => ({ ...s, use: !s.use }))} />
                 {openAcc.use && (
                   <ul className="pl-4 list-disc text-[14px] text-neutral-700 space-y-1">
-                    {data!.accordions!.howToUse!.map((li, i) => (
-                      <li key={`use_${i}`}>{li}</li>
-                    ))}
+                    {data!.accordions!.howToUse!.map((li, i) => <li key={`use_${i}`}>{li}</li>)}
                   </ul>
                 )}
               </div>
@@ -350,42 +320,25 @@ export default function ProgramDetail({
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-2xl p-5 w-[90%] max-w-md shadow-lg">
             <h3 className="text-lg font-semibold">¿Estás seguro?</h3>
-            <p className="text-sm text-neutral-600 mt-2">
-              Esto borrará todos los avances hechos hasta ahora.
-            </p>
+            <p className="text-sm text-neutral-600 mt-2">Esto borrará todos los avances hechos hasta ahora.</p>
             <div className="mt-4 grid grid-cols-2 gap-2">
-              <button
-                onClick={cancelReset}
-                className="rounded-xl border border-neutral-200 py-2 text-sm font-medium hover:bg-neutral-50"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={confirmReset}
-                className="rounded-xl bg-red-600 text-white py-2 text-sm font-semibold hover:bg-red-700"
-              >
-                Reiniciar
-              </button>
+              <button onClick={cancelReset} className="rounded-xl border border-neutral-200 py-2 text-sm font-medium hover:bg-neutral-50">Cancelar</button>
+              <button onClick={confirmReset} className="rounded-xl bg-red-600 text-white py-2 text-sm font-semibold hover:bg-red-700">Reiniciar</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Progreso + Navegación de día: solo si el programa está iniciado */}
+      {/* Progreso + Navegación: solo si iniciado */}
       {started && data && totalDays > 0 && (
         <>
           <div className="mt-6">
             <div className="flex items-center justify-between mb-2">
-              <div className="text-sm font-medium">
-                Progreso: Día {Math.min(currentDay, totalDays)} / {totalDays}
-              </div>
+              <div className="text-sm font-medium">Progreso: Día {Math.min(currentDay, totalDays)} / {totalDays}</div>
               <div className="text-sm text-neutral-500">{progressPct}%</div>
             </div>
             <div className="h-2 w-full rounded-full bg-neutral-200 overflow-hidden">
-              <div
-                className="h-full bg-black transition-all"
-                style={{ width: `${progressPct}%` }}
-              />
+              <div className="h-full bg-black transition-all" style={{ width: `${progressPct}%` }} />
             </div>
           </div>
 
@@ -394,9 +347,7 @@ export default function ProgramDetail({
               onClick={() => setViewedDay((d) => Math.max(1, d - 1))}
               disabled={viewedDay <= 1}
               className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border ${
-                viewedDay <= 1
-                  ? 'text-neutral-400 border-neutral-200 cursor-not-allowed'
-                  : 'text-neutral-700 border-neutral-300 hover:bg-neutral-50'
+                viewedDay <= 1 ? 'text-neutral-400 border-neutral-200 cursor-not-allowed' : 'text-neutral-700 border-neutral-300 hover:bg-neutral-50'
               }`}
               aria-label="Día anterior"
             >
@@ -409,33 +360,19 @@ export default function ProgramDetail({
               onClick={() => setViewedDay((d) => Math.min(currentDay, d + 1))}
               disabled={viewedDay >= currentDay}
               className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border ${
-                viewedDay >= currentDay
-                  ? 'text-neutral-400 border-neutral-200 cursor-not-allowed'
-                  : 'text-neutral-700 border-neutral-300 hover:bg-neutral-50'
+                viewedDay >= currentDay ? 'text-neutral-400 border-neutral-200 cursor-not-allowed' : 'text-neutral-700 border-neutral-300 hover:bg-neutral-50'
               }`}
               aria-label="Día siguiente"
-              title={
-                viewedDay >= currentDay
-                  ? 'El plan se revela día a día. Se desbloquea mañana.'
-                  : 'Ir al siguiente día'
-              }
+              title={viewedDay >= currentDay ? 'El plan se revela día a día. Se desbloquea mañana.' : 'Ir al siguiente día'}
             >
-              {viewedDay >= currentDay ? (
-                <>
-                  Bloqueado <Lock className="w-4 h-4" />
-                </>
-              ) : (
-                <>
-                  Siguiente <ChevronRight className="w-4 h-4" />
-                </>
-              )}
+              {viewedDay >= currentDay ? <>Bloqueado <Lock className="w-4 h-4" /></> : <>Siguiente <ChevronRight className="w-4 h-4" /></>}
             </button>
           </div>
         </>
       )}
 
-      {/* Lista de tareas (solo lectura aquí) */}
-      {data && totalDays > 0 && (
+      {/* Lista de tareas: solo si iniciado */}
+      {started && data && totalDays > 0 && (
         <div className="mt-3">
           {tasks.length === 0 ? (
             <div className="text-sm text-neutral-600 border border-dashed border-neutral-300 rounded-2xl p-4">
@@ -450,7 +387,6 @@ export default function ProgramDetail({
                 return (
                   <div key={id} className="bg-white">
                     <div className="w-full text-left px-4 py-3 flex items-start gap-3">
-                      {/* Estado (icono clicable -> pop-up) */}
                       <button
                         type="button"
                         onClick={() => setInfoOpen(true)}
@@ -458,36 +394,21 @@ export default function ProgramDetail({
                         aria-label="Los checks se hacen en Mi Zona"
                         title="Los checks se hacen en Mi Zona"
                       >
-                        {done ? (
-                          <CheckCircle2 className="w-5 h-5 text-green-600" />
-                        ) : (
-                          <Circle className="w-5 h-5 text-neutral-400" />
-                        )}
+                        {done ? <CheckCircle2 className="w-5 h-5 text-green-600" /> : <Circle className="w-5 h-5 text-neutral-400" />}
                       </button>
 
                       <div className="flex-1">
                         <div className="text-[15px]">{t.label}</div>
-                        {/* toggle detalle */}
                         {t.detail && (
                           <button
                             onClick={() => toggleTaskOpen(t, i)}
                             className="mt-1 inline-flex items-center gap-1 text-[13px] text-neutral-700 hover:underline"
                           >
-                            {isOpen ? (
-                              <>
-                                Ocultar <ChevronUp className="w-3 h-3" />
-                              </>
-                            ) : (
-                              <>
-                                Ver detalle <ChevronDown className="w-3 h-3" />
-                              </>
-                            )}
+                            {isOpen ? <>Ocultar <ChevronUp className="w-3 h-3" /></> : <>Ver detalle <ChevronDown className="w-3 h-3" /></>}
                           </button>
                         )}
                         {t.detail && isOpen && (
-                          <div className="text-[13px] text-neutral-600 mt-1">
-                            {t.detail}
-                          </div>
+                          <div className="text-[13px] text-neutral-600 mt-1">{t.detail}</div>
                         )}
                       </div>
                     </div>
@@ -502,7 +423,7 @@ export default function ProgramDetail({
         </div>
       )}
 
-      {/* Pop-up informativo de checks en Mi Zona */}
+      {/* Pop-up informativo */}
       {infoOpen && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-2xl p-5 w-[90%] max-w-md shadow-lg relative">
