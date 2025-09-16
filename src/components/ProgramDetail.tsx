@@ -14,6 +14,7 @@ import {
   ChevronUp,
   Lock,
   X,
+  Play, // <- icono para "Empezar programa"
 } from 'lucide-react';
 
 type JsonTask = { id?: string; label: string; detail?: string; tags?: string[] };
@@ -235,12 +236,13 @@ export default function ProgramDetail({
             <Image src={imageSrc} alt={title} fill className="object-cover" priority />
           </div>
 
-          {/* Botón Volver overlay */}
+          {/* Botón Volver overlay (estilo ghost/pill como el resto de la app) */}
           <div className="absolute top-3 right-3">
             <button
               onClick={() => { try { router.back(); } catch { location.href = '/habitos'; } }}
-              className="text-sm font-medium px-3 py-1.5 rounded-lg border border-white/60 bg-white/70 backdrop-blur hover:bg-white"
+              className="inline-flex items-center gap-1.5 text-[13px] font-medium px-3.5 py-2 rounded-full border border-neutral-200 bg-white/80 backdrop-blur shadow-sm hover:bg-white active:scale-[0.98]"
             >
+              <ChevronLeft className="w-4 h-4" />
               Volver
             </button>
           </div>
@@ -306,14 +308,15 @@ export default function ProgramDetail({
         {!started ? (
           <button
             onClick={startProgram}
-            className="inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold bg-black text-white active:scale-[0.98] transition"
+            className="inline-flex items-center gap-2 rounded-2xl px-5 py-3 text-sm font-semibold bg-black text-white shadow-sm active:scale-[0.98]"
           >
+            <Play className="w-4 h-4" />
             Empezar programa
           </button>
         ) : (
           <button
             onClick={requestReset}
-            className="inline-flex items-center gap-2 justify-center rounded-xl px-3 py-2 text-xs font-medium bg-neutral-100 text-neutral-700 hover:bg-neutral-200 transition"
+            className="inline-flex items-center gap-2 justify-center rounded-xl px-3.5 py-2.5 text-xs font-medium bg-neutral-100 text-neutral-700 hover:bg-neutral-200 transition"
             title="Reiniciar programa"
           >
             <RotateCcw className="w-4 h-4" />
