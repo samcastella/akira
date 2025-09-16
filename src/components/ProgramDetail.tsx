@@ -103,6 +103,7 @@ export default function ProgramDetail({
   });
   const [openTasks, setOpenTasks] = useState<Record<string, boolean>>({});
 
+  // cargar JSON
   useEffect(() => {
     const loader = DATA_LOADERS[slug];
     if (!loader) return;
@@ -115,6 +116,7 @@ export default function ProgramDetail({
       .catch(() => setData(null));
   }, [slug]);
 
+  // cargar progreso
   useEffect(() => {
     setActiveMap(loadActive());
   }, []);
@@ -145,6 +147,7 @@ export default function ProgramDetail({
 
   const tasks: JsonTask[] = dayData?.tasks ?? [];
 
+  /** Lee el progreso del día visualizado como mapa taskId->done */
   function getDayProgressMap(dayNum: number): Record<string, boolean> {
     const entry = activeMap[slug];
     if (!entry) return {};
@@ -168,29 +171,31 @@ export default function ProgramDetail({
   }
   const dayProgressMap = getDayProgressMap(viewedDay);
 
+  // % progreso por días transcurridos
   const progressPct = useMemo(() => {
     if (!active?.startedAt || totalDays === 0) return 0;
     const passed = Math.min(totalDays, Math.max(0, daysBetween(active.startedAt, todayKey()) + 1));
     return Math.round((passed / totalDays) * 100);
   }, [active?.startedAt, totalDays]);
 
+  /** Empezar programa: crea entrada limpia para el slug */
   function startProgram() {
     setActiveMap((prev) => {
       const next = { ...prev, [slug]: { startedAt: todayKey(), progress: {} } };
       saveActive(next);
-      // mantener compat limpio
       try { localStorage.removeItem(LS_ACTIVE_COMPAT); } catch {}
       return next;
     });
   }
 
+  /** Reinicio: dejar el programa en estado NO iniciado */
   function requestReset() {
     setConfirmOpen(true);
   }
   function confirmReset() {
-    // Reinicia desde hoy y limpia cualquier caché compatible
     setActiveMap((prev) => {
-      const next = { ...prev, [slug]: { startedAt: todayKey(), progress: {} } };
+      const next = { ...prev };
+      delete next[slug]; // elimina el programa activo => no iniciado
       saveActive(next);
       try { localStorage.removeItem(LS_ACTIVE_COMPAT); } catch {}
       return next;
@@ -203,11 +208,13 @@ export default function ProgramDetail({
     setConfirmOpen(false);
   }
 
+  // Vista SOLO LECTURA aquí: los checks se hacen en Mi Zona
   function toggleTaskOpen(task: JsonTask, index: number) {
     const taskId = task.id ?? `task_${index}`;
     setOpenTasks((p) => ({ ...p, [taskId]: !p[taskId] }));
   }
 
+  // Row de acordeón
   const ARow: React.FC<{ label: string; open: boolean; onClick: () => void }> = ({
     label,
     open,
@@ -220,22 +227,22 @@ export default function ProgramDetail({
   );
 
   return (
-    <div className="px-4 pb-24 pt-4 bg-white">
-      {/* Top bar: botón Volver */}
-      <div className="flex items-center justify-end mb-2">
-        <button
-          onClick={() => { try { router.back(); } catch { location.href = '/habitos'; } }}
-          className="text-sm font-medium px-3 py-1.5 rounded-lg border border-neutral-300 hover:bg-neutral-50"
-        >
-          Volver
-        </button>
-      </div>
-
-      {/* Hero 16:9 full-bleed */}
+    <div className="px-4 pb-24 bg-white"> {/* sin pt -> sin margen arriba */}
+      {/* Hero 16:9 full-bleed con botón Volver sobre la imagen */}
       {imageSrc && (
-        <div className="-mx-4 mb-4">
+        <div className="-mx-4 mb-4 relative">
           <div className="relative w-full aspect-[16/9]">
             <Image src={imageSrc} alt={title} fill className="object-cover" priority />
+          </div>
+
+          {/* Botón Volver overlay */}
+          <div className="absolute top-3 right-3">
+            <button
+              onClick={() => { try { router.back(); } catch { location.href = '/habitos'; } }}
+              className="text-sm font-medium px-3 py-1.5 rounded-lg border border-white/60 bg-white/70 backdrop-blur hover:bg-white"
+            >
+              Volver
+            </button>
           </div>
         </div>
       )}
@@ -250,7 +257,7 @@ export default function ProgramDetail({
         </div>
       ) : null}
 
-      {/* Introducción (sin borde ni título) */}
+      {/* Introducción (sin borde ni “Introducción”) */}
       <div className="mt-2">
         <p className="text-[14px] text-neutral-700 mt-1 leading-relaxed">{howItWorks}</p>
 
@@ -320,7 +327,7 @@ export default function ProgramDetail({
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-2xl p-5 w-[90%] max-w-md shadow-lg">
             <h3 className="text-lg font-semibold">¿Estás seguro?</h3>
-            <p className="text-sm text-neutral-600 mt-2">Esto borrará todos los avances hechos hasta ahora.</p>
+            <p className="text-sm text-neutral-600 mt-2">Esto dejará el programa como no iniciado.</p>
             <div className="mt-4 grid grid-cols-2 gap-2">
               <button onClick={cancelReset} className="rounded-xl border border-neutral-200 py-2 text-sm font-medium hover:bg-neutral-50">Cancelar</button>
               <button onClick={confirmReset} className="rounded-xl bg-red-600 text-white py-2 text-sm font-semibold hover:bg-red-700">Reiniciar</button>
