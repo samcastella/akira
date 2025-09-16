@@ -11,6 +11,7 @@ import {
   ChevronDown,
   ChevronUp,
   Lock,
+  X,
 } from 'lucide-react';
 
 type JsonTask = { id?: string; label: string; detail?: string; tags?: string[] };
@@ -21,11 +22,10 @@ type ProgramJson = {
   shortDescription?: string;
   howItWorks?: string;
   durationDays?: number;
-  // acordeones opcionales (para hero)
   accordions?: {
-    whatYouWillDo?: string[];   // ¿Qué vas a hacer?
-    whatYouWillGet?: string[];  // ¿Qué vas a conseguir?
-    howToUse?: string[];        // Cómo se usa
+    whatYouWillDo?: string[];
+    whatYouWillGet?: string[];
+    howToUse?: string[];
   };
   days: JsonDay[];
 };
@@ -38,7 +38,6 @@ type ActiveProgram = {
 
 const LS_ACTIVE = 'akira_programs_active_v1';
 
-// Mapeo de loaders JSON (añadimos detox-tecnologico-30)
 const DATA_LOADERS: Record<string, () => Promise<ProgramJson>> = {
   'lectura-30': async () => {
     const m = await import('@/data/programs/lectura-30.json');
@@ -76,24 +75,24 @@ function saveActive(obj: Record<string, ActiveProgram>) {
 }
 
 type Props = {
-  /** Clave del data JSON, p.ej.: 'lectura-30' o 'detox-tecnologico-30' */
   slug: string;
   imageSrc?: string;
   title: string;
-  shortDescription: string;
-  howItWorks: string; // intro de 3–4 líneas
+  shortDescription: string; // se oculta en esta vista
+  howItWorks: string;
 };
 
 export default function ProgramDetail({
   slug,
   imageSrc,
   title,
-  shortDescription,
+  shortDescription: _shortDescription, // no se muestra aquí
   howItWorks,
 }: Props) {
   const [data, setData] = useState<ProgramJson | null>(null);
   const [activeMap, setActiveMap] = useState<Record<string, ActiveProgram>>({});
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false); // pop-up checks en Mi Zona
 
   // acordeones (hero)
   const [openAcc, setOpenAcc] = useState<{ do: boolean; get: boolean; use: boolean }>({
@@ -105,46 +104,41 @@ export default function ProgramDetail({
   // control de despliegue por tarea (detalle “+”)
   const [openTasks, setOpenTasks] = useState<Record<string, boolean>>({});
 
-  // cargar JSON
   useEffect(() => {
     const loader = DATA_LOADERS[slug];
     if (!loader) return;
     loader()
       .then((payload) => {
         setData(payload);
-        // reset despliegues al cambiar de programa
         setOpenAcc({ do: false, get: false, use: false });
         setOpenTasks({});
       })
       .catch(() => setData(null));
   }, [slug]);
 
-  // cargar progreso
   useEffect(() => {
     setActiveMap(loadActive());
   }, []);
 
   const active = activeMap[slug] ?? null;
+  const started = Boolean(active?.startedAt);
+
   const totalDays = useMemo(
     () => data?.durationDays ?? data?.days?.length ?? 0,
     [data]
   );
 
-  // Día "actual" por fecha (1..totalDays)
   const currentDay = useMemo(() => {
     if (!active?.startedAt || totalDays <= 0) return 1;
     const delta = daysBetween(active.startedAt, todayKey()); // 0=primer día
     return Math.min(totalDays, Math.max(1, delta + 1));
   }, [active?.startedAt, totalDays]);
 
-  // Día que se está visualizando (permite ir hacia atrás, nunca hacia adelante)
   const [viewedDay, setViewedDay] = useState<number>(1);
   useEffect(() => {
-    // al cargar data o al cambiar currentDay, fijamos la vista en el día actual
     setViewedDay(currentDay || 1);
   }, [currentDay]);
 
-  // Datos del día visualizado
   const dayData = useMemo(() => {
     if (!data || totalDays === 0) return null;
     return (
@@ -156,14 +150,12 @@ export default function ProgramDetail({
 
   const tasks: JsonTask[] = dayData?.tasks ?? [];
 
-  /** Lee el progreso del día visualizado como mapa taskId->done */
   function getDayProgressMap(dayNum: number): Record<string, boolean> {
     const entry = activeMap[slug];
     if (!entry) return {};
     const raw = entry.progress?.[dayNum] as any;
     if (!raw) return {};
     if (Array.isArray(raw)) {
-      // Migración: si alguna vez hubo arrays, mapeamos por índice
       const migrated: Record<string, boolean> = {};
       const dayTasks =
         data?.days.find((d) => d.day === dayNum)?.tasks ?? data?.days[dayNum - 1]?.tasks ?? [];
@@ -185,7 +177,6 @@ export default function ProgramDetail({
 
   const dayProgressMap = getDayProgressMap(viewedDay);
 
-  // Progreso % por días transcurridos
   const progressPct = useMemo(() => {
     if (!active?.startedAt || totalDays === 0) return 0;
     const passed = Math.min(
@@ -208,24 +199,23 @@ export default function ProgramDetail({
     setConfirmOpen(true);
   }
   function confirmReset() {
-    const next = { ...activeMap, [slug]: { startedAt: todayKey(), progress: {} } };
+    // Reinicia desde hoy y limpia progreso del programa
+    const next = { ...activeMap };
+    next[slug] = { startedAt: todayKey(), progress: {} };
     saveActive(next);
     setActiveMap(next);
-    setConfirmOpen(false);
-    // al reiniciar, vemos el día 1
+    setOpenTasks({});
     setViewedDay(1);
+    setConfirmOpen(false);
   }
   function cancelReset() {
     setConfirmOpen(false);
   }
 
-  // Vista SOLO LECTURA aquí: los checks se hacen en Mi Zona
   function toggleTaskOpen(task: JsonTask, index: number) {
     const taskId = task.id ?? `task_${index}`;
     setOpenTasks((prev) => ({ ...prev, [taskId]: !prev[taskId] }));
   }
-
-  const started = Boolean(active?.startedAt);
 
   // helpers acordeones
   const ARow: React.FC<{ label: string; open: boolean; onClick: () => void }> = ({
@@ -245,21 +235,22 @@ export default function ProgramDetail({
 
   return (
     <div className="px-4 pb-24 pt-4 bg-white">
-      {/* Hero */}
+      {/* Hero 16:9 full-bleed (sin huecos laterales ni arriba) */}
       {imageSrc && (
-        <div className="w-full overflow-hidden rounded-2xl mb-4">
-          <Image
-            src={imageSrc}
-            alt={title}
-            width={1600}
-            height={900}
-            className="w-full h-48 object-cover"
-            priority
-          />
+        <div className="-mx-4 mb-4">
+          <div className="relative w-full aspect-[16/9]">
+            <Image
+              src={imageSrc}
+              alt={title}
+              fill
+              className="object-cover"
+              priority
+            />
+          </div>
         </div>
       )}
 
-      {/* Título, chip y copy corto */}
+      {/* Título y chip de duración */}
       <h1 className="text-2xl font-semibold">{title}</h1>
       {data?.durationDays ? (
         <div className="mt-1 inline-flex items-center gap-2">
@@ -268,18 +259,13 @@ export default function ProgramDetail({
           </span>
         </div>
       ) : null}
-      <p className="text-neutral-600 mt-2 text-[15px] leading-relaxed">
-        {shortDescription}
-      </p>
 
-      {/* Intro / Cómo funciona (bloque breve bajo el hero) */}
-      <div className="mt-4 p-4 rounded-2xl border border-neutral-200 bg-white">
-        <h2 className="font-medium">Introducción</h2>
-        <p className="text-[14px] text-neutral-600 mt-1 leading-relaxed">
+      {/* Introducción (sin borde y sin título “Introducción”) */}
+      <div className="mt-2">
+        <p className="text-[14px] text-neutral-700 mt-1 leading-relaxed">
           {howItWorks}
         </p>
 
-        {/* Acordeones: ¿Qué vas a hacer? | ¿Qué vas a conseguir? | Cómo se usa */}
         {(data?.accordions?.whatYouWillDo?.length ||
           data?.accordions?.whatYouWillGet?.length ||
           data?.accordions?.howToUse?.length) && (
@@ -385,10 +371,9 @@ export default function ProgramDetail({
         </div>
       )}
 
-      {/* Progreso + Día visualizado */}
-      {data && totalDays > 0 && (
+      {/* Progreso + Navegación de día: solo si el programa está iniciado */}
+      {started && data && totalDays > 0 && (
         <>
-          {/* Barra de progreso (por días transcurridos) */}
           <div className="mt-6">
             <div className="flex items-center justify-between mb-2">
               <div className="text-sm font-medium">
@@ -404,7 +389,6 @@ export default function ProgramDetail({
             </div>
           </div>
 
-          {/* Header de navegación de día (sin spoilers) */}
           <div className="mt-6 flex items-center justify-between">
             <button
               onClick={() => setViewedDay((d) => Math.max(1, d - 1))}
@@ -419,9 +403,7 @@ export default function ProgramDetail({
               <ChevronLeft className="w-4 h-4" /> Anterior
             </button>
 
-            <div className="text-[15px] font-semibold">
-              Día {viewedDay}
-            </div>
+            <div className="text-[15px] font-semibold">Día {viewedDay}</div>
 
             <button
               onClick={() => setViewedDay((d) => Math.min(currentDay, d + 1))}
@@ -449,66 +431,94 @@ export default function ProgramDetail({
               )}
             </button>
           </div>
+        </>
+      )}
 
-          {/* Lista de tareas (solo lectura aquí) */}
-          <div className="mt-3">
-            {tasks.length === 0 ? (
-              <div className="text-sm text-neutral-600 border border-dashed border-neutral-300 rounded-2xl p-4">
-                Hoy desconectas de la app. Disfruta tu día sin móvil.
-              </div>
-            ) : (
-              <div className="rounded-2xl border border-neutral-200 overflow-hidden divide-y divide-neutral-100">
-                {tasks.map((t, i) => {
-                  const id = t.id ?? `task_${i}`;
-                  const done = Boolean(dayProgressMap[id]);
-                  const isOpen = Boolean(openTasks[id]);
-                  return (
-                    <div key={id} className="bg-white">
-                      <div
-                        className="w-full text-left px-4 py-3 flex items-start gap-3"
+      {/* Lista de tareas (solo lectura aquí) */}
+      {data && totalDays > 0 && (
+        <div className="mt-3">
+          {tasks.length === 0 ? (
+            <div className="text-sm text-neutral-600 border border-dashed border-neutral-300 rounded-2xl p-4">
+              Hoy desconectas de la app. Disfruta tu día sin móvil.
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-neutral-200 overflow-hidden divide-y divide-neutral-100">
+              {tasks.map((t, i) => {
+                const id = t.id ?? `task_${i}`;
+                const done = Boolean(dayProgressMap[id]);
+                const isOpen = Boolean(openTasks[id]);
+                return (
+                  <div key={id} className="bg-white">
+                    <div className="w-full text-left px-4 py-3 flex items-start gap-3">
+                      {/* Estado (icono clicable -> pop-up) */}
+                      <button
+                        type="button"
+                        onClick={() => setInfoOpen(true)}
+                        className="shrink-0 mt-0.5"
+                        aria-label="Los checks se hacen en Mi Zona"
+                        title="Los checks se hacen en Mi Zona"
                       >
-                        {/* Estado (solo lectura) */}
                         {done ? (
-                          <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
+                          <CheckCircle2 className="w-5 h-5 text-green-600" />
                         ) : (
-                          <Circle className="w-5 h-5 text-neutral-400 shrink-0 mt-0.5" />
+                          <Circle className="w-5 h-5 text-neutral-400" />
                         )}
-                        <div className="flex-1">
-                          <div className="text-[15px]">{t.label}</div>
-                          {/* toggle detalle */}
-                          {t.detail && (
-                            <button
-                              onClick={() => toggleTaskOpen(t, i)}
-                              className="mt-1 inline-flex items-center gap-1 text-[13px] text-neutral-700 hover:underline"
-                            >
-                              {isOpen ? (
-                                <>
-                                  Ocultar <ChevronUp className="w-3 h-3" />
-                                </>
-                              ) : (
-                                <>
-                                  Ver detalle <ChevronDown className="w-3 h-3" />
-                                </>
-                              )}
-                            </button>
-                          )}
-                          {t.detail && isOpen && (
-                            <div className="text-[13px] text-neutral-600 mt-1">
-                              {t.detail}
-                            </div>
-                          )}
-                        </div>
+                      </button>
+
+                      <div className="flex-1">
+                        <div className="text-[15px]">{t.label}</div>
+                        {/* toggle detalle */}
+                        {t.detail && (
+                          <button
+                            onClick={() => toggleTaskOpen(t, i)}
+                            className="mt-1 inline-flex items-center gap-1 text-[13px] text-neutral-700 hover:underline"
+                          >
+                            {isOpen ? (
+                              <>
+                                Ocultar <ChevronUp className="w-3 h-3" />
+                              </>
+                            ) : (
+                              <>
+                                Ver detalle <ChevronDown className="w-3 h-3" />
+                              </>
+                            )}
+                          </button>
+                        )}
+                        {t.detail && isOpen && (
+                          <div className="text-[13px] text-neutral-600 mt-1">
+                            {t.detail}
+                          </div>
+                        )}
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            )}
-            <p className="text-xs text-neutral-500 mt-2">
-              * Los checks se hacen en <strong>Mi Zona</strong>. Aquí puedes revisar tu progreso. El plan se revela día a día.
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <p className="text-xs text-neutral-500 mt-2">
+            * Los checks se hacen en <strong>Mi Zona</strong>. Aquí puedes revisar tu progreso. El plan se revela día a día.
+          </p>
+        </div>
+      )}
+
+      {/* Pop-up informativo de checks en Mi Zona */}
+      {infoOpen && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl p-5 w-[90%] max-w-md shadow-lg relative">
+            <button
+              onClick={() => setInfoOpen(false)}
+              className="absolute top-3 right-3 p-1 rounded-full hover:bg-neutral-100"
+              aria-label="Cerrar"
+              title="Cerrar"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <p className="text-[15px] text-neutral-800">
+              Los checks se hacen en <strong>Mi Zona</strong>. Aquí puedes revisar tu progreso. El plan se revela día a día.
             </p>
           </div>
-        </>
+        </div>
       )}
     </div>
   );
