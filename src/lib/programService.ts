@@ -46,6 +46,11 @@ export type UserTaskRow = {
 export const TABLE_PROGRAMS = "user_programs";
 export const TABLE_TASKS = "user_program_tasks";
 
+// Helper: compara contra slugRoute o slugData
+function matchesSlug(meta: ProgramMeta, slug: string) {
+  return meta.slugRoute === slug || meta.slugData === slug;
+}
+
 // Normaliza el JSON + enlaza con metadatos del catálogo
 function normalizeProgramDef(slug: string, input: any): ProgramDef {
   const meta = getBySlug(slug);
@@ -82,8 +87,9 @@ const lecturaProgram: ProgramDef = normalizeProgramDef(
   lecturaProgramRaw as any
 );
 
+// Acepta tanto slugRoute (ej. "lectura") como slugData (ej. "lectura-30")
 export function getProgramDef(slug: string): ProgramDef {
-  if (slug === lecturaProgram.slug) return lecturaProgram;
+  if (matchesSlug(lecturaProgram, slug)) return lecturaProgram;
   throw new Error(`Programa no soportado: ${slug}`);
 }
 

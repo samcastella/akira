@@ -5,78 +5,36 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { Bookmark, BookmarkCheck, ChevronRight } from 'lucide-react';
 
+// Registro central de programas
+import {
+  PROGRAMS,
+  AVAILABLE_PROGRAM_SLUGS,
+  toIndexCard,
+  type ThematicCategory,
+} from '@/data/programs';
+
 /* ===========================
    Tipos y constantes
    =========================== */
 type ProgramType = 'good' | 'bad';
-type Category = 'salud' | 'bienestar' | 'productividad' | 'malos-habitos';
+type Category = ThematicCategory;
 
 type Program = {
   id: string;
-  slug: string;
+  slug: string; // ruta: /programas/{slug}
   title: string;
   description: string;
   days: number;
-  type: ProgramType;
-  category: Category;
+  type: ProgramType; // bloque principal: good/bad
+  categories: Category[]; // temáticas (pueden ser varias)
   thumbnail?: string;
 };
 
 const LS_SAVED = 'akira_saved_programs_v1';
 const LS_ACTIVE = 'akira_programs_active_v1';
 
-/** Slugs que YA existen en la app */
-const AVAILABLE_PROGRAM_SLUGS = new Set<string>([
-  'lectura', // ← lectura disponible
-]);
-
-// Datos demo (puedes moverlos a src/data más adelante)
-const ALL_PROGRAMS: Program[] = [
-  {
-    id: 'read-30',
-    slug: 'lectura',
-    title: 'Conviértete en lector',
-    description:
-      'Programa basado en neurociencia con tareas diarias para que disfrutes del proceso de convertirte en lector',
-    days: 30,
-    type: 'good',
-    category: 'productividad',
-    thumbnail: '/images/programs/reading.jpg',
-  },
-  {
-    id: 'morning-21',
-    slug: 'mananas-activas',
-    title: 'Mañanas activas',
-    description:
-      'Rutina guiada para construir mañanas con enfoque y energía desde el primer minuto',
-    days: 21,
-    type: 'good',
-    category: 'bienestar',
-    thumbnail: '/images/programs/morning.jpg',
-  },
-  {
-    id: 'quit-smoking-90',
-    slug: 'deja-de-ser-fumador',
-    title: 'Deja de ser fumador',
-    description:
-      'Programa basado en neurociencia con tareas diarias para que elimines el tabaco de tu vida',
-    days: 90,
-    type: 'bad',
-    category: 'malos-habitos',
-    thumbnail: '/images/programs/quit.jpg',
-  },
-  {
-    id: 'sugar-30',
-    slug: 'desafio-azucar',
-    title: 'Menos azúcar en 30 días',
-    description:
-      'Plan amable y progresivo para reducir el azúcar y estabilizar energía y antojos',
-    days: 30,
-    type: 'bad',
-    category: 'salud',
-    thumbnail: '/images/programs/sugar.jpg',
-  },
-];
+/* Construimos ALL_PROGRAMS desde el registro central */
+const ALL_PROGRAMS: Program[] = PROGRAMS.map(toIndexCard) as Program[];
 
 /* ===========================
    Utils localStorage
@@ -225,26 +183,27 @@ export default function HabitosPage() {
     setActiveCount(loadActiveCount());
   }, []);
 
-  // Solo “existen” los programas cuyo slug esté en AVAILABLE_PROGRAM_SLUGS
+  // Solo “existen” los programas cuyo slug está marcado como available en el registro
   const existingPrograms = useMemo(
     () => ALL_PROGRAMS.filter((p) => AVAILABLE_PROGRAM_SLUGS.has(p.slug)),
     []
   );
 
   const filtered = useMemo(() => {
-    const base = existingPrograms; // bebemos solo de los ya hechos
+    const base = existingPrograms; // solo los ya hechos
     const q = query.trim().toLowerCase();
     if (!q) return base;
-    return base.filter(
-      (p) =>
+    return base.filter((p) => {
+      const inText =
         p.title.toLowerCase().includes(q) ||
-        p.description.toLowerCase().includes(q) ||
-        p.category.toLowerCase().includes(q)
-    );
+        p.description.toLowerCase().includes(q);
+      const inCats = p.categories.some((c) => c.toLowerCase().includes(q));
+      return inText || inCats;
+    });
   }, [query, existingPrograms]);
 
-  const good = filtered.filter((p) => p.type === 'good'); // aquí saldrá Lectura
-  const bad: Program[] = []; // de momento no hay disponibles
+  const good = filtered.filter((p) => p.type === 'good');
+  const bad = filtered.filter((p) => p.type === 'bad');
 
   const toggleSave = (id: string) => {
     const next = new Set(saved);
@@ -254,7 +213,7 @@ export default function HabitosPage() {
     saveSaved(next);
   };
 
-  const allCount = existingPrograms.length; // 1
+  const allCount = existingPrograms.length;
   const savedCount = saved.size;
 
   return (
@@ -270,7 +229,7 @@ export default function HabitosPage() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Buscar programas…"
-          className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-[16px] outline-none focus:ring-2 focus:ring-black/10" // 16px evita zoom iOS
+          className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-[16px] outline-none focus:ring-2 focus:ring-black/10"
         />
       </div>
 

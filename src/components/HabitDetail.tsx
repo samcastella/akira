@@ -26,24 +26,31 @@ export default function HabitDetail({
   const [progressPct, setProgressPct] = useState<number>(0);
   const [currentDay, setCurrentDay] = useState<number>(1);
 
-  // Helpers UI
+  // Helpers UI (tolerantes a distintos metacampos)
   const heroSrc =
-    (program as any).image ||
-    (program as any).imageSrc ||
-    program.thumbnail ||
+    (program as any).thumbnail ??
+    (program as any).imageSrc ??
+    (program as any).image ??
     '/images/programs/reading.jpg';
-  const title = (program as any).name || program.title || 'Programa';
-  const totalDays = program.days ?? program.daysDef?.length ?? 30;
 
-  // Nota: algunos contenidos antiguos tienen arrays de beneficios/howItWorks.
-  // Este componente es tolerante: si hay array lo pinta; si hay string, también.
+  const title =
+    (program as any).name ??
+    (program as any).title ??
+    'Programa';
+
+  const totalDays =
+    (program as any).days ??
+    (program as any).daysDef?.length ??
+    30;
+
+  // Nota: contenidos antiguos pueden traer arrays o strings
   const benefits: string[] | undefined = (program as any).benefits;
   const howItWorksStr: string | undefined =
     typeof (program as any).howItWorks === 'string'
       ? (program as any).howItWorks
       : undefined;
   const howItWorksArr: string[] | undefined = Array.isArray(
-    (program as any).howItWorks,
+    (program as any).howItWorks
   )
     ? (program as any).howItWorks
     : undefined;
@@ -60,13 +67,11 @@ export default function HabitDetail({
         const { daysCompleted, totalDays, currentDay } = await getProgress(
           supabase,
           userId,
-          program.slug,
+          (program as any).slug
         );
         if (!alive) return;
 
-        const pct = Math.round(
-          (daysCompleted / Math.max(1, totalDays)) * 100,
-        );
+        const pct = Math.round((daysCompleted / Math.max(1, totalDays)) * 100);
         setProgressPct(pct);
         setCurrentDay(currentDay || 1);
       } catch {
@@ -76,7 +81,7 @@ export default function HabitDetail({
     return () => {
       alive = false;
     };
-  }, [program.slug]);
+  }, [(program as any).slug]);
 
   async function handleStart() {
     try {
@@ -84,14 +89,14 @@ export default function HabitDetail({
       const userId = data.user?.id;
       if (!userId) return;
 
-      await startProgram(supabase, userId, program.slug);
+      await startProgram(supabase, userId, (program as any).slug);
       setJustStarted(true);
 
       // refrescar progreso tras iniciar
       const { daysCompleted, totalDays, currentDay } = await getProgress(
         supabase,
         userId,
-        program.slug,
+        (program as any).slug
       );
       const pct = Math.round((daysCompleted / Math.max(1, totalDays)) * 100);
       setProgressPct(pct);
@@ -110,13 +115,7 @@ export default function HabitDetail({
         className="relative w-full overflow-hidden rounded-b-2xl"
         style={{ height: 0, paddingBottom: '56.25%', backgroundColor: '#111' }}
       >
-        <Image
-          src={heroSrc}
-          alt={title}
-          fill
-          className="object-cover"
-          priority
-        />
+        <Image src={heroSrc} alt={title} fill className="object-cover" priority />
         <div className="absolute left-3 top-3">
           <button
             onClick={onBack}
