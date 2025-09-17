@@ -1,4 +1,3 @@
-// src/lib/user.ts
 import { supabase } from '@/lib/supabaseClient';
 import { useEffect, useState } from 'react';
 
@@ -32,7 +31,7 @@ export type UserProfile = {
 
 // ===== Claves de LS (retro-compat) =====
 export const LS_USER_KEY = 'akira_user_profile_v2';
-export const LS_USER = 'akira_user_v1';          // alias legacy (por si hay import en otra parte)
+export const LS_USER = 'akira_user_v1';
 export const LS_FIRST_RUN = 'akira_first_run_done';
 
 // ===== Normalizadores / utilidades =====
@@ -75,13 +74,11 @@ function keepDefined<T extends Record<string, any>>(obj: T): Partial<T> {
 export function loadUser(): UserProfile {
   if (typeof window === 'undefined') return {};
   try {
-    // 1) intenta v2
     const rawV2 = localStorage.getItem(LS_USER_KEY);
     if (rawV2) {
       const data = JSON.parse(rawV2);
       return (data && typeof data === 'object') ? (data as UserProfile) : {};
     }
-    // 2) migra desde v1 si existía
     const rawV1 = localStorage.getItem(LS_USER);
     if (rawV1) {
       const parsed = JSON.parse(rawV1) as UserProfile;
@@ -104,7 +101,6 @@ export function saveUser(u: UserProfile): UserProfile {
   if (typeof window === 'undefined') return { ...u, ...sanitizeUser(u) } as UserProfile;
   const normalized = { ...u, ...sanitizeUser(u) } as UserProfile;
   localStorage.setItem(LS_USER_KEY, JSON.stringify(normalized));
-  // 🔔 notificar a la UI
   try { window.dispatchEvent(new CustomEvent('akira:user-updated')); } catch {}
   return normalized;
 }
@@ -119,7 +115,6 @@ export function saveUserMerge(partial: Partial<UserProfile>): UserProfile {
   const norm = sanitizeUser(partial);
   const merged = { ...prev, ...norm } as UserProfile;
   localStorage.setItem(LS_USER_KEY, JSON.stringify(merged));
-  // 🔔 notificar a la UI
   try { window.dispatchEvent(new CustomEvent('akira:user-updated')); } catch {}
   return merged;
 }
@@ -130,10 +125,7 @@ export function clearUser() {
   try { localStorage.removeItem(LS_USER); } catch {}
 }
 
-/** Reglas mínimas para considerar “completo”:
- *  - identidad: nombre, apellido, email y username
- *  - métricas: fechaNacimiento válida (edad >= 5 y <= 120), estatura y peso en rangos razonables
- */
+/** Reglas mínimas para considerar “completo” */
 export function isUserComplete(u: UserProfile | null | undefined): boolean {
   if (!u) return false;
 
@@ -145,16 +137,11 @@ export function isUserComplete(u: UserProfile | null | undefined): boolean {
 
   if (!hasBasics) return false;
 
-  // Validar fecha de nacimiento con edad derivada
   const age = ageFromDOB(u.fechaNacimiento);
   const dobOk = !!u.fechaNacimiento && age !== undefined && age >= 5 && age <= 120;
 
-  // Rangos razonables
-  const heightOk =
-    typeof u.estatura === 'number' && u.estatura >= 80 && u.estatura <= 250;
-
-  const weightOk =
-    typeof u.peso === 'number' && u.peso >= 20 && u.peso <= 400;
+  const heightOk = typeof u.estatura === 'number' && u.estatura >= 80 && u.estatura <= 250;
+  const weightOk = typeof u.peso === 'number' && u.peso >= 20 && u.peso <= 400;
 
   return dobOk && heightOk && weightOk;
 }
@@ -165,7 +152,7 @@ function activityFactor(a: Activity | undefined): number {
     case 'ligero': return 1.375;
     case 'moderado': return 1.55;
     case 'intenso': return 1.725;
-    default: return 1.2; // sedentario / undefined
+    default: return 1.2;
   }
 }
 export function estimateCalories(u: UserProfile): number | undefined {
@@ -187,7 +174,7 @@ export function profileFromDbRow(row: any): Partial<UserProfile> {
     username: row.username ?? undefined,
     nombre: row.nombre ?? undefined,
     apellido: row.apellido ?? undefined,
-    email: row.email ?? undefined, // si lo guardas en esta tabla (opcional)
+    email: row.email ?? undefined,
     telefono: row.telefono ?? undefined,
     sexo: row.sexo ?? undefined,
     fechaNacimiento: row.fecha_nacimiento ?? undefined,
@@ -219,7 +206,6 @@ export function dbRowFromProfile(p: Partial<UserProfile>): any {
    === SINCRONIZACIÓN CON SUPABASE: upsert / pull / bootstrap ===
    =========================================================== */
 
-/** Obtiene el user_id del usuario autenticado */
 export async function getAuthUserId(): Promise<string | null> {
   const { data, error } = await supabase.auth.getUser();
   if (error) {
@@ -229,22 +215,17 @@ export async function getAuthUserId(): Promise<string | null> {
   return data.user?.id ?? null;
 }
 
-/**
- * Crea/actualiza la fila del perfil en public_profiles (onConflict: user_id)
- * y devuelve el perfil normalizado (tipo local). También mergea a LocalStorage.
- */
 export async function upsertProfile(partial: Partial<UserProfile>): Promise<UserProfile> {
   const uid = await getAuthUserId();
   if (!uid) throw new Error('No hay sesión activa para upsertProfile');
 
-  // construimos fila DB (forzando user_id)
   const row = dbRowFromProfile({ ...partial, userId: uid });
 
   const { data, error } = await supabase
     .from('public_profiles')
     .upsert(row, { onConflict: 'user_id' })
     .select('*')
-    .single(); // <- sin .eq()
+    .single();
 
   if (error) {
     console.error('[upsertProfile] error', error);
@@ -253,7 +234,6 @@ export async function upsertProfile(partial: Partial<UserProfile>): Promise<User
 
   const profile = profileFromDbRow(data) as UserProfile;
 
-  // reflejamos localmente sin pisar con undefined/null
   try {
     saveUserMerge(keepDefined(profile));
   } catch (e) {
@@ -263,10 +243,6 @@ export async function upsertProfile(partial: Partial<UserProfile>): Promise<User
   return profile;
 }
 
-/**
- * Lee el perfil remoto; si existe, lo mergea en LocalStorage.
- * Devuelve el perfil (local) o null si no hay fila.
- */
 export async function pullProfile(): Promise<UserProfile | null> {
   const uid = await getAuthUserId();
   if (!uid) return null;
@@ -294,15 +270,10 @@ export async function pullProfile(): Promise<UserProfile | null> {
   return profile;
 }
 
-/**
- * Si no existe fila remota pero hay datos mínimos en LocalStorage,
- * crea la fila en DB y la deja sincronizada localmente.
- */
 export async function syncLocalToRemoteIfMissing(): Promise<UserProfile | null> {
   const uid = await getAuthUserId();
   if (!uid) return null;
 
-  // ¿ya existe fila?
   const { data, error } = await supabase
     .from('public_profiles')
     .select('user_id')
@@ -314,20 +285,15 @@ export async function syncLocalToRemoteIfMissing(): Promise<UserProfile | null> 
     throw error;
   }
   if (data) {
-    // ya existe; hidratamos LS por si acaso
     return await pullProfile();
   }
 
-  // No existe fila: intentamos crearla desde LS si hay datos mínimos
   let local: Partial<UserProfile> | null = null;
   try {
     local = loadUser();
-  } catch {
-    /* noop */
-  }
+  } catch {}
 
   if (!local || !(local.nombre && local.apellido && local.email)) {
-    // no hay datos locales suficientes
     return null;
   }
 
@@ -335,19 +301,13 @@ export async function syncLocalToRemoteIfMissing(): Promise<UserProfile | null> 
   return created;
 }
 
-/* ===== Hooks/Helpers de sesión para la UI y otras syncs ===== */
-
-/**
- * Hook reactivo que expone el user_id actual o null.
- * Útil para disparar sincronizaciones (p.ej., programas activos) en layouts/client components.
- */
+/* ===== Hooks/Helpers de sesión ===== */
 export function useAuthUserId(): string | null {
   const [uid, setUid] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
 
-    // 1) Estado inicial
     (async () => {
       try {
         const { data } = await supabase.auth.getUser();
@@ -357,7 +317,6 @@ export function useAuthUserId(): string | null {
       }
     })();
 
-    // 2) Suscribirse a cambios de sesión (login/logout/token refresh)
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!mounted) return;
       setUid(session?.user?.id ?? null);
@@ -365,23 +324,14 @@ export function useAuthUserId(): string | null {
 
     return () => {
       mounted = false;
-      // Limpieza defensiva de suscripciones (distintas versiones pueden exponer APIs distintas)
-      try {
-        (sub as any)?.subscription?.unsubscribe?.();
-      } catch {}
-      try {
-        (sub as any)?.unsubscribe?.();
-      } catch {}
+      try { (sub as any)?.subscription?.unsubscribe?.(); } catch {}
+      try { (sub as any)?.unsubscribe?.(); } catch {}
     };
   }, []);
 
   return uid;
 }
 
-/**
- * Ejecuta `fn` cuando haya un usuario autenticado (ahora o en el futuro).
- * Devuelve una función para cancelar la suscripción.
- */
 export function onAuthReady(fn: (uid: string) => Promise<void> | void): () => void {
   let called = false;
 
@@ -393,26 +343,19 @@ export function onAuthReady(fn: (uid: string) => Promise<void> | void): () => vo
     }
   };
 
-  // 1) Intento inmediato
   void supabase.auth.getUser().then(({ data }) => run(data.user?.id));
 
-  // 2) Suscripción a cambios
   const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
     run(session?.user?.id);
   });
 
-  // función de cancelación
   return () => {
-    try {
-      (sub as any)?.subscription?.unsubscribe?.();
-    } catch {}
-    try {
-      (sub as any)?.unsubscribe?.();
-    } catch {}
+    try { (sub as any)?.subscription?.unsubscribe?.(); } catch {}
+    try { (sub as any)?.unsubscribe?.(); } catch {}
   };
 }
 
-/* ===== Hook para componentes cliente (reactiva la UI al sincronizar) ===== */
+/* ===== Hook para componentes cliente ===== */
 export function useUserProfile(): UserProfile {
   const [u, setU] = useState<UserProfile>(() => (typeof window === 'undefined' ? {} : loadUser()));
   useEffect(() => {
