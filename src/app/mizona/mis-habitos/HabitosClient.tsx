@@ -5,16 +5,13 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Check, ArrowRight } from 'lucide-react';
 import type { HabitMaster } from '@/components/habits/HabitForm';
-import { useUserProfile } from '@/lib/user';
+import { useUserProfile, useAuthUserId } from '@/lib/user';
 
-/* === NUEVO: bloque de programa activo === */
+/* === NUEVO: bloque de programa activo (basado en storage unificado + sync) === */
 import ProgramActiveCard from '@/components/programs/ProgramActiveCard';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { getActiveProgram } from '../../../lib/programService';
-/* ======================================= */
-
-/* ✅ Unificación: fuente única de programas activos en local */
 import { loadActive } from '@/lib/programsLocal';
+import { pullUserPrograms } from '@/lib/programSync';
+/* ======================================= */
 
 const LS_HABITS_MASTER = 'akira_habits_master_v1';
 const LS_HABITS_DAILY  = 'akira_habits_daily_v1';
@@ -99,35 +96,60 @@ async function confettiBurst(evt?: React.MouseEvent, big = false) {
   } catch {}
 }
 
-/* ===== Sección NUEVA: Programa activo ===== */
+/* ===== Sección NUEVA: Programa activo (usa storage unificado + pull con Supabase) ===== */
 function ActiveProgramSection() {
-  // ⬇️ SIN genéricos: dejamos que TS infiera el tipo correcto
-  const supabase = useMemo(() => createClientComponentClient(), []);
+  const uid = useAuthUserId();
   const [hasActive, setHasActive] = useState<boolean | null>(null); // null=cargando
+
+  // Lee desde storage
+  const readFromStore = () => {
+    try {
+      const store = loadActive() || {};
+      return Object.keys(store).length > 0;
+    } catch {
+      return false;
+    }
+  };
 
   useEffect(() => {
     let mounted = true;
-    (async () => {
-      try {
-        const { data } = await supabase.auth.getUser();
-        const uid = data.user?.id ?? null;
 
-        if (!uid) {
-          if (mounted) setHasActive(false);
-          return;
-        }
-
-        // Por ahora comprobamos el slug lectura-30; ProgramActiveCard ya re-fetchea el resto
-        const active = await getActiveProgram(supabase, uid, 'lectura-30');
-        if (!mounted) return;
-        setHasActive(!!active && !!active.is_active);
-      } catch {
-        if (!mounted) return;
-        setHasActive(false);
+    const hydrate = async () => {
+      // Si no hay sesión → no hay programas activos remotos
+      if (!uid) {
+        if (mounted) setHasActive(false);
+        return;
       }
-    })();
-    return () => { mounted = false; };
-  }, [supabase]);
+
+      // 1) Lee estado local inmediato (optimista)
+      if (mounted) setHasActive(readFromStore());
+
+      // 2) Pide al server y fusiona con local (programSync) → esto puede cambiar el store
+      try {
+        await pullUserPrograms();
+        if (mounted) setHasActive(readFromStore());
+      } catch {
+        // En caso de error, nos quedamos con lo que hubiera en local
+        if (mounted && hasActive === null) setHasActive(readFromStore());
+      }
+    };
+
+    hydrate();
+
+    // Escuchar cambios externos (otra pestaña o acciones que actualicen el store)
+    const onProgramsUpdated = () => {
+      if (!mounted) return;
+      setHasActive(readFromStore());
+    };
+    window.addEventListener('storage', onProgramsUpdated);
+    window.addEventListener('akira:programs-updated', onProgramsUpdated as EventListener);
+
+    return () => {
+      mounted = false;
+      window.removeEventListener('storage', onProgramsUpdated);
+      window.removeEventListener('akira:programs-updated', onProgramsUpdated as EventListener);
+    };
+  }, [uid]); // re-hidratar cuando cambie la sesión
 
   if (hasActive === null) {
     return (
@@ -190,20 +212,35 @@ export default function HabitosClient() {
   const greetingName = firstName || username || 'usuario/a';
   const avatar = user?.foto as string | undefined;
 
-  // Programas activos (localStorage unificado – lectura informativa)
+  // Programas activos (lectura informativa desde storage unificado)
   const [activePrograms, setActivePrograms] = useState<string[]>([]);
 
   useEffect(() => {
     setMasters(loadMasterHabits());
     setDaily(loadDaily());
 
-    // ✅ Unificado: leemos los slugs activos desde programsLocal
     try {
       const store = loadActive(); // { [slug]: LocalProgram }
       setActivePrograms(Object.keys(store || {}));
     } catch {
       setActivePrograms([]);
     }
+
+    // Mantener en sync si cambia desde otra pestaña
+    const onProgramsUpdated = () => {
+      try {
+        const store = loadActive();
+        setActivePrograms(Object.keys(store || {}));
+      } catch {
+        setActivePrograms([]);
+      }
+    };
+    window.addEventListener('storage', onProgramsUpdated);
+    window.addEventListener('akira:programs-updated', onProgramsUpdated as EventListener);
+    return () => {
+      window.removeEventListener('storage', onProgramsUpdated);
+      window.removeEventListener('akira:programs-updated', onProgramsUpdated as EventListener);
+    };
   }, []);
 
   // Asegura bucket de hoy
@@ -392,7 +429,7 @@ export default function HabitosClient() {
         )}
       </section>
 
-      {/* Programas activos (placeholder legacy) — lo dejamos pero ya no se muestra nada aquí */}
+      {/* Programas activos (placeholder legacy informativo) */}
       {activePrograms?.length > 0 && activePrograms.map((p) => (
         <section key={p} className="mb-6">
           <h4 style={{ margin: '6px 0 8px 0' }}>Programa activo: {p}</h4>
