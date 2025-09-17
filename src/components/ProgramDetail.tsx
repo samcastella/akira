@@ -82,12 +82,9 @@ function escapeHtml(s: string) {
 }
 function renderLightMarkdown(input: string) {
   let html = escapeHtml(input ?? '');
-  // **bold**
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  // *italic*
-  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-  // line breaks
-  html = html.replace(/\n/g, '<br/>');
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>'); // **bold**
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');             // *italic*
+  html = html.replace(/\n/g, '<br/>');                           // line breaks
   return html;
 }
 const MD: FC<{ children: string; className?: string }> = ({ children, className }) => (
@@ -230,7 +227,7 @@ export default function ProgramDetail({
     setOpenTasks((p) => ({ ...p, [taskId]: !p[taskId] }));
   }
 
-  // Row de acordeón (headers un poco más marcados)
+  // Row de acordeón
   const ARow: FC<{ label: string; open: boolean; onClick: () => void }> = ({
     label,
     open,
@@ -241,7 +238,7 @@ export default function ProgramDetail({
       className="w-full flex items-center justify-between py-3"
       aria-expanded={open}
     >
-      <span className="text-[15px] font-semibold text-neutral-800">{label}</span>
+      <span className="text-[15px] font-semibold text-neutral-900">{label}</span>
       {open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
     </button>
   );
@@ -255,7 +252,7 @@ export default function ProgramDetail({
             <Image src={imageSrc} alt={title} fill className="object-cover" priority />
           </div>
 
-          {/* Botón Volver overlay con mejor contraste */}
+          {/* Botón Volver overlay (siempre claro) */}
           <div className="absolute top-3 right-3">
             <button
               onClick={() => { try { router.back(); } catch { location.href = '/habitos'; } }}
@@ -278,7 +275,7 @@ export default function ProgramDetail({
         </div>
       ) : null}
 
-      {/* Introducción — más aire y tono un pelín más oscuro */}
+      {/* Introducción */}
       <div className="mt-4">
         <MD className="text-[13px] text-neutral-800 leading-relaxed">{howItWorks}</MD>
 
@@ -346,7 +343,7 @@ export default function ProgramDetail({
         )}
       </div>
 
-      {/* CTA — más respiración */}
+      {/* CTA */}
       <div className="mt-6 flex items-center gap-2">
         {!started ? (
           <button
@@ -466,7 +463,7 @@ export default function ProgramDetail({
                   <div key={id} className="bg-white">
                     <div className="w-full px-4 py-2">
                       <div className="flex items-start gap-3">
-                        {/* Icono de estado (no abre/cierra) */}
+                        {/* Icono de estado (informativo) */}
                         <button
                           type="button"
                           onClick={() => setInfoOpen(true)}
@@ -505,8 +502,6 @@ export default function ProgramDetail({
                       {/* Detalle desplegable */}
                       {t.detail && isOpen && (
                         <div id={detailId} className="mt-2 ml-9 pr-2">
-                          {/* ml-9 alinea el texto con el inicio del label (dejando el hueco del icono) */}
-                          {/* texto secundario en ambos modos */}
                           <MD className="text-[13px] text-neutral-700">
                             {t.detail}
                           </MD>
