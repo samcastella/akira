@@ -82,9 +82,12 @@ function escapeHtml(s: string) {
 }
 function renderLightMarkdown(input: string) {
   let html = escapeHtml(input ?? '');
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>'); // **bold**
-  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');            // *italic*
-  html = html.replace(/\n/g, '<br/>');                          // line breaks
+  // **bold**
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  // *italic*
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  // line breaks
+  html = html.replace(/\n/g, '<br/>');
   return html;
 }
 const MD: FC<{ children: string; className?: string }> = ({ children, className }) => (
@@ -227,7 +230,7 @@ export default function ProgramDetail({
     setOpenTasks((p) => ({ ...p, [taskId]: !p[taskId] }));
   }
 
-  // Row de acordeón (usa colores por tokens)
+  // Row de acordeón (headers un poco más marcados)
   const ARow: FC<{ label: string; open: boolean; onClick: () => void }> = ({
     label,
     open,
@@ -238,13 +241,13 @@ export default function ProgramDetail({
       className="w-full flex items-center justify-between py-3"
       aria-expanded={open}
     >
-      <span className="text-[15px] font-semibold text-[color:var(--foreground)]">{label}</span>
+      <span className="text-[15px] font-semibold text-neutral-800">{label}</span>
       {open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
     </button>
   );
 
   return (
-    <div className="px-4 pb-24 bg-[var(--background)] text-[color:var(--foreground)]">
+    <div className="px-4 pb-24 bg-white">
       {/* Hero 16:9 full-bleed con botón Volver sobre la imagen */}
       {imageSrc && (
         <div className="-mx-4 mb-5 relative">
@@ -252,15 +255,11 @@ export default function ProgramDetail({
             <Image src={imageSrc} alt={title} fill className="object-cover" priority />
           </div>
 
-          {/* Botón Volver overlay con tokens (contraste en ambos modos) */}
+          {/* Botón Volver overlay con mejor contraste */}
           <div className="absolute top-3 right-3">
             <button
               onClick={() => { try { router.back(); } catch { location.href = '/habitos'; } }}
-              className="inline-flex items-center gap-1.5 text-[13px] font-medium px-3.5 py-2 rounded-full border border-[color:var(--line)] shadow-md active:scale-[0.98]"
-              style={{
-                background: 'color-mix(in oklab, var(--background) 85%, transparent)',
-                backdropFilter: 'blur(6px)',
-              }}
+              className="inline-flex items-center gap-1.5 text-[13px] font-medium px-3.5 py-2 rounded-full border border-neutral-300 bg-white/85 backdrop-blur-md shadow-md hover:bg-white active:scale-[0.98]"
             >
               <ChevronLeft className="w-4 h-4" />
               Volver
@@ -270,23 +269,23 @@ export default function ProgramDetail({
       )}
 
       {/* Título y chip */}
-      <h1 className="text-2xl font-semibold">{title}</h1>
+      <h1 className="text-2xl font-semibold text-neutral-900">{title}</h1>
       {data?.durationDays ? (
         <div className="mt-1 inline-flex items-center gap-2">
-          <span className="text-xs px-2 py-0.5 rounded-full border border-[color:var(--line)] text-[color:var(--foreground)]/80">
+          <span className="text-xs px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-700">
             Duración: {data.durationDays} días
           </span>
         </div>
       ) : null}
 
-      {/* Introducción */}
+      {/* Introducción — más aire y tono un pelín más oscuro */}
       <div className="mt-4">
-        <MD className="text-[13px] text-[color:var(--foreground)]/90 leading-relaxed">{howItWorks}</MD>
+        <MD className="text-[13px] text-neutral-800 leading-relaxed">{howItWorks}</MD>
 
         {(data?.accordions?.whatYouWillDo?.length ||
           data?.accordions?.whatYouWillGet?.length ||
           data?.accordions?.howToUse?.length) && (
-          <div className="mt-4 divide-y divide-[color:var(--line)]">
+          <div className="mt-4 divide-y divide-neutral-200">
             {data?.accordions?.whatYouWillDo?.length ? (
               <div className="py-2">
                 <ARow
@@ -295,7 +294,7 @@ export default function ProgramDetail({
                   onClick={() => setOpenAcc((s) => ({ ...s, do: !s.do }))}
                 />
                 {openAcc.do && (
-                  <ul className="pl-4 list-disc text-[13px] text-[color:var(--foreground)]/90 space-y-1">
+                  <ul className="pl-4 list-disc text-[13px] text-neutral-800 space-y-1">
                     {data!.accordions!.whatYouWillDo!.map((li, i) => (
                       <li key={`do_${i}`}>
                         <MD className="text-[13px] leading-relaxed">{li}</MD>
@@ -314,7 +313,7 @@ export default function ProgramDetail({
                   onClick={() => setOpenAcc((s) => ({ ...s, get: !s.get }))}
                 />
                 {openAcc.get && (
-                  <ul className="pl-4 list-disc text-[14px] text-[color:var(--foreground)] space-y-1">
+                  <ul className="pl-4 list-disc text-[14px] text-neutral-900 space-y-1">
                     {data!.accordions!.whatYouWillGet!.map((li, i) => (
                       <li key={`get_${i}`}>
                         <MD className="text-[14px] leading-relaxed">{li}</MD>
@@ -333,7 +332,7 @@ export default function ProgramDetail({
                   onClick={() => setOpenAcc((s) => ({ ...s, use: !s.use }))}
                 />
                 {openAcc.use && (
-                  <ul className="pl-4 list-disc text-[13px] text-[color:var(--foreground)]/90 space-y-1">
+                  <ul className="pl-4 list-disc text-[13px] text-neutral-800 space-y-1">
                     {data!.accordions!.howToUse!.map((li, i) => (
                       <li key={`use_${i}`}>
                         <MD className="text-[13px] leading-relaxed">{li}</MD>
@@ -347,13 +346,12 @@ export default function ProgramDetail({
         )}
       </div>
 
-      {/* CTA — usa tokens para tema */}
+      {/* CTA — más respiración */}
       <div className="mt-6 flex items-center gap-2">
         {!started ? (
           <button
             onClick={startProgram}
-            className="inline-flex items-center gap-2 rounded-2xl px-5 py-3.5 text-[15px] font-semibold shadow-md active:scale-[0.98] border border-[color:var(--accent)]"
-            style={{ background: 'var(--accent)', color: 'var(--background)' }}
+            className="inline-flex items-center gap-2 rounded-2xl px-5 py-3.5 text-[15px] font-semibold bg-black text-white shadow-md active:scale-[0.98]"
           >
             <Play className="w-4 h-4" />
             Empezar programa
@@ -361,8 +359,7 @@ export default function ProgramDetail({
         ) : (
           <button
             onClick={requestReset}
-            className="inline-flex items-center gap-2 justify-center rounded-xl px-3.5 py-2.5 text-xs font-medium transition border border-[color:var(--line)]"
-            style={{ background: 'color-mix(in oklab, var(--background) 96%, transparent)' }}
+            className="inline-flex items-center gap-2 justify-center rounded-xl px-3.5 py-2.5 text-xs font-medium bg-neutral-100 text-neutral-700 hover:bg-neutral-200 transition"
             title="Reiniciar programa"
           >
             <RotateCcw className="w-4 h-4" />
@@ -374,24 +371,19 @@ export default function ProgramDetail({
       {/* Modal confirmación reinicio */}
       {confirmOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40">
-          <div className="rounded-2xl p-5 w-[90%] max-w-md shadow-lg border border-[color:var(--line)]"
-               style={{ background: 'var(--background)', color: 'var(--foreground)' }}>
+          <div className="bg-white rounded-2xl p-5 w-[90%] max-w-md shadow-lg">
             <h3 className="text-lg font-semibold">¿Estás seguro?</h3>
-            <p className="text-sm mt-2 text-[color:var(--foreground)]/80">
-              Esto dejará el programa como no iniciado.
-            </p>
+            <p className="text-sm text-neutral-600 mt-2">Esto dejará el programa como no iniciado.</p>
             <div className="mt-4 grid grid-cols-2 gap-2">
               <button
                 onClick={cancelReset}
-                className="rounded-xl py-2 text-sm font-medium border border-[color:var(--line)]"
-                style={{ background: 'var(--background)', color: 'var(--foreground)' }}
+                className="rounded-xl border border-neutral-200 py-2 text-sm font-medium hover:bg-neutral-50"
               >
                 Cancelar
               </button>
               <button
                 onClick={confirmReset}
-                className="rounded-xl py-2 text-sm font-semibold"
-                style={{ background: '#d92c2c', color: '#fff' }}
+                className="rounded-xl bg-red-600 text-white py-2 text-sm font-semibold hover:bg-red-700"
               >
                 Reiniciar
               </button>
@@ -408,16 +400,10 @@ export default function ProgramDetail({
               <div className="text-sm font-medium">
                 Progreso: Día {Math.min(currentDay, totalDays)} / {totalDays}
               </div>
-              <div className="text-sm text-[color:var(--foreground)]/70">{progressPct}%</div>
+              <div className="text-sm text-neutral-500">{progressPct}%</div>
             </div>
-            <div className="h-2 w-full rounded-full bg-[color:var(--line)]/50 overflow-hidden">
-              <div
-                className="h-full transition-all"
-                style={{
-                  width: `${progressPct}%`,
-                  background: 'var(--accent)',
-                }}
-              />
+            <div className="h-2 w-full rounded-full bg-neutral-200 overflow-hidden">
+              <div className="h-full bg-black transition-all" style={{ width: `${progressPct}%` }} />
             </div>
           </div>
 
@@ -425,13 +411,11 @@ export default function ProgramDetail({
             <button
               onClick={() => setViewedDay((d) => Math.max(1, d - 1))}
               disabled={viewedDay <= 1}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border"
-              style={{
-                borderColor: 'var(--line)',
-                color: viewedDay <= 1 ? 'color-mix(in oklab, var(--foreground) 40%, transparent)' : 'var(--foreground)',
-                opacity: viewedDay <= 1 ? 0.6 : 1,
-                background: 'var(--background)',
-              }}
+              className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border ${
+                viewedDay <= 1
+                  ? 'text-neutral-400 border-neutral-200 cursor-not-allowed'
+                  : 'text-neutral-700 border-neutral-300 hover:bg-neutral-50'
+              }`}
               aria-label="Día anterior"
             >
               <ChevronLeft className="w-4 h-4" /> Anterior
@@ -442,13 +426,11 @@ export default function ProgramDetail({
             <button
               onClick={() => setViewedDay((d) => Math.min(currentDay, d + 1))}
               disabled={viewedDay >= currentDay}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border"
-              style={{
-                borderColor: 'var(--line)',
-                color: viewedDay >= currentDay ? 'color-mix(in oklab, var(--foreground) 40%, transparent)' : 'var(--foreground)',
-                opacity: viewedDay >= currentDay ? 0.6 : 1,
-                background: 'var(--background)',
-              }}
+              className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border ${
+                viewedDay >= currentDay
+                  ? 'text-neutral-400 border-neutral-200 cursor-not-allowed'
+                  : 'text-neutral-700 border-neutral-300 hover:bg-neutral-50'
+              }`}
               aria-label="Día siguiente"
               title={
                 viewedDay >= currentDay
@@ -470,71 +452,73 @@ export default function ProgramDetail({
       {started && data && totalDays > 0 && (
         <div className="mt-4">
           {tasks.length === 0 ? (
-            <div className="text-sm border border-dashed rounded-2xl p-4"
-                 style={{ color: 'color-mix(in oklab, var(--foreground) 80%, transparent)', borderColor: 'var(--line)' }}>
+            <div className="text-sm text-neutral-600 border border-dashed border-neutral-300 rounded-2xl p-4">
               Hoy desconectas de la app. Disfruta tu día sin móvil.
             </div>
           ) : (
-            <div className="rounded-2xl border overflow-hidden divide-y"
-                 style={{ borderColor: 'var(--line)', background: 'var(--background)' }}>
+            <div className="rounded-2xl border border-neutral-200 overflow-hidden divide-y divide-neutral-100">
               {tasks.map((t, i) => {
                 const id = t.id ?? `task_${i}`;
                 const done = Boolean(dayProgressMap[id]);
                 const isOpen = Boolean(openTasks[id]);
+                const detailId = `task_detail_${id}`;
                 return (
-                  <div key={id}>
-                    <div className="w-full text-left px-4 py-3 flex items-start gap-3"
-                         style={{ color: 'var(--foreground)' }}>
-                      <button
-                        type="button"
-                        onClick={() => setInfoOpen(true)}
-                        className="shrink-0 mt-0.5"
-                        aria-label="Los checks se hacen en Mi Zona"
-                        title="Los checks se hacen en Mi Zona"
-                      >
-                        {done ? (
-                          <CheckCircle2 className="w-5 h-5" style={{ color: '#16a34a' }} />
-                        ) : (
-                          <Circle className="w-5 h-5" style={{ color: 'color-mix(in oklab, var(--foreground) 35%, transparent)' }} />
-                        )}
-                      </button>
+                  <div key={id} className="bg-white">
+                    <div className="w-full px-4 py-2">
+                      <div className="flex items-start gap-3">
+                        {/* Icono de estado (no abre/cierra) */}
+                        <button
+                          type="button"
+                          onClick={() => setInfoOpen(true)}
+                          className="shrink-0 mt-0.5"
+                          aria-label="Los checks se hacen en Mi Zona"
+                          title="Los checks se hacen en Mi Zona"
+                        >
+                          {done ? (
+                            <CheckCircle2 className="w-5 h-5 text-green-600" />
+                          ) : (
+                            <Circle className="w-5 h-5 text-neutral-400" />
+                          )}
+                        </button>
 
-                      <div className="flex-1">
-                        {/* Label con Markdown ligero */}
-                        <div className="text-[15px]">
-                          <MD className="text-[15px]">{t.label}</MD>
-                        </div>
-                        {/* toggle detalle */}
-                        {t.detail && (
-                          <button
-                            onClick={() => toggleTaskOpen(t, i)}
-                            className="mt-1 inline-flex items-center gap-1 text-[13px] hover:underline"
-                            style={{ color: 'color-mix(in oklab, var(--foreground) 80%, transparent)' }}
-                          >
-                            {isOpen ? (
-                              <>Ocultar <ChevronUp className="w-3 h-3" /></>
+                        {/* Cabecera del ítem: label + chevron (abre/cierra detalle) */}
+                        <button
+                          type="button"
+                          onClick={() => toggleTaskOpen(t, i)}
+                          aria-expanded={isOpen}
+                          aria-controls={detailId}
+                          className="flex-1 text-left rounded-lg px-2 py-1 -mx-2 hover:bg-neutral-50 active:scale-[0.99] transition flex items-center justify-between"
+                        >
+                          <span className="text-[15px] text-neutral-900">
+                            <MD className="text-[15px]">{t.label}</MD>
+                          </span>
+                          {t.detail ? (
+                            isOpen ? (
+                              <ChevronUp className="w-4 h-4 shrink-0 text-neutral-500" />
                             ) : (
-                              <>Ver detalle <ChevronDown className="w-3 h-3" /></>
-                            )}
-                          </button>
-                        )}
-                        {t.detail && isOpen && (
-                          <MD className="text-[13px] mt-1"
-                              // texto secundario en ambos modos
-                              className="text-[13px] mt-1"
-                          >
+                              <ChevronDown className="w-4 h-4 shrink-0 text-neutral-500" />
+                            )
+                          ) : null}
+                        </button>
+                      </div>
+
+                      {/* Detalle desplegable */}
+                      {t.detail && isOpen && (
+                        <div id={detailId} className="mt-2 ml-9 pr-2">
+                          {/* ml-9 alinea el texto con el inicio del label (dejando el hueco del icono) */}
+                          {/* texto secundario en ambos modos */}
+                          <MD className="text-[13px] text-neutral-700">
                             {t.detail}
                           </MD>
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </div>
-                    <div className="h-px" style={{ background: 'var(--line)' }} />
                   </div>
                 );
               })}
             </div>
           )}
-          <p className="text-xs mt-2" style={{ color: 'color-mix(in oklab, var(--foreground) 65%, transparent)' }}>
+          <p className="text-xs text-neutral-500 mt-2">
             * Los checks se hacen en <strong>Mi Zona</strong>. Aquí puedes revisar tu progreso. El plan se revela día a día.
           </p>
         </div>
@@ -543,20 +527,16 @@ export default function ProgramDetail({
       {/* Pop-up informativo */}
       {infoOpen && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40">
-          <div
-            className="rounded-2xl p-5 w-[90%] max-w-md shadow-lg relative border"
-            style={{ background: 'var(--background)', color: 'var(--foreground)', borderColor: 'var(--line)' }}
-          >
+          <div className="bg-white rounded-2xl p-5 w-[90%] max-w-md shadow-lg relative">
             <button
               onClick={() => setInfoOpen(false)}
-              className="absolute top-3 right-3 p-1 rounded-full"
-              style={{ background: 'color-mix(in oklab, var(--background) 94%, transparent)' }}
+              className="absolute top-3 right-3 p-1 rounded-full hover:bg-neutral-100"
               aria-label="Cerrar"
               title="Cerrar"
             >
               <X className="w-4 h-4" />
             </button>
-            <p className="text-[15px]">
+            <p className="text-[15px] text-neutral-800">
               Los checks se hacen en <strong>Mi Zona</strong>. Aquí puedes revisar tu progreso. El plan se revela día a día.
             </p>
           </div>
