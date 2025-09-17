@@ -150,8 +150,11 @@ export function isUserComplete(u: UserProfile | null | undefined): boolean {
   const dobOk = !!u.fechaNacimiento && age !== undefined && age >= 5 && age <= 120;
 
   // Rangos razonables
-  const heightOk = typeof u.estatura === 'number' && u.estatura >= 80 && u.estatura <= 250;
-  const weightOk = typeof u.peso === 'number' && u.peso >= 20 && u.peso <= 400;
+  const heightOk =
+    typeof u.estatura === 'number' && u.estatura >= 80 && u.estatura <= 250;
+
+  const weightOk =
+    typeof u.peso === 'number' && u.peso >= 20 && u.peso <= 400;
 
   return dobOk && heightOk && weightOk;
 }
@@ -330,6 +333,83 @@ export async function syncLocalToRemoteIfMissing(): Promise<UserProfile | null> 
 
   const created = await upsertProfile(local);
   return created;
+}
+
+/* ===== Hooks/Helpers de sesión para la UI y otras syncs ===== */
+
+/**
+ * Hook reactivo que expone el user_id actual o null.
+ * Útil para disparar sincronizaciones (p.ej., programas activos) en layouts/client components.
+ */
+export function useAuthUserId(): string | null {
+  const [uid, setUid] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    // 1) Estado inicial
+    (async () => {
+      try {
+        const { data } = await supabase.auth.getUser();
+        if (mounted) setUid(data.user?.id ?? null);
+      } catch {
+        if (mounted) setUid(null);
+      }
+    })();
+
+    // 2) Suscribirse a cambios de sesión (login/logout/token refresh)
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return;
+      setUid(session?.user?.id ?? null);
+    });
+
+    return () => {
+      mounted = false;
+      // Limpieza defensiva de suscripciones (distintas versiones pueden exponer APIs distintas)
+      try {
+        (sub as any)?.subscription?.unsubscribe?.();
+      } catch {}
+      try {
+        (sub as any)?.unsubscribe?.();
+      } catch {}
+    };
+  }, []);
+
+  return uid;
+}
+
+/**
+ * Ejecuta `fn` cuando haya un usuario autenticado (ahora o en el futuro).
+ * Devuelve una función para cancelar la suscripción.
+ */
+export function onAuthReady(fn: (uid: string) => Promise<void> | void): () => void {
+  let called = false;
+
+  const run = (uid: string | null | undefined) => {
+    if (called) return;
+    if (uid) {
+      called = true;
+      void fn(uid);
+    }
+  };
+
+  // 1) Intento inmediato
+  void supabase.auth.getUser().then(({ data }) => run(data.user?.id));
+
+  // 2) Suscripción a cambios
+  const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+    run(session?.user?.id);
+  });
+
+  // función de cancelación
+  return () => {
+    try {
+      (sub as any)?.subscription?.unsubscribe?.();
+    } catch {}
+    try {
+      (sub as any)?.unsubscribe?.();
+    } catch {}
+  };
 }
 
 /* ===== Hook para componentes cliente (reactiva la UI al sincronizar) ===== */
