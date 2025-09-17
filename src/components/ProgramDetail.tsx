@@ -26,14 +26,9 @@ import {
   type LocalStore,
   type LocalProgram,
 } from '@/lib/programsLocal';
-/* =========================================================== */
 
 /* === Sync con Supabase === */
-import {
-  pushStartProgram,
-  pushResetProgram,
-} from '@/lib/programSync';
-/* ========================= */
+import { pushStartProgram, pushResetProgram } from '@/lib/programSync';
 
 type JsonTask = { id?: string; label: string; detail?: string; tags?: string[] };
 type JsonDay = { day: number; tasks: JsonTask[] };
@@ -94,7 +89,6 @@ function renderLightMarkdown(input: string) {
 const MD: FC<{ children: string; className?: string }> = ({ children, className }) => (
   <span className={className} dangerouslySetInnerHTML={{ __html: renderLightMarkdown(children) }} />
 );
-/* ------------------------------------------------------------------------------ */
 
 type Props = {
   slug: string;
@@ -114,6 +108,8 @@ export default function ProgramDetail({
   const router = useRouter();
 
   const [data, setData] = useState<ProgramJson | null>(null);
+  const [loadingData, setLoadingData] = useState(true);
+
   const [activeMap, setActiveMap] = useState<LocalStore>({});
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
@@ -133,20 +129,35 @@ export default function ProgramDetail({
   // cargar JSON
   useEffect(() => {
     const loader = DATA_LOADERS[slug];
-    if (!loader) return;
+    setLoadingData(true);
+    if (!loader) {
+      setData(null);
+      setLoadingData(false);
+      return;
+    }
     loader()
       .then((payload) => {
         setData(payload);
         setOpenAcc({ do: false, get: false, use: false });
         setOpenTasks({});
       })
-      .catch(() => setData(null));
+      .catch(() => setData(null))
+      .finally(() => setLoadingData(false));
   }, [slug]);
 
   // migrar legacy y cargar progreso unificado
   useEffect(() => {
     migrateCompat(); // idempotente
     setActiveMap(loadActive());
+
+    // Escuchar cambios externos (otra pestaña / sync)
+    const onProgramsUpdated = () => setActiveMap(loadActive());
+    window.addEventListener('storage', onProgramsUpdated);
+    window.addEventListener('akira:programs-updated', onProgramsUpdated as EventListener);
+    return () => {
+      window.removeEventListener('storage', onProgramsUpdated);
+      window.removeEventListener('akira:programs-updated', onProgramsUpdated as EventListener);
+    };
   }, []);
 
   const active: LocalProgram | null = activeMap[slug] ?? null;
@@ -220,8 +231,8 @@ export default function ProgramDetail({
     setErrorMsg(null);
     setStarting(true);
     try {
-      await pushStartProgram(slug);       // sincroniza servidor + local
-      setActiveMap(loadActive());         // refresca estado en memoria
+      await pushStartProgram(slug); // sincroniza servidor + local
+      setActiveMap(loadActive());   // refresca estado en memoria
     } catch (e: any) {
       console.error('[ProgramDetail] pushStartProgram error', e);
       setErrorMsg('No se pudo iniciar el programa. Inténtalo de nuevo.');
@@ -274,6 +285,17 @@ export default function ProgramDetail({
     </button>
   );
 
+  // Fallback si no hay loader/JSON
+  if (!loadingData && !data) {
+    return (
+      <div className="px-4 pb-24 bg-white">
+        <div className="py-10 text-center text-sm text-neutral-600">
+          Este programa todavía no está disponible.
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="px-4 pb-24 bg-white">
       {/* Hero 16:9 full-bleed con botón Volver sobre la imagen */}
@@ -315,9 +337,20 @@ export default function ProgramDetail({
           </div>
         )}
 
-        <MD className="text-[13px] text-neutral-800 leading-relaxed">{howItWorks}</MD>
+        {/* Skeleton breve mientras carga el JSON */}
+        {loadingData && (
+          <div className="animate-pulse">
+            <div className="h-3 w-2/3 bg-neutral-200 rounded mb-2" />
+            <div className="h-3 w-1/2 bg-neutral-200 rounded mb-2" />
+            <div className="h-3 w-3/5 bg-neutral-200 rounded" />
+          </div>
+        )}
 
-        {(data?.accordions?.whatYouWillDo?.length ||
+        {!loadingData && (
+          <MD className="text-[13px] text-neutral-800 leading-relaxed">{howItWorks}</MD>
+        )}
+
+        {!loadingData && (data?.accordions?.whatYouWillDo?.length ||
           data?.accordions?.whatYouWillGet?.length ||
           data?.accordions?.howToUse?.length) && (
           <div className="mt-4 divide-y divide-neutral-200">
@@ -386,7 +419,7 @@ export default function ProgramDetail({
         {!started ? (
           <button
             onClick={handleStartProgram}
-            disabled={starting}
+            disabled={starting || loadingData}
             className="inline-flex items-center gap-2 rounded-2xl px-5 py-3.5 text-[15px] font-semibold bg-black text-white shadow-md active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
           >
             <Play className="w-4 h-4" />
