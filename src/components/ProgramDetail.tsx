@@ -227,7 +227,7 @@ export default function ProgramDetail({
     setOpenTasks((p) => ({ ...p, [taskId]: !p[taskId] }));
   }
 
-  // Row de acordeón (headers un poco más marcados)
+  // Row de acordeón (usa colores por tokens)
   const ARow: FC<{ label: string; open: boolean; onClick: () => void }> = ({
     label,
     open,
@@ -238,13 +238,13 @@ export default function ProgramDetail({
       className="w-full flex items-center justify-between py-3"
       aria-expanded={open}
     >
-      <span className="text-[15px] font-semibold text-neutral-800">{label}</span>
+      <span className="text-[15px] font-semibold text-[color:var(--foreground)]">{label}</span>
       {open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
     </button>
   );
 
   return (
-    <div className="px-4 pb-24 bg-white">
+    <div className="px-4 pb-24 bg-[var(--background)] text-[color:var(--foreground)]">
       {/* Hero 16:9 full-bleed con botón Volver sobre la imagen */}
       {imageSrc && (
         <div className="-mx-4 mb-5 relative">
@@ -252,11 +252,15 @@ export default function ProgramDetail({
             <Image src={imageSrc} alt={title} fill className="object-cover" priority />
           </div>
 
-          {/* Botón Volver overlay con mejor contraste */}
+          {/* Botón Volver overlay con tokens (contraste en ambos modos) */}
           <div className="absolute top-3 right-3">
             <button
               onClick={() => { try { router.back(); } catch { location.href = '/habitos'; } }}
-              className="inline-flex items-center gap-1.5 text-[13px] font-medium px-3.5 py-2 rounded-full border border-neutral-300 bg-white/85 backdrop-blur-md shadow-md hover:bg-white active:scale-[0.98]"
+              className="inline-flex items-center gap-1.5 text-[13px] font-medium px-3.5 py-2 rounded-full border border-[color:var(--line)] shadow-md active:scale-[0.98]"
+              style={{
+                background: 'color-mix(in oklab, var(--background) 85%, transparent)',
+                backdropFilter: 'blur(6px)',
+              }}
             >
               <ChevronLeft className="w-4 h-4" />
               Volver
@@ -266,23 +270,23 @@ export default function ProgramDetail({
       )}
 
       {/* Título y chip */}
-      <h1 className="text-2xl font-semibold text-neutral-900">{title}</h1>
+      <h1 className="text-2xl font-semibold">{title}</h1>
       {data?.durationDays ? (
         <div className="mt-1 inline-flex items-center gap-2">
-          <span className="text-xs px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-700">
+          <span className="text-xs px-2 py-0.5 rounded-full border border-[color:var(--line)] text-[color:var(--foreground)]/80">
             Duración: {data.durationDays} días
           </span>
         </div>
       ) : null}
 
-      {/* Introducción — más aire y tono un pelín más oscuro */}
+      {/* Introducción */}
       <div className="mt-4">
-        <MD className="text-[13px] text-neutral-800 leading-relaxed">{howItWorks}</MD>
+        <MD className="text-[13px] text-[color:var(--foreground)]/90 leading-relaxed">{howItWorks}</MD>
 
         {(data?.accordions?.whatYouWillDo?.length ||
           data?.accordions?.whatYouWillGet?.length ||
           data?.accordions?.howToUse?.length) && (
-          <div className="mt-4 divide-y divide-neutral-200">
+          <div className="mt-4 divide-y divide-[color:var(--line)]">
             {data?.accordions?.whatYouWillDo?.length ? (
               <div className="py-2">
                 <ARow
@@ -291,7 +295,7 @@ export default function ProgramDetail({
                   onClick={() => setOpenAcc((s) => ({ ...s, do: !s.do }))}
                 />
                 {openAcc.do && (
-                  <ul className="pl-4 list-disc text-[13px] text-neutral-800 space-y-1">
+                  <ul className="pl-4 list-disc text-[13px] text-[color:var(--foreground)]/90 space-y-1">
                     {data!.accordions!.whatYouWillDo!.map((li, i) => (
                       <li key={`do_${i}`}>
                         <MD className="text-[13px] leading-relaxed">{li}</MD>
@@ -310,7 +314,7 @@ export default function ProgramDetail({
                   onClick={() => setOpenAcc((s) => ({ ...s, get: !s.get }))}
                 />
                 {openAcc.get && (
-                  <ul className="pl-4 list-disc text-[14px] text-neutral-900 space-y-1">
+                  <ul className="pl-4 list-disc text-[14px] text-[color:var(--foreground)] space-y-1">
                     {data!.accordions!.whatYouWillGet!.map((li, i) => (
                       <li key={`get_${i}`}>
                         <MD className="text-[14px] leading-relaxed">{li}</MD>
@@ -329,7 +333,7 @@ export default function ProgramDetail({
                   onClick={() => setOpenAcc((s) => ({ ...s, use: !s.use }))}
                 />
                 {openAcc.use && (
-                  <ul className="pl-4 list-disc text-[13px] text-neutral-800 space-y-1">
+                  <ul className="pl-4 list-disc text-[13px] text-[color:var(--foreground)]/90 space-y-1">
                     {data!.accordions!.howToUse!.map((li, i) => (
                       <li key={`use_${i}`}>
                         <MD className="text-[13px] leading-relaxed">{li}</MD>
@@ -343,12 +347,13 @@ export default function ProgramDetail({
         )}
       </div>
 
-      {/* CTA — más respiración */}
+      {/* CTA — usa tokens para tema */}
       <div className="mt-6 flex items-center gap-2">
         {!started ? (
           <button
             onClick={startProgram}
-            className="inline-flex items-center gap-2 rounded-2xl px-5 py-3.5 text-[15px] font-semibold bg-black text-white shadow-md active:scale-[0.98]"
+            className="inline-flex items-center gap-2 rounded-2xl px-5 py-3.5 text-[15px] font-semibold shadow-md active:scale-[0.98] border border-[color:var(--accent)]"
+            style={{ background: 'var(--accent)', color: 'var(--background)' }}
           >
             <Play className="w-4 h-4" />
             Empezar programa
@@ -356,7 +361,8 @@ export default function ProgramDetail({
         ) : (
           <button
             onClick={requestReset}
-            className="inline-flex items-center gap-2 justify-center rounded-xl px-3.5 py-2.5 text-xs font-medium bg-neutral-100 text-neutral-700 hover:bg-neutral-200 transition"
+            className="inline-flex items-center gap-2 justify-center rounded-xl px-3.5 py-2.5 text-xs font-medium transition border border-[color:var(--line)]"
+            style={{ background: 'color-mix(in oklab, var(--background) 96%, transparent)' }}
             title="Reiniciar programa"
           >
             <RotateCcw className="w-4 h-4" />
@@ -368,19 +374,24 @@ export default function ProgramDetail({
       {/* Modal confirmación reinicio */}
       {confirmOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-2xl p-5 w-[90%] max-w-md shadow-lg">
+          <div className="rounded-2xl p-5 w-[90%] max-w-md shadow-lg border border-[color:var(--line)]"
+               style={{ background: 'var(--background)', color: 'var(--foreground)' }}>
             <h3 className="text-lg font-semibold">¿Estás seguro?</h3>
-            <p className="text-sm text-neutral-600 mt-2">Esto dejará el programa como no iniciado.</p>
+            <p className="text-sm mt-2 text-[color:var(--foreground)]/80">
+              Esto dejará el programa como no iniciado.
+            </p>
             <div className="mt-4 grid grid-cols-2 gap-2">
               <button
                 onClick={cancelReset}
-                className="rounded-xl border border-neutral-200 py-2 text-sm font-medium hover:bg-neutral-50"
+                className="rounded-xl py-2 text-sm font-medium border border-[color:var(--line)]"
+                style={{ background: 'var(--background)', color: 'var(--foreground)' }}
               >
                 Cancelar
               </button>
               <button
                 onClick={confirmReset}
-                className="rounded-xl bg-red-600 text-white py-2 text-sm font-semibold hover:bg-red-700"
+                className="rounded-xl py-2 text-sm font-semibold"
+                style={{ background: '#d92c2c', color: '#fff' }}
               >
                 Reiniciar
               </button>
@@ -397,10 +408,16 @@ export default function ProgramDetail({
               <div className="text-sm font-medium">
                 Progreso: Día {Math.min(currentDay, totalDays)} / {totalDays}
               </div>
-              <div className="text-sm text-neutral-500">{progressPct}%</div>
+              <div className="text-sm text-[color:var(--foreground)]/70">{progressPct}%</div>
             </div>
-            <div className="h-2 w-full rounded-full bg-neutral-200 overflow-hidden">
-              <div className="h-full bg-black transition-all" style={{ width: `${progressPct}%` }} />
+            <div className="h-2 w-full rounded-full bg-[color:var(--line)]/50 overflow-hidden">
+              <div
+                className="h-full transition-all"
+                style={{
+                  width: `${progressPct}%`,
+                  background: 'var(--accent)',
+                }}
+              />
             </div>
           </div>
 
@@ -408,11 +425,13 @@ export default function ProgramDetail({
             <button
               onClick={() => setViewedDay((d) => Math.max(1, d - 1))}
               disabled={viewedDay <= 1}
-              className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border ${
-                viewedDay <= 1
-                  ? 'text-neutral-400 border-neutral-200 cursor-not-allowed'
-                  : 'text-neutral-700 border-neutral-300 hover:bg-neutral-50'
-              }`}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border"
+              style={{
+                borderColor: 'var(--line)',
+                color: viewedDay <= 1 ? 'color-mix(in oklab, var(--foreground) 40%, transparent)' : 'var(--foreground)',
+                opacity: viewedDay <= 1 ? 0.6 : 1,
+                background: 'var(--background)',
+              }}
               aria-label="Día anterior"
             >
               <ChevronLeft className="w-4 h-4" /> Anterior
@@ -423,11 +442,13 @@ export default function ProgramDetail({
             <button
               onClick={() => setViewedDay((d) => Math.min(currentDay, d + 1))}
               disabled={viewedDay >= currentDay}
-              className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border ${
-                viewedDay >= currentDay
-                  ? 'text-neutral-400 border-neutral-200 cursor-not-allowed'
-                  : 'text-neutral-700 border-neutral-300 hover:bg-neutral-50'
-              }`}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border"
+              style={{
+                borderColor: 'var(--line)',
+                color: viewedDay >= currentDay ? 'color-mix(in oklab, var(--foreground) 40%, transparent)' : 'var(--foreground)',
+                opacity: viewedDay >= currentDay ? 0.6 : 1,
+                background: 'var(--background)',
+              }}
               aria-label="Día siguiente"
               title={
                 viewedDay >= currentDay
@@ -449,18 +470,21 @@ export default function ProgramDetail({
       {started && data && totalDays > 0 && (
         <div className="mt-4">
           {tasks.length === 0 ? (
-            <div className="text-sm text-neutral-600 border border-dashed border-neutral-300 rounded-2xl p-4">
+            <div className="text-sm border border-dashed rounded-2xl p-4"
+                 style={{ color: 'color-mix(in oklab, var(--foreground) 80%, transparent)', borderColor: 'var(--line)' }}>
               Hoy desconectas de la app. Disfruta tu día sin móvil.
             </div>
           ) : (
-            <div className="rounded-2xl border border-neutral-200 overflow-hidden divide-y divide-neutral-100">
+            <div className="rounded-2xl border overflow-hidden divide-y"
+                 style={{ borderColor: 'var(--line)', background: 'var(--background)' }}>
               {tasks.map((t, i) => {
                 const id = t.id ?? `task_${i}`;
                 const done = Boolean(dayProgressMap[id]);
                 const isOpen = Boolean(openTasks[id]);
                 return (
-                  <div key={id} className="bg-white">
-                    <div className="w-full text-left px-4 py-3 flex items-start gap-3">
+                  <div key={id}>
+                    <div className="w-full text-left px-4 py-3 flex items-start gap-3"
+                         style={{ color: 'var(--foreground)' }}>
                       <button
                         type="button"
                         onClick={() => setInfoOpen(true)}
@@ -469,22 +493,23 @@ export default function ProgramDetail({
                         title="Los checks se hacen en Mi Zona"
                       >
                         {done ? (
-                          <CheckCircle2 className="w-5 h-5 text-green-600" />
+                          <CheckCircle2 className="w-5 h-5" style={{ color: '#16a34a' }} />
                         ) : (
-                          <Circle className="w-5 h-5 text-neutral-400" />
+                          <Circle className="w-5 h-5" style={{ color: 'color-mix(in oklab, var(--foreground) 35%, transparent)' }} />
                         )}
                       </button>
 
                       <div className="flex-1">
                         {/* Label con Markdown ligero */}
-                        <div className="text-[15px] text-neutral-900">
+                        <div className="text-[15px]">
                           <MD className="text-[15px]">{t.label}</MD>
                         </div>
                         {/* toggle detalle */}
                         {t.detail && (
                           <button
                             onClick={() => toggleTaskOpen(t, i)}
-                            className="mt-1 inline-flex items-center gap-1 text-[13px] text-neutral-700 hover:underline"
+                            className="mt-1 inline-flex items-center gap-1 text-[13px] hover:underline"
+                            style={{ color: 'color-mix(in oklab, var(--foreground) 80%, transparent)' }}
                           >
                             {isOpen ? (
                               <>Ocultar <ChevronUp className="w-3 h-3" /></>
@@ -494,18 +519,22 @@ export default function ProgramDetail({
                           </button>
                         )}
                         {t.detail && isOpen && (
-                          <MD className="text-[13px] text-neutral-700 mt-1">
+                          <MD className="text-[13px] mt-1"
+                              // texto secundario en ambos modos
+                              className="text-[13px] mt-1"
+                          >
                             {t.detail}
                           </MD>
                         )}
                       </div>
                     </div>
+                    <div className="h-px" style={{ background: 'var(--line)' }} />
                   </div>
                 );
               })}
             </div>
           )}
-          <p className="text-xs text-neutral-500 mt-2">
+          <p className="text-xs mt-2" style={{ color: 'color-mix(in oklab, var(--foreground) 65%, transparent)' }}>
             * Los checks se hacen en <strong>Mi Zona</strong>. Aquí puedes revisar tu progreso. El plan se revela día a día.
           </p>
         </div>
@@ -514,16 +543,20 @@ export default function ProgramDetail({
       {/* Pop-up informativo */}
       {infoOpen && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-2xl p-5 w-[90%] max-w-md shadow-lg relative">
+          <div
+            className="rounded-2xl p-5 w-[90%] max-w-md shadow-lg relative border"
+            style={{ background: 'var(--background)', color: 'var(--foreground)', borderColor: 'var(--line)' }}
+          >
             <button
               onClick={() => setInfoOpen(false)}
-              className="absolute top-3 right-3 p-1 rounded-full hover:bg-neutral-100"
+              className="absolute top-3 right-3 p-1 rounded-full"
+              style={{ background: 'color-mix(in oklab, var(--background) 94%, transparent)' }}
               aria-label="Cerrar"
               title="Cerrar"
             >
               <X className="w-4 h-4" />
             </button>
-            <p className="text-[15px] text-neutral-800">
+            <p className="text-[15px]">
               Los checks se hacen en <strong>Mi Zona</strong>. Aquí puedes revisar tu progreso. El plan se revela día a día.
             </p>
           </div>
