@@ -16,16 +16,16 @@
   --radius-input: 16px;
 
   /* Altura del bottom nav (mantén en sync con NAV_HEIGHT de JS) */
-  --nav-height: 64px; /* ← ADDED */
+  --nav-height: 64px;
 
-  /* ====== FUENTES (sustituyen a next/font) ====== */
+  /* Fuentes */
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 
   --font-geist-sans: var(--font-sans);
   --font-geist-mono: var(--font-mono);
 
-  /* Pistas para el UA: permitimos claro/oscuro según media query */
+  /* Pista para el UA */
   color-scheme: light dark;
 }
 
@@ -37,14 +37,14 @@
   --font-mono: var(--font-mono);
 }
 
-/* Modo oscuro: solo tokens */
+/* ===== Modo oscuro: tokens ===== */
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
     --muted: #9aa0a6;
     --line: #262626;
-    --accent: #ffffff;
+    --accent: #ffffff; /* botones principales en claro */
   }
 }
 
@@ -55,27 +55,23 @@
 *::before,
 *::after { box-sizing: border-box; }
 
-/* Evitar altura rígida; usamos 100dvh en main */
-html, body { min-height: 100%; } /* ← CHANGED */
+html, body { min-height: 100%; }
 
 body {
   margin: 0;
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);
-
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  -webkit-text-size-adjust: 100%; /* ← ADDED (iOS) */
-
-  /* Evita “elastic scroll” en iOS dentro de la app */
+  -webkit-text-size-adjust: 100%;
   overscroll-behavior-y: none;
 }
 
-/* Selección de texto agradable (usa el acento de la app) */
+/* Selección adaptativa */
 ::selection {
-  background: #FFD54F;
-  color: #111111;
+  background: color-mix(in oklab, var(--accent) 30%, var(--background));
+  color: var(--foreground);
 }
 
 /* Medios fluidos por defecto */
@@ -96,16 +92,16 @@ input, textarea, button, select, a {
 
 /* Reserva de espacio para el bottom nav fijo y corrige viewport en iOS */
 main {
-  /* altura visible real (evita bugs de iOS con 100vh) */
-  min-height: 100dvh; /* ← ADDED */
-  /* deja respirar al contenido bajo el nav fijo */
-  padding-bottom: calc(var(--nav-height) + env(safe-area-inset-bottom, 0px)); /* ← ADDED */
+  min-height: 100dvh;
+  padding-bottom: calc(var(--nav-height) + env(safe-area-inset-bottom, 0px));
+  background: var(--background);            /* ← asegura fondo blanco/negro también en el “hueco” */
 }
 
-/* Si tu contenedor principal no es <main>, aplica la clase .app-main */
+/* Si tu contenedor principal no es <main>, aplica .app-main */
 .app-main {
   min-height: 100dvh;
   padding-bottom: calc(var(--nav-height) + env(safe-area-inset-bottom, 0px));
+  background: var(--background);            /* ← igual que main */
 }
 
 /* =====
@@ -149,7 +145,9 @@ main {
   color: var(--foreground);
   display: inline-flex;
   align-items: center;
+  transition: background .15s ease, color .15s ease, border-color .15s ease, transform .05s ease;
 }
+.tabbar button:hover { transform: translateY(-1px); }
 .tabbar button[aria-selected="true"] {
   background: var(--accent);
   color: #fff;
@@ -180,7 +178,7 @@ main {
 .btn:focus,
 a:focus,
 button:focus {
-  outline: 2px solid rgba(0,0,0,.08);
+  outline: 2px solid color-mix(in oklab, var(--foreground) 12%, transparent);
   outline-offset: 2px;
 }
 
@@ -194,7 +192,12 @@ button:focus {
   cursor: pointer;
   font-weight: 600;
   line-height: 1;
+  transition: transform .05s ease, filter .15s ease, background .15s ease, color .15s ease, border-color .15s ease;
 }
+.btn:hover { transform: translateY(-1px); }
+.btn:active { transform: translateY(0); }
+.btn:disabled { opacity: .6; cursor: not-allowed; }
+
 .btn.secondary {
   background: var(--background);
   color: var(--foreground);
@@ -216,7 +219,6 @@ button:focus {
   color: #fff;
 }
 .btn.green:hover { filter: brightness(.95); }
-.btn:disabled { opacity: .6; cursor: not-allowed; }
 
 .badge {
   font-size: 12px;
@@ -292,6 +294,7 @@ details.accordion summary::-webkit-details-marker { display: none; }
   color: var(--foreground);
   cursor: pointer;
 }
+.modal .actions a:hover { background: color-mix(in oklab, var(--foreground) 3%, transparent); }
 
 /* =========
    BottomNav (fijo)
@@ -301,15 +304,14 @@ details.accordion summary::-webkit-details-marker { display: none; }
   z-index: 50;
   display: flex; align-items: stretch;
   gap: 0;
-
-  /* borde y elevación sutil: mejora legibilidad en dark iOS */
-  border-top: 1px solid var(--line); /* ← ADDED */
-  /* Puedes añadir blur si te gusta el efecto:
+  border-top: 1px solid var(--line);
+  background: var(--background); /* ← ya no transparente */
+  /* opcional: blur
      backdrop-filter: saturate(180%) blur(8px);
   */
 }
 
-.bn-item{
+.bn-item {
   flex: 1 1 0;
   min-width: 0;
   position: relative;
@@ -318,12 +320,13 @@ details.accordion summary::-webkit-details-marker { display: none; }
   background: transparent;
 }
 
+/* Activo: usa tokens (soporta dark) */
 .bn-item[aria-current="page"]{
-  background: #ffffff;
-  color: #000000;
+  background: var(--background);
+  color: var(--foreground);
 }
 
-.bn-pill{
+.bn-pill {
   box-sizing: border-box;
   height: 100%;
   width: 100%;
@@ -336,35 +339,15 @@ details.accordion summary::-webkit-details-marker { display: none; }
   border: none;
 }
 .bn-pill::before,
-.bn-pill::after{
-  content: none !important;
-}
+.bn-pill::after { content: none !important; }
 
 /* ====== AKIRA · Tweaks mínimos para Herramientas ====== */
 .tabbar { overflow: auto; -webkit-overflow-scrolling: touch; gap: 12px; }
-.tabbar button { transition: background .15s ease, color .15s ease, border-color .15s ease, transform .05s ease; }
-.tabbar button:hover { transform: translateY(-1px); }
-.tabbar button[aria-selected="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }
-
-/* Botones: micro-animación y estados */
-.btn { transition: transform .05s ease, filter .15s ease, background .15s ease, color .15s ease, border-color .15s ease; }
-.btn:hover { transform: translateY(-1px); }
-.btn:active { transform: translateY(0); }
-.btn.secondary:hover { filter: brightness(.98); }
-.btn.red:hover { filter: brightness(.98); }
-
-/* Modal: hover en enlaces de compartir */
-.modal .actions a:hover { background: rgba(0,0,0,.03); }
-
-/* Inputs: focus más visible */
-.input:focus, .textarea:focus {
-  outline: 2px solid color-mix(in oklab, var(--accent) 10%, transparent);
-  outline-offset: 2px;
-}
 
 /* === HOME ====== */
 .btn.btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-.btn.secondary:active { background: #000; color: #fff; border-color: #000; }
+.btn.secondary:hover { filter: brightness(.98); }
+.btn.red:hover { filter: brightness(.98); }
 .btn .icon { display: inline-flex; margin-left: 8px; line-height: 0; }
 .card .cover-img { width: 100%; aspect-ratio: 4 / 5; object-fit: cover; display: block; }
 .home-thought { display: grid; grid-template-columns: 1fr; gap: 12px; }
