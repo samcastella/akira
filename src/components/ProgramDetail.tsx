@@ -1,4 +1,3 @@
-// src/components/ProgramDetail.tsx
 'use client';
 
 import type { FC } from 'react';
@@ -28,7 +27,7 @@ import {
 } from '@/lib/programsLocal';
 
 /* === Sync con Supabase === */
-import { pushStartProgram, pushResetProgram } from '@/lib/programSync';
+import { pushStartProgram, pushResetProgram, pullUserPrograms } from '@/lib/programSync';
 
 type JsonTask = { id?: string; label: string; detail?: string; tags?: string[] };
 type JsonDay = { day: number; tasks: JsonTask[] };
@@ -145,18 +144,45 @@ export default function ProgramDetail({
       .finally(() => setLoadingData(false));
   }, [slug]);
 
-  // migrar legacy y cargar progreso unificado
+  // migrar legacy y cargar progreso unificado + subscribirse a cambios externos
   useEffect(() => {
     migrateCompat(); // idempotente
     setActiveMap(loadActive());
 
-    // Escuchar cambios externos (otra pestaña / sync)
     const onProgramsUpdated = () => setActiveMap(loadActive());
     window.addEventListener('storage', onProgramsUpdated);
     window.addEventListener('akira:programs-updated', onProgramsUpdated as EventListener);
     return () => {
       window.removeEventListener('storage', onProgramsUpdated);
       window.removeEventListener('akira:programs-updated', onProgramsUpdated as EventListener);
+    };
+  }, []);
+
+  // ⬇️ Al montar, hidrata desde server (por si entramos directo desde enlace)
+  useEffect(() => {
+    (async () => {
+      try {
+        await pullUserPrograms();
+      } finally {
+        setActiveMap(loadActive());
+      }
+    })();
+  }, []);
+
+  // ⬇️ Al volver a foco / online, rehidratar (puede haber cambios desde "Mi Zona")
+  useEffect(() => {
+    const rehydrate = async () => {
+      await pullUserPrograms();
+      setActiveMap(loadActive());
+    };
+    const onVis = () => { if (document.visibilityState === 'visible') void rehydrate(); };
+    const onOnline = () => void rehydrate();
+
+    document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('online', onOnline);
+    return () => {
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('online', onOnline);
     };
   }, []);
 
@@ -186,7 +212,7 @@ export default function ProgramDetail({
 
   const tasks: JsonTask[] = dayData?.tasks ?? [];
 
-  // Progress shape: guardamos en LocalProgram.progress un objeto { [dayNum]: { [taskId]: boolean } }
+  // Progress shape: LocalProgram.progress → { [dayNum]: { [taskId]: boolean } }
   function getDayProgressMap(dayNum: number): Record<string, boolean> {
     const entry = activeMap[slug];
     if (!entry) return {};
@@ -231,8 +257,9 @@ export default function ProgramDetail({
     setErrorMsg(null);
     setStarting(true);
     try {
-      await pushStartProgram(slug); // sincroniza servidor + local
-      setActiveMap(loadActive());   // refresca estado en memoria
+      await pushStartProgram(slug);   // server
+      await pullUserPrograms();       // rehidrata desde server
+      setActiveMap(loadActive());     // refresca estado local
     } catch (e: any) {
       console.error('[ProgramDetail] pushStartProgram error', e);
       setErrorMsg('No se pudo iniciar el programa. Inténtalo de nuevo.');
@@ -248,8 +275,9 @@ export default function ProgramDetail({
     setErrorMsg(null);
     setResetting(true);
     try {
-      await pushResetProgram(slug, { deleteTasks: true }); // desactiva + limpia tareas en server
-      setActiveMap(loadActive());                           // refresca local
+      await pushResetProgram(slug, { deleteTasks: true }); // server
+      await pullUserPrograms();                             // rehidrata
+      setActiveMap(loadActive());                           // local
       setOpenTasks({});
       setViewedDay(1);
       setConfirmOpen(false);
