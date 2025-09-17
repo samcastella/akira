@@ -18,6 +18,23 @@ import {
   Play,
 } from 'lucide-react';
 
+/* === Unificación almacenamiento local (programas activos) === */
+import {
+  loadActive,
+  saveActive,
+  migrateCompat,
+  type LocalStore,
+  type LocalProgram,
+} from '@/lib/programsLocal';
+/* =========================================================== */
+
+/* === Sync con Supabase === */
+import {
+  pushStartProgram,
+  pushResetProgram,
+} from '@/lib/programSync';
+/* ========================= */
+
 type JsonTask = { id?: string; label: string; detail?: string; tags?: string[] };
 type JsonDay = { day: number; tasks: JsonTask[] };
 type ProgramJson = {
@@ -34,12 +51,6 @@ type ProgramJson = {
   days: JsonDay[];
 };
 
-type DayProgressV2 = Record<number, Record<string, boolean>>;
-type ActiveProgram = { startedAt: string; progress: DayProgressV2 };
-
-const LS_ACTIVE = 'akira_programs_active_v1';
-const LS_ACTIVE_COMPAT = 'akira_program_active';
-
 const DATA_LOADERS: Record<string, () => Promise<ProgramJson>> = {
   'lectura-30': async () => {
     const m = await import('@/data/programs/lectura-30.json');
@@ -51,29 +62,22 @@ const DATA_LOADERS: Record<string, () => Promise<ProgramJson>> = {
   },
 };
 
+/* === fechas/helpers === */
 function todayKey() {
   const d = new Date();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   return `${d.getFullYear()}-${mm}-${dd}`;
 }
-function daysBetween(aISO: string, bISO: string) {
-  const a = new Date(aISO + 'T00:00:00');
-  const b = new Date(bISO + 'T00:00:00');
-  return Math.floor((b.getTime() - a.getTime()) / 86_400_000);
+function startOfDayMs(date: Date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
 }
-function loadActive(): Record<string, ActiveProgram> {
-  if (typeof window === 'undefined') return {};
-  try {
-    const raw = localStorage.getItem(LS_ACTIVE);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-}
-function saveActive(obj: Record<string, ActiveProgram>) {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(LS_ACTIVE, JSON.stringify(obj));
+function daysBetweenFromMs(startMs: number, endISOyyyyMmDd: string) {
+  const a = startOfDayMs(new Date(startMs));
+  const b = startOfDayMs(new Date(`${endISOyyyyMmDd}T00:00:00`));
+  return Math.floor((b - a) / 86_400_000);
 }
 
 /* ---------- Mini-render Markdown seguro (negrita/cursiva/line breaks) ---------- */
@@ -110,7 +114,7 @@ export default function ProgramDetail({
   const router = useRouter();
 
   const [data, setData] = useState<ProgramJson | null>(null);
-  const [activeMap, setActiveMap] = useState<Record<string, ActiveProgram>>({});
+  const [activeMap, setActiveMap] = useState<LocalStore>({});
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
 
@@ -120,6 +124,11 @@ export default function ProgramDetail({
     use: false,
   });
   const [openTasks, setOpenTasks] = useState<Record<string, boolean>>({});
+
+  // Estados de acción para evitar dobles clicks y mostrar feedback
+  const [starting, setStarting] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // cargar JSON
   useEffect(() => {
@@ -134,12 +143,13 @@ export default function ProgramDetail({
       .catch(() => setData(null));
   }, [slug]);
 
-  // cargar progreso
+  // migrar legacy y cargar progreso unificado
   useEffect(() => {
+    migrateCompat(); // idempotente
     setActiveMap(loadActive());
   }, []);
 
-  const active = activeMap[slug] ?? null;
+  const active: LocalProgram | null = activeMap[slug] ?? null;
   const started = Boolean(active?.startedAt);
 
   const totalDays = useMemo(
@@ -149,7 +159,7 @@ export default function ProgramDetail({
 
   const currentDay = useMemo(() => {
     if (!active?.startedAt || totalDays <= 0) return 1;
-    const delta = daysBetween(active.startedAt, todayKey());
+    const delta = daysBetweenFromMs(active.startedAt, todayKey());
     return Math.min(totalDays, Math.max(1, delta + 1));
   }, [active?.startedAt, totalDays]);
 
@@ -165,12 +175,14 @@ export default function ProgramDetail({
 
   const tasks: JsonTask[] = dayData?.tasks ?? [];
 
+  // Progress shape: guardamos en LocalProgram.progress un objeto { [dayNum]: { [taskId]: boolean } }
   function getDayProgressMap(dayNum: number): Record<string, boolean> {
     const entry = activeMap[slug];
     if (!entry) return {};
-    const raw = entry.progress?.[dayNum] as any;
+    const raw = (entry.progress ?? {})[dayNum] as any;
     if (!raw) return {};
     if (Array.isArray(raw)) {
+      // migración antigua [bool,bool,...] → {taskId: bool}
       const migrated: Record<string, boolean> = {};
       const dayTasks =
         data?.days.find((d) => d.day === dayNum)?.tasks ?? data?.days[dayNum - 1]?.tasks ?? [];
@@ -178,8 +190,17 @@ export default function ProgramDetail({
         const id = t.id ?? `task_${i}`;
         migrated[id] = Boolean(raw[i]);
       });
-      const next = { ...activeMap };
-      next[slug] = { ...entry, progress: { ...entry.progress, [dayNum]: migrated } };
+
+      const next: LocalStore = { ...activeMap };
+      const lp: LocalProgram = {
+        ...(entry as LocalProgram),
+        progress: {
+          ...(entry.progress ?? {}),
+          [dayNum]: migrated,
+        },
+        updatedAt: Date.now(),
+      };
+      next[slug] = lp;
       saveActive(next);
       setActiveMap(next);
       return migrated;
@@ -190,33 +211,43 @@ export default function ProgramDetail({
 
   const progressPct = useMemo(() => {
     if (!active?.startedAt || totalDays === 0) return 0;
-    const passed = Math.min(totalDays, Math.max(0, daysBetween(active.startedAt, todayKey()) + 1));
+    const passed = Math.min(totalDays, Math.max(0, daysBetweenFromMs(active.startedAt, todayKey()) + 1));
     return Math.round((passed / totalDays) * 100);
   }, [active?.startedAt, totalDays]);
 
-  function startProgram() {
-    setActiveMap((prev) => {
-      const next = { ...prev, [slug]: { startedAt: todayKey(), progress: {} } };
-      saveActive(next);
-      try { localStorage.removeItem(LS_ACTIVE_COMPAT); } catch {}
-      return next;
-    });
+  /* ======== Acciones con sync Supabase ======== */
+  async function handleStartProgram() {
+    setErrorMsg(null);
+    setStarting(true);
+    try {
+      await pushStartProgram(slug);       // sincroniza servidor + local
+      setActiveMap(loadActive());         // refresca estado en memoria
+    } catch (e: any) {
+      console.error('[ProgramDetail] pushStartProgram error', e);
+      setErrorMsg('No se pudo iniciar el programa. Inténtalo de nuevo.');
+    } finally {
+      setStarting(false);
+    }
   }
 
   function requestReset() {
     setConfirmOpen(true);
   }
-  function confirmReset() {
-    setActiveMap((prev) => {
-      const next = { ...prev };
-      delete next[slug];
-      saveActive(next);
-      try { localStorage.removeItem(LS_ACTIVE_COMPAT); } catch {}
-      return next;
-    });
-    setOpenTasks({});
-    setViewedDay(1);
-    setConfirmOpen(false);
+  async function confirmReset() {
+    setErrorMsg(null);
+    setResetting(true);
+    try {
+      await pushResetProgram(slug, { deleteTasks: true }); // desactiva + limpia tareas en server
+      setActiveMap(loadActive());                           // refresca local
+      setOpenTasks({});
+      setViewedDay(1);
+      setConfirmOpen(false);
+    } catch (e: any) {
+      console.error('[ProgramDetail] pushResetProgram error', e);
+      setErrorMsg('No se pudo reiniciar el programa. Inténtalo de nuevo.');
+    } finally {
+      setResetting(false);
+    }
   }
   function cancelReset() {
     setConfirmOpen(false);
@@ -277,6 +308,13 @@ export default function ProgramDetail({
 
       {/* Introducción */}
       <div className="mt-4">
+        {/* Error (si lo hay) */}
+        {errorMsg && (
+          <div className="mb-3 rounded-xl border border-red-200 bg-red-50 text-red-700 px-3 py-2 text-sm">
+            {errorMsg}
+          </div>
+        )}
+
         <MD className="text-[13px] text-neutral-800 leading-relaxed">{howItWorks}</MD>
 
         {(data?.accordions?.whatYouWillDo?.length ||
@@ -347,20 +385,22 @@ export default function ProgramDetail({
       <div className="mt-6 flex items-center gap-2">
         {!started ? (
           <button
-            onClick={startProgram}
-            className="inline-flex items-center gap-2 rounded-2xl px-5 py-3.5 text-[15px] font-semibold bg-black text-white shadow-md active:scale-[0.98]"
+            onClick={handleStartProgram}
+            disabled={starting}
+            className="inline-flex items-center gap-2 rounded-2xl px-5 py-3.5 text-[15px] font-semibold bg-black text-white shadow-md active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
           >
             <Play className="w-4 h-4" />
-            Empezar programa
+            {starting ? 'Iniciando…' : 'Empezar programa'}
           </button>
         ) : (
           <button
             onClick={requestReset}
-            className="inline-flex items-center gap-2 justify-center rounded-xl px-3.5 py-2.5 text-xs font-medium bg-neutral-100 text-neutral-700 hover:bg-neutral-200 transition"
+            disabled={resetting}
+            className="inline-flex items-center gap-2 justify-center rounded-xl px-3.5 py-2.5 text-xs font-medium bg-neutral-100 text-neutral-700 hover:bg-neutral-200 transition disabled:opacity-60 disabled:cursor-not-allowed"
             title="Reiniciar programa"
           >
             <RotateCcw className="w-4 h-4" />
-            Reiniciar
+            {resetting ? 'Reiniciando…' : 'Reiniciar'}
           </button>
         )}
       </div>
@@ -380,9 +420,10 @@ export default function ProgramDetail({
               </button>
               <button
                 onClick={confirmReset}
-                className="rounded-xl bg-red-600 text-white py-2 text-sm font-semibold hover:bg-red-700"
+                disabled={resetting}
+                className="rounded-xl bg-red-600 text-white py-2 text-sm font-semibold hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                Reiniciar
+                {resetting ? 'Reiniciando…' : 'Reiniciar'}
               </button>
             </div>
           </div>
@@ -456,7 +497,7 @@ export default function ProgramDetail({
             <div className="rounded-2xl border border-neutral-200 overflow-hidden divide-y divide-neutral-100">
               {tasks.map((t, i) => {
                 const id = t.id ?? `task_${i}`;
-                const done = Boolean(dayProgressMap[id]);
+                const done = Boolean((dayProgressMap as any)[id]);
                 const isOpen = Boolean(openTasks[id]);
                 const detailId = `task_detail_${id}`;
                 return (

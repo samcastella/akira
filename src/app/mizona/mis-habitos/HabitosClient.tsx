@@ -13,9 +13,11 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { getActiveProgram } from '../../../lib/programService';
 /* ======================================= */
 
+/* ✅ Unificación: fuente única de programas activos en local */
+import { loadActive } from '@/lib/programsLocal';
+
 const LS_HABITS_MASTER = 'akira_habits_master_v1';
 const LS_HABITS_DAILY  = 'akira_habits_daily_v1';
-const LS_ACTIVE_PROGRAMS = 'akira_programs_active_v1';
 
 type DailyEntry = { done: boolean; doneAt?: number };
 type DailyMap = Record<string, Record<string, DailyEntry>>;
@@ -148,7 +150,7 @@ function ActiveProgramSection() {
         Aún no has activado ningún programa. Empieza con <strong>Lectura 30</strong> y te guiaré día a día.
       </p>
       <div className="mt-4">
-        <Link href="/programas" className="btn">Ver programas</Link>
+        <Link href="/habitos" className="btn">Ver programas</Link>
       </div>
     </div>
   );
@@ -188,16 +190,20 @@ export default function HabitosClient() {
   const greetingName = firstName || username || 'usuario/a';
   const avatar = user?.foto as string | undefined;
 
-  // Programas activos (localStorage legacy – mantenemos lectura, pero ya no se usa para UI)
+  // Programas activos (localStorage unificado – lectura informativa)
   const [activePrograms, setActivePrograms] = useState<string[]>([]);
 
   useEffect(() => {
     setMasters(loadMasterHabits());
     setDaily(loadDaily());
+
+    // ✅ Unificado: leemos los slugs activos desde programsLocal
     try {
-      const raw = localStorage.getItem(LS_ACTIVE_PROGRAMS);
-      setActivePrograms(raw ? JSON.parse(raw) : []);
-    } catch { setActivePrograms([]); }
+      const store = loadActive(); // { [slug]: LocalProgram }
+      setActivePrograms(Object.keys(store || {}));
+    } catch {
+      setActivePrograms([]);
+    }
   }, []);
 
   // Asegura bucket de hoy
@@ -337,8 +343,6 @@ export default function HabitosClient() {
       <section className="mb-6">
         <ActiveProgramSection />
       </section>
-
-      {/* ⛳️ Se ha eliminado el semáforo y el calendario de esta página */}
 
       {/* Título de hoy */}
       <h3 style={{ marginTop: 0, marginBottom: 10 }}>

@@ -13,6 +13,9 @@ import {
   type ThematicCategory,
 } from '@/data/programs';
 
+// ✅ Fuente única de verdad para programas activos en local
+import { loadActive } from '@/lib/programsLocal';
+
 /* ===========================
    Tipos y constantes
    =========================== */
@@ -31,7 +34,6 @@ type Program = {
 };
 
 const LS_SAVED = 'akira_saved_programs_v1';
-const LS_ACTIVE = 'akira_programs_active_v1';
 
 /* Construimos ALL_PROGRAMS desde el registro central */
 const ALL_PROGRAMS: Program[] = PROGRAMS.map(toIndexCard) as Program[];
@@ -55,16 +57,8 @@ function saveSaved(setIds: Set<string>) {
 }
 function loadActiveCount(): number {
   if (typeof window === 'undefined') return 0;
-  try {
-    const raw = localStorage.getItem(LS_ACTIVE);
-    if (!raw) return 0;
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) return parsed.length;
-    if (typeof parsed === 'object' && parsed) return Object.keys(parsed).length;
-    return 0;
-  } catch {
-    return 0;
-  }
+  const store = loadActive(); // { [slug]: LocalProgram }
+  return store && typeof store === 'object' ? Object.keys(store).length : 0;
 }
 
 /* ===========================
