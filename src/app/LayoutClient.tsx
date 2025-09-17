@@ -14,15 +14,14 @@ import {
 } from '@/lib/user';
 import { supabase } from '@/lib/supabaseClient';
 import RegistrationModal from '@/components/RegistrationModal';
-import { pullUserPrograms } from '@/lib/programSync';
 
 const LS_SEEN_AUTH = 'akira_seen_auth_v1';
 
-// Decide si ya podemos dejar pasar al usuario (perfil completo O ha terminado onboarding)
+// ✅ Nuevo: permite entrar si el perfil es completo O si el usuario marcó onboardingDone
 function canEnter(): boolean {
   try {
     const u = loadUser();
-    return isUserComplete(u);
+    return isUserComplete(u) || !!u.onboardingDone;
   } catch {
     return false;
   }
@@ -36,30 +35,20 @@ export default function LayoutClient({
   bottomNav: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const isAuthRoute = pathname === '/login' || pathname.startsWith('/auth');
 
-  // Rutas de autenticación donde no debe aplicarse el gating/splash
-  const isAuthRoute =
-    pathname === '/login' ||
-    pathname.startsWith('/auth'); // /auth/callback, /auth/confirmed, etc.
-
-  // === Estado de perfil local (gating por completar datos / onboarding) ===
   const [userOk, setUserOk] = useState<boolean | null>(null);
-
-  // === Estado de auth (sesión Supabase) ===
   const [hasSession, setHasSession] = useState(false);
   const [authReady, setAuthReady] = useState(false);
 
-  // === Modales ===
-  const [showAuthModal, setShowAuthModal] = useState(false);            // paso 1
-  const [showRegistration, setShowRegistration] = useState(false);      // pasos 2–5
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showRegistration, setShowRegistration] = useState(false);
   const [registrationStartStep, setRegistrationStartStep] = useState<1 | 2 | 3 | 4 | 5>(1);
 
-  // Cargar perfil local
   useEffect(() => {
     setUserOk(canEnter());
   }, []);
 
-  // Reaccionar a cambios del perfil local (pullProfile / ediciones en Perfil / onboardingDone)
   useEffect(() => {
     const onUserUpdated = () => setUserOk(canEnter());
     window.addEventListener('akira:user-updated', onUserUpdated);
@@ -70,136 +59,101 @@ export default function LayoutClient({
     };
   }, []);
 
-  // Helper: sincroniza perfil remoto <-> local si hay sesión
   async function syncProfile() {
     try {
-      // 1) Intenta hidratar desde DB
       const remote = await pullProfile();
-      if (!remote) {
-        // 2) Si no existe fila en DB, intenta crearla desde LS (si hay datos mínimos)
-        await syncLocalToRemoteIfMissing();
-      }
+      if (!remote) await syncLocalToRemoteIfMissing();
     } catch (e) {
-      // No bloqueamos la UI por errores de sync; sólo registramos
       console.warn('[LayoutClient] syncProfile error', e);
     } finally {
-      // Re-evalúa si el perfil ya cumple requisitos o si onboarding ya se marcó
       if (canEnter()) setUserOk(true);
     }
   }
 
-  // Cargar sesión + suscripción a cambios de auth
   useEffect(() => {
     let cancelled = false;
-
-    async function initAuth() {
+    (async () => {
       const { data } = await supabase.auth.getSession();
-      if (!cancelled) {
-        const has = !!data.session;
-        setHasSession(has);
-        setAuthReady(true);
-
-        // Si ya hay sesión activa al montar, sincroniza perfil y programas
-        if (has) {
-          await syncProfile();
-          try { await pullUserPrograms(); } catch (e) { console.warn('[pullUserPrograms] init fail', e); }
-        }
-      }
-    }
-    void initAuth();
+      if (cancelled) return;
+      const has = !!data.session;
+      setHasSession(has);
+      setAuthReady(true);
+      if (has) await syncProfile();
+    })();
 
     const { data: sub } = supabase.auth.onAuthStateChange(async (evt, session) => {
       setHasSession(!!session);
 
-      // Solo en SIGNED_IN marcamos "visto" y cerramos el modal inicial (step 1)
       if (evt === 'SIGNED_IN') {
         try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
         setShowAuthModal(false);
       }
 
-      // Sincroniza perfil + programas en eventos relevantes
       if (session && (evt === 'SIGNED_IN' || evt === 'TOKEN_REFRESHED' || evt === 'USER_UPDATED')) {
         await syncProfile();
-        try { await pullUserPrograms(); } catch (e) { console.warn('[pullUserPrograms] auth change fail', e); }
       } else {
         if (canEnter()) setUserOk(true);
       }
 
-      // Si hay sesión pero aún no podemos entrar, abre el modal adecuado
       const okNow = canEnter();
-      if (session && !okNow /* && !isAuthRoute */) {
+      if (session && !okNow) {
         type AppMeta = { provider?: string };
         const provider = (session.user?.app_metadata as AppMeta | undefined)?.provider;
         const isOAuth = provider && provider !== 'email' && provider !== 'phone';
         setShowAuthModal(false);
-        setRegistrationStartStep(isOAuth ? 2 : 4); // OAuth → step 2 | email/pass → step 4
+        setRegistrationStartStep(isOAuth ? 2 : 4);
         setShowRegistration(true);
       } else if (!session) {
-        // Sin sesión, no mostrar registro forzado
         setShowRegistration(false);
       }
     });
 
     return () => {
-      cancelled = true;
-      // Limpieza defensiva de suscripciones (distintas versiones pueden exponer APIs distintas)
+      cancelled = false;
       try { (sub as any)?.subscription?.unsubscribe?.(); } catch {}
       try { (sub as any)?.unsubscribe?.(); } catch {}
     };
   }, []);
 
-  // Decidir si enseñamos el pop-up de onboarding (RegistrationModal paso 1)
   useEffect(() => {
     if (!authReady || userOk === null) return;
 
-    // En rutas de auth no mostramos modales
     if (isAuthRoute) {
       setShowAuthModal(false);
       setShowRegistration(false);
       return;
     }
 
-    // Ya puede entrar → no mostrar nada
     if (userOk) {
       setShowAuthModal(false);
       setShowRegistration(false);
       return;
     }
 
-    // Aún no puede entrar
     if (!hasSession) {
-      // Sin sesión → onboarding paso 1
       setShowAuthModal(true);
       setShowRegistration(false);
       return;
     }
 
-    // Con sesión → ir directo a personalización (paso 4)
     setShowAuthModal(false);
     setRegistrationStartStep(4);
     setShowRegistration(true);
   }, [authReady, userOk, hasSession, isAuthRoute]);
 
-  // Mientras NO pueda entrar, ocultamos app y mostramos gating (splash + modal),
-  // excepto en /login y /auth/*
   const gating = userOk === false && !isAuthRoute;
-
-  // No ocultes la nav por gating: queremos verla incluso si el modal está encima
   const hideNav = pathname === '/bienvenida' || isAuthRoute;
 
   function handleCloseRegistration() {
     setShowRegistration(false);
     if (canEnter()) setUserOk(true);
   }
-
-  // Al cerrar el primer modal (paso 1), marcamos visto y re-evaluamos perfil
   function handleCloseAuthModal() {
     setShowAuthModal(false);
     try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
     if (canEnter()) setUserOk(true);
   }
 
-  // === Botón de reset SOLO en desarrollo (útil para probar en móvil) ===
   const isDev = process.env.NODE_ENV === 'development';
   function handleDevReset() {
     try {
@@ -213,10 +167,9 @@ export default function LayoutClient({
 
   return (
     <>
-      {/* === OVERLAY DE GATING: se muestra encima de la app cuando userOk === false === */}
+      {/* Overlay de gating */}
       {gating && (
         <>
-          {/* Fondo splash */}
           <div
             className="fixed inset-0 z-40"
             style={{
@@ -226,15 +179,11 @@ export default function LayoutClient({
               backgroundRepeat: 'no-repeat',
             }}
           />
-
-          {/* Pop-up de onboarding → RegistrationModal (paso 1) */}
           {!hasSession && showAuthModal && (
             <div className="fixed inset-0 z-50">
               <RegistrationModal initialStep={1} onClose={handleCloseAuthModal} redirectTo="/mizona" />
             </div>
           )}
-
-          {/* Modal de registro / personalización */}
           {showRegistration && (
             <div className="fixed inset-0 z-50">
               <RegistrationModal
@@ -244,8 +193,6 @@ export default function LayoutClient({
               />
             </div>
           )}
-
-          {/* Botón dev reset */}
           {isDev && (
             <button
               onClick={handleDevReset}
@@ -258,7 +205,7 @@ export default function LayoutClient({
         </>
       )}
 
-      {/* App normal */}
+      {/* App */}
       <div
         className="bg-[#FAFAFA]"
         style={{
