@@ -158,17 +158,23 @@ const [registrationStartStep, setRegistrationStartStep] = useState<1 | 2 | 3 | 4
     };
   }, []);
 
-  /** Pequeñas syncs reactivas: al volver a foco/online rehidratamos */
-  useEffect(() => {
-    const onFocus = () => { if (hasSession) void pullUserPrograms(); };
-    const onOnline = () => { if (hasSession) void pullUserPrograms(); };
-    window.addEventListener('visibilitychange', onFocus);
-    window.addEventListener('online', onOnline);
-    return () => {
-      window.removeEventListener('visibilitychange', onFocus);
-      window.removeEventListener('online', onOnline);
-    };
-  }, [hasSession]);
+  /** Rehidratamos PERFIL + PROGRAMAS al volver a foco/online */
+useEffect(() => {
+  const refetch = () => {
+    if (!hasSession) return;
+    void pullProfile().catch(() => {});
+    void pullUserPrograms().catch(() => {});
+  };
+  const onVisibility = () => {
+    if (document.visibilityState === 'visible') refetch();
+  };
+  window.addEventListener('visibilitychange', onVisibility);
+  window.addEventListener('online', refetch);
+  return () => {
+    window.removeEventListener('visibilitychange', onVisibility);
+    window.removeEventListener('online', refetch);
+  };
+}, [hasSession]);
 
   useEffect(() => {
     if (!authReady || userOk === null || !bootSynced) return;
