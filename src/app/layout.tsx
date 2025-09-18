@@ -3,7 +3,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 import BottomNav from "@/components/BottomNav";
 import LayoutClient from "./LayoutClient";
-import { SupabaseSessionProvider } from "@/components/providers/SupabaseSessionProvider";
+import SupabaseSessionProvider from "@/components/providers/SupabaseSessionProvider";
+
 
 export const metadata: Metadata = {
   title: "Akira - Build Your Habits",
