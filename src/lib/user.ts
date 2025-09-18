@@ -223,14 +223,13 @@ export function dbRowFromProfile(p: Partial<UserProfile>): any {
 /* ===========================================================
    === SINCRONIZACIÓN CON SUPABASE: upsert / pull / bootstrap ===
    =========================================================== */
-
 export async function getAuthUserId(): Promise<string | null> {
-  const { data, error } = await supabase.auth.getUser();
+  const { data, error } = await supabase.auth.getSession();
   if (error) {
-    console.warn('[auth.getUser] error', error);
+    console.warn('[auth.getSession] error', error);
     return null;
   }
-  return data.user?.id ?? null;
+  return data.session?.user?.id ?? null;
 }
 
 export async function upsertProfile(partial: Partial<UserProfile>): Promise<UserProfile> {

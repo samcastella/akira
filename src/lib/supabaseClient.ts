@@ -4,7 +4,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 let _client: SupabaseClient | null = null;
 
 function makeClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const url  = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!url || !anon) {
@@ -14,7 +14,14 @@ function makeClient() {
   }
 
   return createClient(url, anon, {
-    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      flowType: 'pkce',
+      // MUY IMPORTANTE en App Router/SSR: usar storage sólo en el navegador
+      storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+    },
   });
 }
 
