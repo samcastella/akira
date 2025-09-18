@@ -569,16 +569,12 @@ export default function RegistrationModal({
   if (finishing) return;
   setFinishing(true);
 
-  // Solo cerramos si el perfil está completo
-  const complete = isUserComplete(loadUser());
-  if (!complete) {
-    setFinishing(false);
-    setInfo('Para terminar, completa fecha de nacimiento, estatura y peso.');
-    setStep(4);
-    return;
-  }
+  // Permitir terminar aunque falten métricas
+  try {
+    setOnboardingDoneSilent();            // marca onboardingDone en local
+    localStorage.setItem(LS_SEEN_AUTH, '1');
+  } catch {}
 
-  try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
   onClose?.();
   setTimeout(() => { router.replace(redirectTo || '/mizona'); }, 0);
 }
@@ -1001,8 +997,9 @@ export default function RegistrationModal({
                     <button
                       type="button"
                       onClick={() => {
-  // Guardar métricas de forma silenciosa y pasar a la motivación (sin marcar onboardingDone)
+  // Guardar métricas en local (silencioso) y marcar onboarding hecho
   persistBodyMetrics(undefined, { silent: true });
+  setOnboardingDoneSilent();              // ⬅️ añade esta línea
   setStep(5);
 }}
 
