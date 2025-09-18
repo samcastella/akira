@@ -1,79 +1,33 @@
 'use client';
 
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import type { ReactNode } from 'react';
-import type { Session, User } from '@supabase/supabase-js';
+import React, { useEffect } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
-type SessionContextValue = {
-  session: Session | null;
-  user: User | null;
-  loading: boolean;
-};
-
-const SupabaseSessionContext = createContext<SessionContextValue>({
-  session: null,
-  user: null,
-  loading: true,
-});
-
-export function SupabaseSessionProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  // Carga inicial de la sesión
+/**
+ * Provider mínimo que:
+ * - Hace un getSession() al montar (calienta la sesión)
+ * - Se suscribe a cambios de auth para mantenerla fresca
+ * - NO redirige, NO muestra UI, NO decide gating
+ */
+export default function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
-    let isMounted = true;
+    let active = true;
 
-    (async () => {
-      try {
-        const { data, error } = await supabase.auth.getSession();
-        if (!isMounted) return;
-        if (error) {
-          // No hacemos throw para no bloquear la app; simplemente marcamos sin sesión.
-          setSession(null);
-        } else {
-          setSession(data.session ?? null);
-        }
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    })();
+    // Calienta la sesión al montar (ignora errores)
+    supabase.auth.getSession().catch(() => {});
 
-    // Suscripción a cambios de autenticación
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      setSession(newSession ?? null);
+    // Suscripción pasiva (sin redirecciones)
+    const { data: sub } = supabase.auth.onAuthStateChange((_evt, _session) => {
+      if (!active) return;
+      // No hacemos nada aquí: LayoutClient/RequireAuth gestionan la UI
     });
 
-    // Revalidar al volver a la pestaña (por si el token se actualizó en otra)
-    const onVis = async () => {
-      if (document.visibilityState === 'visible') {
-        const { data } = await supabase.auth.getSession();
-        setSession(data.session ?? null);
-      }
-    };
-    document.addEventListener('visibilitychange', onVis);
-
     return () => {
-      isMounted = false;
-      sub.subscription.unsubscribe();
-      document.removeEventListener('visibilitychange', onVis);
+      active = false;
+      try { (sub as any)?.subscription?.unsubscribe?.(); } catch {}
+      try { (sub as any)?.unsubscribe?.(); } catch {}
     };
   }, []);
 
-  const value = useMemo<SessionContextValue>(
-    () => ({ session, user: session?.user ?? null, loading }),
-    [session, loading]
-  );
-
-  return (
-    <SupabaseSessionContext.Provider value={value}>
-      {children}
-    </SupabaseSessionContext.Provider>
-  );
+  return <>{children}</>;
 }
-
-export function useSupabaseSession() {
-  return useContext(SupabaseSessionContext);
-}
-export default SupabaseSessionProvider;

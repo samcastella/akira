@@ -109,10 +109,25 @@ const [registrationStartStep, setRegistrationStartStep] = useState<1 | 2 | 3 | 4
       setHasSession(!!session);
 
       if (evt === 'SIGNED_IN') {
-        try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
-        setShowAuthModal(false);
-        setJustSignedIn(true); // 👈 suprime modal de registro durante la sync inicial
-      }
+  try {
+    localStorage.setItem(LS_SEEN_AUTH, '1');
+
+    // ⬇️ Fuerza pase del gating: marca onboardingDone en local
+    const raw = localStorage.getItem(LS_USER_KEY);
+    const prev = raw ? JSON.parse(raw) : {};
+    localStorage.setItem(LS_USER_KEY, JSON.stringify({ ...prev, onboardingDone: true }));
+    // notifica a los listeners (LayoutClient, hooks, etc.)
+    window.dispatchEvent(new CustomEvent('akira:user-updated'));
+  } catch {}
+
+  // Ya consideramos al usuario “OK” para entrar
+  setUserOk(true);
+
+  // Cierra cualquier modal de auth/registro y evita flicker mientras sincroniza
+  setShowAuthModal(false);
+  setShowRegistration(false);
+  setJustSignedIn(true);
+}
 
       if (session && (evt === 'SIGNED_IN' || evt === 'TOKEN_REFRESHED' || evt === 'USER_UPDATED')) {
         await syncAll();
