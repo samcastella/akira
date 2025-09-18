@@ -150,10 +150,10 @@ export async function pushResetProgram(slug: string, opts?: { deleteTasks?: bool
 
   // Desactiva
   const { error } = await supabase
-    .from('user_programs')
-    .update({ is_active: false, current_day: 1 })
-    .eq('user_id', uid)
-    .eq('program_slug', slug);
+  .from('user_programs')
+  .update({ is_active: false, current_day: 1, updated_at: new Date().toISOString() })
+  .eq('user_id', uid)
+  .eq('program_slug', slug);
 
   if (error) throw error;
 
@@ -227,7 +227,7 @@ export async function pushCurrentDay(slug: string, currentDay: number) {
   if (!uid) throw new Error('Usuario no autenticado');
   const { error } = await supabase
     .from('user_programs')
-    .update({ current_day: currentDay })
+    .update({ current_day: currentDay, updated_at: new Date().toISOString() })
     .eq('user_id', uid)
     .eq('program_slug', slug);
   if (error) throw error;

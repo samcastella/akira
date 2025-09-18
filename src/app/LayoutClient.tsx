@@ -1,30 +1,29 @@
-// src/app/LayoutClient.tsx
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import {
   loadUser,
   isUserComplete,
-  pullProfile,
-  syncLocalToRemoteIfMissing,
   LS_FIRST_RUN,
   LS_USER,
+  pullProfile,
+  syncLocalToRemoteIfMissing,
   LS_USER_KEY,
-  saveUserMerge, // ⬅️ nuevo: para marcar onboardingDone
 } from '@/lib/user';
 import { supabase } from '@/lib/supabaseClient';
 import RegistrationModal from '@/components/RegistrationModal';
 
+/* ⬇️ importa el pull de programas del server */
+import { pullUserPrograms } from '@/lib/programSync';
+
 const LS_SEEN_AUTH = 'akira_seen_auth_v1';
 
-// ✅ Deja pasar si el perfil es completo, o si el usuario marcó onboardingDone,
-// o si ya se autenticó en este dispositivo (LS_SEEN_AUTH = '1').
-function canEnterLoose(): boolean {
+/** ✅ Permite entrar si perfil completo O si marcó onboardingDone */
+function canEnter(): boolean {
   try {
     const u = loadUser();
-    const seenAuth = typeof window !== 'undefined' ? localStorage.getItem(LS_SEEN_AUTH) === '1' : false;
-    return isUserComplete(u) || !!u.onboardingDone || seenAuth;
+    return isUserComplete(u) || !!u.onboardingDone;
   } catch {
     return false;
   }
@@ -44,18 +43,26 @@ export default function LayoutClient({
   const [hasSession, setHasSession] = useState(false);
   const [authReady, setAuthReady] = useState(false);
 
-  const [showAuthModal, setShowAuthModal] = useState(false);
-  const [showRegistration, setShowRegistration] = useState(false);
-  const [registrationStartStep, setRegistrationStartStep] = useState<1 | 2 | 3 | 4 | 5>(1);
+  /* 👇 Bandera: primera sincronización terminada */
+  const [bootSynced, setBootSynced] = useState(false);
 
-  // Primera evaluación
+/* 👇 Nueva bandera: suprime el modal de registro justo tras SIGNED_IN */
+const [justSignedIn, setJustSignedIn] = useState(false);
+
+/* 👇 Evita flicker SSR: no renderizar modales hasta estar montado en cliente */
+const [mounted, setMounted] = useState(false);
+useEffect(() => { setMounted(true); }, []);
+
+const [showAuthModal, setShowAuthModal] = useState(false);
+const [showRegistration, setShowRegistration] = useState(false);
+const [registrationStartStep, setRegistrationStartStep] = useState<1 | 2 | 3 | 4 | 5>(1);
+
   useEffect(() => {
-    setUserOk(canEnterLoose());
+    setUserOk(canEnter());
   }, []);
 
-  // Reaccionar a cambios del perfil local
   useEffect(() => {
-    const onUserUpdated = () => setUserOk(canEnterLoose());
+    const onUserUpdated = () => setUserOk(canEnter());
     window.addEventListener('akira:user-updated', onUserUpdated);
     window.addEventListener('storage', onUserUpdated);
     return () => {
@@ -64,38 +71,39 @@ export default function LayoutClient({
     };
   }, []);
 
-  // Sincronización de perfil con Supabase
-  async function syncProfile() {
+  /** Sincroniza perfil remoto->local y programaciones (progreso tareas) */
+  async function syncAll() {
     try {
       const remote = await pullProfile();
       if (!remote) await syncLocalToRemoteIfMissing();
+      // 👇 hidrata programas activos y checks desde server
+      await pullUserPrograms();
     } catch (e) {
-      console.warn('[LayoutClient] syncProfile error', e);
+      console.warn('[LayoutClient] syncAll error', e);
     } finally {
-      if (canEnterLoose()) setUserOk(true);
+      if (canEnter()) setUserOk(true);
+      setBootSynced(true); // ✅ ya podemos decidir UI sin flicker
     }
   }
 
-  // Sesión + suscripción a cambios de auth
+  // Cargar sesión + suscripción a cambios de auth
   useEffect(() => {
     let cancelled = false;
 
-    (async () => {
+    async function initAuth() {
       const { data } = await supabase.auth.getSession();
       if (cancelled) return;
-
       const has = !!data.session;
       setHasSession(has);
       setAuthReady(true);
-
       if (has) {
-        // marca que ya vio el modal de auth al menos una vez en este dispositivo
-        try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
-        await syncProfile();
-        // Re-evalúa con la regla laxa
-        setUserOk(canEnterLoose());
+        // Nota: no marcamos justSignedIn aquí; sólo en el evento SIGNED_IN real
+        await syncAll();
+      } else {
+        setBootSynced(true); // sin sesión, no bloqueamos
       }
-    })();
+    }
+    void initAuth();
 
     const { data: sub } = supabase.auth.onAuthStateChange(async (evt, session) => {
       setHasSession(!!session);
@@ -103,22 +111,25 @@ export default function LayoutClient({
       if (evt === 'SIGNED_IN') {
         try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
         setShowAuthModal(false);
+        setJustSignedIn(true); // 👈 suprime modal de registro durante la sync inicial
       }
 
       if (session && (evt === 'SIGNED_IN' || evt === 'TOKEN_REFRESHED' || evt === 'USER_UPDATED')) {
-        await syncProfile();
-        setUserOk(canEnterLoose());
+        await syncAll();
+        if (evt === 'SIGNED_IN') {
+          setJustSignedIn(false); // 👈 listo: ya podemos decidir mostrar registro si hiciera falta
+        }
       } else {
-        if (canEnterLoose()) setUserOk(true);
+        if (canEnter()) setUserOk(true);
       }
 
-      const okNow = canEnterLoose();
+      const okNow = canEnter();
       if (session && !okNow) {
         type AppMeta = { provider?: string };
         const provider = (session.user?.app_metadata as AppMeta | undefined)?.provider;
         const isOAuth = provider && provider !== 'email' && provider !== 'phone';
         setShowAuthModal(false);
-        setRegistrationStartStep(isOAuth ? 2 : 4); // OAuth → step 2 | email/pass → step 4
+        setRegistrationStartStep(isOAuth ? 2 : 4);
         setShowRegistration(true);
       } else if (!session) {
         setShowRegistration(false);
@@ -126,15 +137,26 @@ export default function LayoutClient({
     });
 
     return () => {
-      cancelled = true;
       try { (sub as any)?.subscription?.unsubscribe?.(); } catch {}
       try { (sub as any)?.unsubscribe?.(); } catch {}
+      cancelled = true;
     };
   }, []);
 
-  // Decidir visibilidad de modales
+  /** Pequeñas syncs reactivas: al volver a foco/online rehidratamos */
   useEffect(() => {
-    if (!authReady || userOk === null) return;
+    const onFocus = () => { if (hasSession) void pullUserPrograms(); };
+    const onOnline = () => { if (hasSession) void pullUserPrograms(); };
+    window.addEventListener('visibilitychange', onFocus);
+    window.addEventListener('online', onOnline);
+    return () => {
+      window.removeEventListener('visibilitychange', onFocus);
+      window.removeEventListener('online', onOnline);
+    };
+  }, [hasSession]);
+
+  useEffect(() => {
+    if (!authReady || userOk === null || !bootSynced) return;
 
     if (isAuthRoute) {
       setShowAuthModal(false);
@@ -157,27 +179,24 @@ export default function LayoutClient({
     setShowAuthModal(false);
     setRegistrationStartStep(4);
     setShowRegistration(true);
-  }, [authReady, userOk, hasSession, isAuthRoute]);
+  }, [authReady, userOk, hasSession, isAuthRoute, bootSynced]);
 
-  const gating = userOk === false && !isAuthRoute;
+  /* ✅ Eliminamos el flicker: mientras NO esté authReady o NO esté bootSynced
+     o ACABAMOS DE HACER SIGNED_IN, no mostramos el gating (ni el formulario) */
+const gating = mounted && authReady && bootSynced && userOk === false && !isAuthRoute && !justSignedIn;
+
   const hideNav = pathname === '/bienvenida' || isAuthRoute;
 
-  // Al cerrar el modal de personalización, marcamos onboardingDone para romper cualquier bucle
   function handleCloseRegistration() {
-    try {
-      saveUserMerge({ onboardingDone: true });
-    } catch {}
     setShowRegistration(false);
-    setUserOk(true);
+    if (canEnter()) setUserOk(true);
   }
-
   function handleCloseAuthModal() {
     setShowAuthModal(false);
     try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
-    if (canEnterLoose()) setUserOk(true);
+    if (canEnter()) setUserOk(true);
   }
 
-  // Utilidad dev
   const isDev = process.env.NODE_ENV === 'development';
   function handleDevReset() {
     try {
@@ -208,7 +227,7 @@ export default function LayoutClient({
               <RegistrationModal initialStep={1} onClose={handleCloseAuthModal} redirectTo="/mizona" />
             </div>
           )}
-          {hasSession && showRegistration && (
+          {showRegistration && (
             <div className="fixed inset-0 z-50">
               <RegistrationModal
                 onClose={handleCloseRegistration}
@@ -254,4 +273,3 @@ export default function LayoutClient({
     </>
   );
 }
-

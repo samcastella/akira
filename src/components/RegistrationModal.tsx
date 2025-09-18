@@ -68,7 +68,7 @@ export default function RegistrationModal({
   initialStep = 1,
   prefill,
   initialMode = 'register',
-  redirectTo = '/',
+  redirectTo = '/mizona',
 }: Props) {
   const router = useRouter();
 

@@ -325,11 +325,11 @@ export async function toggleTask(
       day + 1,
       (prog as ActiveProgramRow | null)?.current_day ?? day + 1
     );
-    const { error: updErr } = await supabase
-      .from(TABLE_PROGRAMS)
-      .update({ current_day: next })
-      .eq("user_id", userId)
-      .eq("program_slug", slug);
+   const { error: updErr } = await supabase
+  .from(TABLE_PROGRAMS)
+  .update({ current_day: next, updated_at: new Date().toISOString() })
+  .eq("user_id", userId)
+  .eq("program_slug", slug);
     if (updErr) throw updErr;
 
     writeLocalActive(

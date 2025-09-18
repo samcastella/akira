@@ -42,9 +42,27 @@ function CallbackInner() {
   useEffect(() => {
     let alive = true;
 
+    // ⬇️ Timeout de seguridad: evita quedarse en "Comprobando enlace…" indefinidamente
+    const to = setTimeout(() => {
+      if (!alive) return;
+      setPhase('error');
+      setErr('No se pudo validar el enlace (tiempo de espera agotado).');
+    }, 8000);
+
     (async () => {
       try {
-        // 0) ¿el hash trae error?
+        // 0) ¿error en querystring?
+        const qpErr = params.get('error');
+        const qpErrDesc = params.get('error_description');
+        if (qpErr) {
+          if (!alive) return;
+          setErr(decodeURIComponent(qpErrDesc || qpErr));
+          setPhase('error');
+          clearTimeout(to);
+          return;
+        }
+
+        // 0.b) ¿error en hash?
         const hp = getHashParams();
         const hashErr = hp.get('error');
         const hashErrDesc = hp.get('error_description');
@@ -52,6 +70,7 @@ function CallbackInner() {
           if (!alive) return;
           setErr(decodeURIComponent(hashErrDesc || hashErr));
           setPhase('error');
+          clearTimeout(to);
           return;
         }
 
@@ -60,11 +79,16 @@ function CallbackInner() {
         if (code && typeof window !== 'undefined') {
           try {
             await supabase.auth.exchangeCodeForSession(window.location.href);
-            if (!alive) return;
-            setPhase('done');
-            router.replace('/auth/confirmed');
-            return;
-          } catch (e: any) {
+            // Confirmamos sesión por si el proveedor tarda en reflejarla
+            const { data: s } = await supabase.auth.getSession();
+            if (s.session) {
+              if (!alive) return;
+              setPhase('done');
+              clearTimeout(to);
+              router.replace('/auth/confirmed');
+              return;
+            }
+          } catch {
             // si no funciona, seguimos probando tokens del hash
           }
         }
@@ -82,26 +106,33 @@ function CallbackInner() {
           });
           if (setErrSes) throw setErrSes;
 
+          // Confirmamos sesión
+          const { data: s } = await supabase.auth.getSession();
+          if (!s.session) throw new Error('No se pudo establecer la sesión');
+
           if (!alive) return;
 
           // Si es recovery → mostrar formulario
           if (typeHash === 'recovery') {
             setPhase('reset');
             setInfo('Introduce tu nueva contraseña.');
+            clearTimeout(to);
             return;
           }
 
           // Resto de tipos válidos → confirmado
           setPhase('done');
+          clearTimeout(to);
           router.replace('/auth/confirmed');
           return;
         }
 
         // 3) Como último recurso, ¿ya hay sesión activa?
-        let { data: sdata } = await supabase.auth.getSession();
+        const { data: sdata } = await supabase.auth.getSession();
         if (sdata.session) {
           if (!alive) return;
           setPhase('done');
+          clearTimeout(to);
           router.replace('/auth/confirmed');
           return;
         }
@@ -114,10 +145,12 @@ function CallbackInner() {
         if (!alive) return;
         setErr(e?.message || 'No se pudo procesar el enlace.');
         setPhase('error');
+      } finally {
+        clearTimeout(to);
       }
     })();
 
-    return () => { alive = false; };
+    return () => { alive = false; clearTimeout(to); };
   }, [linkType, params, router]);
 
   const passError = useMemo(() => {
