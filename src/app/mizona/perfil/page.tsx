@@ -5,7 +5,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import { Camera, X } from 'lucide-react';
 import { logoutAndResetApp } from '@/lib/logout';
-import { useUserProfile, upsertProfile, Sex, normalizeUsername } from '@/lib/user';
+import { useUserProfile, upsertProfile, getAuthUserId, Sex, normalizeUsername } from '@/lib/user';
 
 
 type Profile = {
@@ -101,75 +101,74 @@ export default function PerfilPage() {
     }
     closePhotoModal();
   }
-
-  // Guardado con timeout de seguridad para evitar “Guardando…” infinito
-  async function save() {
-    if (saving) return; // evita doble envío
-    setSaving(true);
-    try {
-      // Normalización suave (+ username normalizado)
-      const payload: Profile = {
-        ...profile,
-        email: profile.email?.trim().toLowerCase(),
-        instagram: normalizeInstagramLink(profile.instagram),
-        tiktok: profile.tiktok?.trim() || undefined,
-        username: profile.username ? normalizeUsername(profile.username) : undefined,
-        fechaNacimiento: profile.fechaNacimiento || undefined,
-        // Sanitizar numéricos
-        peso: typeof profile.peso === 'number' ? profile.peso : profile.peso ? Number(profile.peso) : undefined,
-        estatura:
-          typeof profile.estatura === 'number'
-            ? profile.estatura
-            : profile.estatura
-            ? Number(profile.estatura)
-            : undefined,
-      };
-
-      // Timeout de 12s: si Supabase no responde, guardamos local y seguimos
-      const upsertWithTimeout = Promise.race([
-        upsertProfile(payload as any),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 12000)),
-      ]);
-
-      try {
+// Guardado con timeout de seguridad para evitar “Guardando…” infinito
+async function save() {
+  if (saving) return; // evita doble envío
   setSaving(true);
+  try {
+    // 0) Verifica sesión (si no hay, no intentes guardar)
+    const uid = await getAuthUserId();
+    if (!uid) {
+      try { alert('Inicia sesión para guardar tu perfil.'); } catch {}
+      return;
+    }
 
-  // 1) Guardar en Supabase (incluye user_id + onConflict) y re-lee DB
-  const server = await upsertProfile(payload as any);
+    // 1) Normalización suave (+ username normalizado)
+    const payload: Profile = {
+      ...profile,
+      email: profile.email?.trim().toLowerCase(),
+      instagram: normalizeInstagramLink(profile.instagram),
+      tiktok: profile.tiktok?.trim() || undefined,
+      username: profile.username ? normalizeUsername(profile.username) : undefined,
+      fechaNacimiento: profile.fechaNacimiento || undefined,
+      // Sanitizar numéricos
+      peso:
+        typeof profile.peso === 'number'
+          ? profile.peso
+          : profile.peso
+          ? Number(profile.peso)
+          : undefined,
+      estatura:
+        typeof profile.estatura === 'number'
+          ? profile.estatura
+          : profile.estatura
+          ? Number(profile.estatura)
+          : undefined,
+    };
 
-  // 2) Reflejar en UI lo que viene de DB (ya actualizó localStorage)
-  setProfile(server as Profile);
+    // 2) Guardar en Supabase con timeout de 12s (y re-lectura automática)
+    const timeout = new Promise<never>((_, rej) =>
+      setTimeout(() => rej(new Error('timeout')), 12000)
+    );
+    const server = await Promise.race([upsertProfile(payload as any), timeout]);
 
-} catch (err: any) {
-  const code = String(err?.code || err?.status || '');
-  const msg  = String(err?.message || '');
+    // 3) Reflejar en UI lo que viene de DB (localStorage ya quedó actualizado)
+    setProfile(server as Profile);
+    setSavedOpen(true);
+    setEditing(false);
+  } catch (err: any) {
+    const code = String(err?.code || err?.status || '');
+    const msg  = String(err?.message || '');
 
-  // Username duplicado → avisar y salir sin tocar local
-  if (code === '23505' || /duplicate|unique/i.test(msg)) {
-    try { alert('Ese nombre de usuario ya está en uso. Prueba con otro.'); } catch {}
-    return;
+    // Username duplicado → avisar y no tocar local
+    if (code === '23505' || /duplicate|unique/i.test(msg)) {
+      try { alert('Ese nombre de usuario ya está en uso. Prueba con otro.'); } catch {}
+      return;
+    }
+
+    // Fallback de UX: mensajes claros según error
+    if (/Network|Failed to fetch|offline|ECONN|ETIMEDOUT|timeout/i.test(msg)) {
+      console.warn('[PerfilPage] red/offline/timeout, no se pudo guardar:', err);
+      try { alert('No hay conexión. Intenta de nuevo más tarde.'); } catch {}
+    } else {
+      console.error('[PerfilPage] error guardando perfil', err);
+      try { alert('Ocurrió un error guardando tu perfil.'); } catch {}
+    }
+  } finally {
+    setSaving(false);
   }
-
-  // ⬇️ Fallback local SOLO si parece error de red / offline
-  if (/Network|Failed to fetch|offline|ECONN|ETIMEDOUT/i.test(msg)) {
-    console.warn('[PerfilPage] red/offline, guardo local como fallback', err);
-  
-  } else {
-    console.error('[PerfilPage] error guardando perfil', err);
-    // TODO: mostrar toast si quieres
-  }
-
-} finally {
-  setSaving(false);
 }
 
-
-      setSavedOpen(true);
-      setEditing(false);
-    } finally {
-      setSaving(false);
-    }
-  }
 
   async function handleLogout() {
     await logoutAndResetApp('/login');
