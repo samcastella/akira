@@ -11,24 +11,37 @@ export type UserProfile = {
   userId?: string;
   nombre?: string;
   apellido?: string;
-  email?: string;       // normalizado en minúsculas
-  username?: string;    // minúsculas, sin @, sin espacios
+  email?: string;
+  username?: string;
   telefono?: string;
 
   // Personalización / métricas
   sexo?: Sex;
-  /** ISO yyyy-mm-dd (sustituye a pedir edad en el UI) */
   fechaNacimiento?: string;
-  /** Sólo compatibilidad interna/DB; en UI NO se pide */
   edad?: number;
-  estatura?: number;      // cm
-  peso?: number;          // kg
+  estatura?: number;
+  peso?: number;
   actividad?: Activity;
   caloriasDiarias?: number;
 
-  /** Flag SOLO LOCAL para skipear/recordar el onboarding */
+  /** ISO UTC de DB; usado para resolver conflictos */
+  updatedAt?: string | null;
+
   onboardingDone?: boolean;
 };
+
+// 👇 NUEVO: normalizador numérico y comparador de fechas
+function parseNumOrNull(v: any): number | null {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+function newer(a?: string | null, b?: string | null) {
+  if (!a && !b) return 0;
+  if (a && !b) return 1;
+  if (!a && b) return -1;
+  return new Date(a!).getTime() - new Date(b!).getTime();
+}
+
 
 // ===== Claves de LS (retro-compat) =====
 export const LS_USER_KEY = 'akira_user_profile_v2';
@@ -167,7 +180,6 @@ export function estimateCalories(u: UserProfile): number | undefined {
   return Math.round(base * activityFactor(u.actividad));
 }
 
-// ===== Helpers DB <-> App (Supabase) =====
 export function profileFromDbRow(row: any): Partial<UserProfile> {
   if (!row || typeof row !== 'object') return {};
   return {
@@ -180,10 +192,11 @@ export function profileFromDbRow(row: any): Partial<UserProfile> {
     sexo: row.sexo ?? undefined,
     fechaNacimiento: row.fecha_nacimiento ?? undefined,
     edad: row.edad ?? undefined,
-    estatura: row.estatura ?? undefined,
-    peso: row.peso ?? undefined,
+    estatura: parseNumOrNull(row.estatura) ?? undefined,
+    peso: parseNumOrNull(row.peso) ?? undefined,
     actividad: row.actividad ?? undefined,
-    caloriasDiarias: row.calorias_diarias ?? undefined,
+    caloriasDiarias: parseNumOrNull(row.calorias_diarias) ?? undefined,
+    updatedAt: row.updated_at ?? null,
   };
 }
 export function dbRowFromProfile(p: Partial<UserProfile>): any {
@@ -196,12 +209,14 @@ export function dbRowFromProfile(p: Partial<UserProfile>): any {
     sexo: p.sexo ?? null,
     fecha_nacimiento: p.fechaNacimiento ?? null,
     edad: p.edad ?? null,
-    estatura: p.estatura ?? null,
-    peso: p.peso ?? null,
+    estatura: parseNumOrNull(p.estatura),
+    peso: parseNumOrNull(p.peso),
     actividad: p.actividad ?? null,
-    calorias_diarias: p.caloriasDiarias ?? null,
+    calorias_diarias: parseNumOrNull(p.caloriasDiarias),
+    // updated_at lo gestiona el trigger en DB
   };
 }
+
 
 /* ===========================================================
    === SINCRONIZACIÓN CON SUPABASE: upsert / pull / bootstrap ===
@@ -220,35 +235,48 @@ export async function upsertProfile(partial: Partial<UserProfile>): Promise<User
   const uid = await getAuthUserId();
   if (!uid) throw new Error('No hay sesión activa para upsertProfile');
 
-  const row = dbRowFromProfile({ ...partial, userId: uid });
+  const normalized: Partial<UserProfile> = {
+  ...partial,
+  estatura: parseNumOrNull(partial.estatura) ?? undefined,
+  peso: parseNumOrNull(partial.peso) ?? undefined,
+  caloriasDiarias: parseNumOrNull(partial.caloriasDiarias) ?? undefined,
+  userId: uid,
+};
 
-  const { data, error } = await supabase
+
+  const row = dbRowFromProfile(normalized);
+
+  const { error } = await supabase
     .from('public_profiles')
-    .upsert(row, { onConflict: 'user_id' })
-    .select('*')
-    .single();
+    .upsert(row, { onConflict: 'user_id' });
 
   if (error) {
     console.error('[upsertProfile] error', error);
     throw error;
   }
 
-  const profile = profileFromDbRow(data) as UserProfile;
+  const { data: fresh, error: selErr } = await supabase
+    .from('public_profiles')
+    .select('*')
+    .eq('user_id', uid)
+    .single();
 
-  try {
-    saveUserMerge(keepDefined(profile));
-  } catch (e) {
-    console.warn('[upsertProfile] saveUserMerge fallo (ignorable)', e);
+  if (selErr) {
+    console.error('[upsertProfile] select fresh error', selErr);
+    throw selErr;
   }
 
+  const profile = profileFromDbRow(fresh) as UserProfile;
+  saveUser(profile);
   return profile;
 }
+
 
 export async function pullProfile(): Promise<UserProfile | null> {
   const uid = await getAuthUserId();
   if (!uid) return null;
 
-  const { data, error } = await supabase
+  const { data: remote, error } = await supabase
     .from('public_profiles')
     .select('*')
     .eq('user_id', uid)
@@ -258,18 +286,70 @@ export async function pullProfile(): Promise<UserProfile | null> {
     console.error('[pullProfile] error', error);
     throw error;
   }
-  if (!data) return null;
 
-  const profile = profileFromDbRow(data) as UserProfile;
+  const local = loadUser();
 
-  try {
-    saveUserMerge(keepDefined(profile));
-  } catch (e) {
-    console.warn('[pullProfile] saveUserMerge fallo (ignorable)', e);
+  // normaliza numéricos
+  if (local) {
+    local.estatura = parseNumOrNull(local.estatura) ?? undefined;
+    local.peso = parseNumOrNull(local.peso) ?? undefined;
+    local.caloriasDiarias = parseNumOrNull(local.caloriasDiarias) ?? undefined;
   }
 
-  return profile;
+  const r = remote ? (profileFromDbRow(remote) as UserProfile) : null;
+
+  // Estrategia:
+  // - Si hay remoto y (no hay local o remoto.updatedAt es más nuevo) → guardar remoto y devolverlo
+  // - Si no hay remoto pero sí local “completo” → subir local y devolver su versión
+  // - Si ambos existen y local es más nuevo (caso raro) → subimos local y guardamos local
+  if (r && (!local || newer(r.updatedAt, local.updatedAt) > 0)) {
+    saveUser(r);
+    return r;
+  }
+
+  if (!r && local && local.userId === uid) {
+    // crea remoto a partir de local
+    const row = dbRowFromProfile({ ...local, userId: uid });
+    const { error: upErr } = await supabase
+      .from('public_profiles')
+      .upsert(row, { onConflict: 'user_id' });
+    if (upErr) console.error('[pullProfile] upsert from local error', upErr);
+
+    // re-leer para obtener updated_at real
+    const { data: fresh } = await supabase
+      .from('public_profiles')
+      .select('*')
+      .eq('user_id', uid)
+      .single();
+
+    const pf = profileFromDbRow(fresh) as UserProfile;
+    saveUser(pf);
+    return pf;
+  }
+
+  // si ambos existen y local parece más nuevo, subida conservadora
+  if (r && local && newer(local.updatedAt, r.updatedAt) > 0) {
+    const row = dbRowFromProfile({ ...local, userId: uid });
+    const { error: upErr } = await supabase
+      .from('public_profiles')
+      .upsert(row, { onConflict: 'user_id' });
+    if (upErr) console.error('[pullProfile] upsert newer local error', upErr);
+
+    // re-lee y guarda
+    const { data: fresh } = await supabase
+      .from('public_profiles')
+      .select('*')
+      .eq('user_id', uid)
+      .single();
+    const pf = profileFromDbRow(fresh) as UserProfile;
+    saveUser(pf);
+    return pf;
+  }
+
+  // por defecto, conserva local
+  return local ?? null;
 }
+
 
 export async function syncLocalToRemoteIfMissing(): Promise<UserProfile | null> {
   const uid = await getAuthUserId();
