@@ -5,7 +5,8 @@ import React, { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import { Camera, X } from 'lucide-react';
 import { logoutAndResetApp } from '@/lib/logout';
-import { useUserProfile, upsertProfile, saveUserMerge, Sex, normalizeUsername } from '@/lib/user';
+import { useUserProfile, upsertProfile, Sex, normalizeUsername } from '@/lib/user';
+
 
 type Profile = {
   username?: string;
@@ -131,26 +132,37 @@ export default function PerfilPage() {
       ]);
 
       try {
-        // 1) Escribe en Supabase (propaga a otros dispositivos)
-        await upsertWithTimeout;
-        // 2) Refleja local y dispara evento para la UI actual
-        const updated = saveUserMerge(payload as any);
-        setProfile(updated as Profile);
-      } catch (err: any) {
-        const code = String(err?.code || err?.status || '');
-        const msg = String(err?.message || '');
+  setSaving(true);
 
-        // Username duplicado → no cierres el editor ni sigas con guardado local
-        if (code === '23505' || /duplicate|unique/i.test(msg)) {
-          try { alert('Ese nombre de usuario ya está en uso. Prueba con otro.'); } catch {}
-          setSaving(false);
-          return;
-        }
+  // 1) Guardar en Supabase (incluye user_id + onConflict) y re-lee DB
+  const server = await upsertProfile(payload as any);
 
-        console.warn('[PerfilPage] upsertProfile falló o tardó demasiado, guardo local y continúo', err);
-        const updated = saveUserMerge(payload as any);
-        setProfile(updated as Profile);
-      }
+  // 2) Reflejar en UI lo que viene de DB (ya actualizó localStorage)
+  setProfile(server as Profile);
+
+} catch (err: any) {
+  const code = String(err?.code || err?.status || '');
+  const msg  = String(err?.message || '');
+
+  // Username duplicado → avisar y salir sin tocar local
+  if (code === '23505' || /duplicate|unique/i.test(msg)) {
+    try { alert('Ese nombre de usuario ya está en uso. Prueba con otro.'); } catch {}
+    return;
+  }
+
+  // ⬇️ Fallback local SOLO si parece error de red / offline
+  if (/Network|Failed to fetch|offline|ECONN|ETIMEDOUT/i.test(msg)) {
+    console.warn('[PerfilPage] red/offline, guardo local como fallback', err);
+  
+  } else {
+    console.error('[PerfilPage] error guardando perfil', err);
+    // TODO: mostrar toast si quieres
+  }
+
+} finally {
+  setSaving(false);
+}
+
 
       setSavedOpen(true);
       setEditing(false);

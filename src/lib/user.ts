@@ -143,21 +143,23 @@ export function clearUser() {
 export function isUserComplete(u: UserProfile | null | undefined): boolean {
   if (!u) return false;
 
-  const hasBasics =
-    !!u.nombre?.trim() &&
-    !!u.apellido?.trim() &&
-    !!u.email?.trim() &&
-    !!u.username?.trim();
+  // Si viene de DB (tiene updatedAt) asumimos perfil base creado
+  if (u.updatedAt) return true;
 
-  if (!hasBasics) return false;
-
-  const age = ageFromDOB(u.fechaNacimiento);
-  const dobOk = !!u.fechaNacimiento && age !== undefined && age >= 5 && age <= 120;
-
+  // O si al menos tiene métricas físicas razonables
   const heightOk = typeof u.estatura === 'number' && u.estatura >= 80 && u.estatura <= 250;
   const weightOk = typeof u.peso === 'number' && u.peso >= 20 && u.peso <= 400;
 
-  return dobOk && heightOk && weightOk;
+  if (heightOk && weightOk) return true;
+
+  // Si quieres seguir pidiendo datos básicos, mantenlo como "soft"
+  const hasBasics =
+    !!u.nombre?.trim() ||
+    !!u.apellido?.trim() ||
+    !!u.email?.trim() ||
+    !!u.username?.trim();
+
+  return !!hasBasics;
 }
 
 // ===== Calorías (Mifflin-St Jeor) =====

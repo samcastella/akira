@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
-import { UserProfile, estimateCalories, saveUserMerge, loadUser, LS_USER_KEY, isUserComplete } from '@/lib/user';
+import { UserProfile, estimateCalories, upsertProfile, loadUser, LS_USER_KEY, isUserComplete } from '@/lib/user';
 import { Rocket, ArrowLeft, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { getCopy } from '@/lib/copy';
 import { detectLocale } from '@/lib/locale';
@@ -234,7 +234,7 @@ export default function RegistrationModal({
       } catch {}
     } else {
       // merge normal (emite evento)
-      saveUserMerge(merged as UserProfile);
+      void upsertProfile(merged as UserProfile);
     }
 
     // Best-effort a Supabase (no afecta al modal)
@@ -354,7 +354,7 @@ export default function RegistrationModal({
       if (error) throw new Error(error.message || 'No se pudo crear la cuenta.');
 
       // Guardar básicos locales
-      saveUserMerge({
+      await upsertProfile({
         username: normalizedUsername || undefined,
         nombre: user.nombre,
         apellido: user.apellido,
@@ -477,7 +477,7 @@ export default function RegistrationModal({
         }
 
         // Guardamos en local TODO
-        saveUserMerge({
+        await upsertProfile({
           email,
           nombre: profile?.nombre ?? user.nombre ?? '',
           apellido: profile?.apellido ?? user.apellido ?? '',
@@ -492,7 +492,7 @@ export default function RegistrationModal({
           caloriasDiarias: profile?.calorias_diarias ?? user.caloriasDiarias,
         });
       } else {
-        saveUserMerge({ email });
+        await upsertProfile({ email });
       }
 
       try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}

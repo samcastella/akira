@@ -64,13 +64,13 @@ export default function RegistrationForm() {
       // 1) Escribe/actualiza el perfil en Supabase
       const serverProfile = await upsertProfile(user);
       // 2) Refleja en LocalStorage (mergea sin pisar campos más nuevos)
-      saveUserMerge(serverProfile);
+  
       // 3) Navega
       router.push('/bienvenida');
     } catch (err) {
       console.warn('[RegistrationForm] upsertProfile fallo, guardo local y continuo', err);
       // Fallback: al menos guarda local para no bloquear el flujo
-      saveUserMerge(user);
+      await upsertProfile(user); // ✅ DB + local
       router.push('/bienvenida');
     } finally {
       setSaving(false);
