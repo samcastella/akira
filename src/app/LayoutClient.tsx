@@ -49,13 +49,15 @@ export default function LayoutClient({
 
   /* 👇 Evita flicker SSR: no renderizar modales hasta estar montado en cliente */
   const [mounted, setMounted] = useState(false);
-  useEffect(() => { setMounted(true); }, []);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showRegistration, setShowRegistration] = useState(false);
   const [registrationStartStep, setRegistrationStartStep] = useState<1 | 2 | 3 | 4 | 5>(1);
 
-  // ⚠️ Estado: ¿tenemos envs de Supabase en esta build/preview?
+  // ⚠️ ¿tenemos envs de Supabase en esta build/preview?
   const SUPA_READY = isSupabaseEnvReady();
 
   useEffect(() => {
@@ -86,9 +88,8 @@ export default function LayoutClient({
     }
   }
 
-  // Cargar sesión + suscripción a cambios de auth (solo si Supabase está listo)
+  // Cargar sesión + suscripción a cambios de auth (solo si hay Supabase)
   useEffect(() => {
-    // Si NO hay envs en esta preview: no toquemos supabase, pero dejemos la app usable.
     if (!SUPA_READY) {
       console.warn('[auth] Supabase env no disponible en esta build/preview. Se omite initAuth.');
       setHasSession(false);
@@ -144,7 +145,9 @@ export default function LayoutClient({
         setShowRegistration(false);
         setUserOk(false);
         setBootSynced(true);
-        try { localStorage.removeItem(LS_SEEN_AUTH); } catch {}
+        try {
+          localStorage.removeItem(LS_SEEN_AUTH);
+        } catch {}
       } else {
         if (canEnter()) setUserOk(true);
       }
@@ -163,8 +166,12 @@ export default function LayoutClient({
     });
 
     return () => {
-      try { (sub as any)?.subscription?.unsubscribe?.(); } catch {}
-      try { (sub as any)?.unsubscribe?.(); } catch {}
+      try {
+        (sub as any)?.subscription?.unsubscribe?.();
+      } catch {}
+      try {
+        (sub as any)?.unsubscribe?.();
+      } catch {}
       cancelled = true;
     };
   }, [SUPA_READY]);
@@ -234,7 +241,9 @@ export default function LayoutClient({
   }
   function handleCloseAuthModal() {
     setShowAuthModal(false);
-    try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
+    try {
+      localStorage.setItem(LS_SEEN_AUTH, '1');
+    } catch {}
     if (canEnter()) setUserOk(true);
   }
 
@@ -247,6 +256,29 @@ export default function LayoutClient({
       localStorage.removeItem(LS_SEEN_AUTH);
     } catch {}
     location.reload();
+  }
+
+  // 🚫 Bloqueo total si faltan ENV (no se puede acceder sin registro/login)
+  if (!SUPA_READY) {
+    return (
+      <main
+        className="min-h-[100svh] grid place-items-center p-6 text-center"
+        style={{ background: '#FAFAFA' }}
+      >
+        <div className="mx-auto w-full max-w-md space-y-4">
+          <h1 className="text-xl font-semibold">Configuración incompleta</h1>
+          <p>
+            Esta build no tiene las variables públicas de Supabase. El registro e inicio de sesión
+            están deshabilitados, por lo que no se puede entrar a la app.
+          </p>
+          <p className="text-sm opacity-70">
+            Añade <code>NEXT_PUBLIC_SUPABASE_URL</code> y{' '}
+            <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> en el entorno de esta Preview y vuelve a
+            desplegar.
+          </p>
+        </div>
+      </main>
+    );
   }
 
   return (
