@@ -1,32 +1,27 @@
+// src/components/providers/SupabaseSessionProvider.tsx
 'use client';
 
-import React, { useEffect } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
-/**
- * Provider mínimo que:
- * - Hace un getSession() al montar (calienta la sesión)
- * - Se suscribe a cambios de auth para mantenerla fresca
- * - NO redirige, NO muestra UI, NO decide gating
- */
-export default function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
+export default function SupabaseSessionProvider({ children }: { children: ReactNode }) {
+  const [, setTick] = useState(0);
+
   useEffect(() => {
-    let active = true;
-
-    // Calienta la sesión al montar (ignora errores)
-    supabase.auth.getSession().catch(() => {});
-
-    // Suscripción pasiva (sin redirecciones)
-    const { data: sub } = supabase.auth.onAuthStateChange((_evt, _session) => {
-      if (!active) return;
-      // No hacemos nada aquí: LayoutClient/RequireAuth gestionan la UI
+    // Re-render en cambios de sesión
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('[auth] onAuthStateChange', event, session?.user?.id);
+      setTick(t => t + 1);
+      window.dispatchEvent(new CustomEvent('akira:auth-changed', { detail: { event } }));
     });
 
-    return () => {
-      active = false;
-      try { (sub as any)?.subscription?.unsubscribe?.(); } catch {}
-      try { (sub as any)?.unsubscribe?.(); } catch {}
-    };
+    // Log inicial para verificar sesión
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      console.log('[auth] initial session', data.session?.user?.id ?? null);
+    })();
+
+    return () => sub.subscription.unsubscribe();
   }, []);
 
   return <>{children}</>;
