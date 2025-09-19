@@ -11,10 +11,8 @@ import {
   syncLocalToRemoteIfMissing,
   LS_USER_KEY,
 } from '@/lib/user';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase, isSupabaseEnvReady } from '@/lib/supabaseClient';
 import RegistrationModal from '@/components/RegistrationModal';
-
-/* ⬇️ importa el pull de programas del server */
 import { pullUserPrograms } from '@/lib/programSync';
 
 const LS_SEEN_AUTH = 'akira_seen_auth_v1';
@@ -57,6 +55,9 @@ export default function LayoutClient({
   const [showRegistration, setShowRegistration] = useState(false);
   const [registrationStartStep, setRegistrationStartStep] = useState<1 | 2 | 3 | 4 | 5>(1);
 
+  // ⚠️ Estado: ¿tenemos envs de Supabase en esta build/preview?
+  const SUPA_READY = isSupabaseEnvReady();
+
   useEffect(() => {
     setUserOk(canEnter());
   }, []);
@@ -76,18 +77,26 @@ export default function LayoutClient({
     try {
       const remote = await pullProfile();
       if (!remote) await syncLocalToRemoteIfMissing();
-      // 👇 hidrata programas activos y checks desde server
       await pullUserPrograms();
     } catch (e) {
       console.warn('[LayoutClient] syncAll error', e);
     } finally {
       if (canEnter()) setUserOk(true);
-      setBootSynced(true); // ✅ ya podemos decidir UI sin flicker
+      setBootSynced(true);
     }
   }
 
-  // Cargar sesión + suscripción a cambios de auth
+  // Cargar sesión + suscripción a cambios de auth (solo si Supabase está listo)
   useEffect(() => {
+    // Si NO hay envs en esta preview: no toquemos supabase, pero dejemos la app usable.
+    if (!SUPA_READY) {
+      console.warn('[auth] Supabase env no disponible en esta build/preview. Se omite initAuth.');
+      setHasSession(false);
+      setAuthReady(true);
+      setBootSynced(true);
+      return;
+    }
+
     let cancelled = false;
 
     async function initAuth() {
@@ -96,22 +105,19 @@ export default function LayoutClient({
       const has = !!data.session;
       setHasSession(has);
       setAuthReady(true);
-      // 🔔 Notifica al resto de la app el estado inicial de sesión
       try {
         window.dispatchEvent(new CustomEvent('akira:auth-changed', { detail: { initial: true, has } }));
       } catch {}
       if (has) {
-        // Nota: no marcamos justSignedIn aquí; sólo en el evento SIGNED_IN real
         await syncAll();
       } else {
-        setBootSynced(true); // sin sesión, no bloqueamos
+        setBootSynced(true);
       }
     }
     void initAuth();
 
     const { data: sub } = supabase.auth.onAuthStateChange(async (evt, session) => {
       setHasSession(!!session);
-      // 🔔 Notifica cambios de auth (login/refresh/update/logout)
       try {
         window.dispatchEvent(new CustomEvent('akira:auth-changed', { detail: { evt } }));
       } catch {}
@@ -119,19 +125,12 @@ export default function LayoutClient({
       if (evt === 'SIGNED_IN') {
         try {
           localStorage.setItem(LS_SEEN_AUTH, '1');
-
-          // ⬇️ Fuerza pase del gating: marca onboardingDone en local
           const raw = localStorage.getItem(LS_USER_KEY);
           const prev = raw ? JSON.parse(raw) : {};
           localStorage.setItem(LS_USER_KEY, JSON.stringify({ ...prev, onboardingDone: true }));
-          // notifica a los listeners (LayoutClient, hooks, etc.)
           window.dispatchEvent(new CustomEvent('akira:user-updated'));
         } catch {}
-
-        // Ya consideramos al usuario “OK” para entrar
         setUserOk(true);
-
-        // Cierra cualquier modal de auth/registro y evita flicker mientras sincroniza
         setShowAuthModal(false);
         setShowRegistration(false);
         setJustSignedIn(true);
@@ -139,17 +138,13 @@ export default function LayoutClient({
 
       if (session && (evt === 'SIGNED_IN' || evt === 'TOKEN_REFRESHED' || evt === 'USER_UPDATED')) {
         await syncAll();
-        if (evt === 'SIGNED_IN') {
-          setJustSignedIn(false); // 👈 listo: ya podemos decidir mostrar registro si hiciera falta
-        }
+        if (evt === 'SIGNED_IN') setJustSignedIn(false);
       } else if (evt === 'SIGNED_OUT') {
-        // 🔒 Estado consistente al cerrar sesión
         setShowAuthModal(false);
         setShowRegistration(false);
         setUserOk(false);
         setBootSynced(true);
         try { localStorage.removeItem(LS_SEEN_AUTH); } catch {}
-        // no hacemos syncAll sin sesión
       } else {
         if (canEnter()) setUserOk(true);
       }
@@ -172,10 +167,11 @@ export default function LayoutClient({
       try { (sub as any)?.unsubscribe?.(); } catch {}
       cancelled = true;
     };
-  }, []);
+  }, [SUPA_READY]);
 
-  /** Rehidratamos PERFIL + PROGRAMAS al volver a foco/online */
+  /** Rehidratamos PERFIL + PROGRAMAS al volver a foco/online (solo si hay Supabase) */
   useEffect(() => {
+    if (!SUPA_READY) return;
     const refetch = () => {
       if (!hasSession) return;
       void pullProfile().catch(() => {});
@@ -190,12 +186,19 @@ export default function LayoutClient({
       window.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('online', refetch);
     };
-  }, [hasSession]);
+  }, [SUPA_READY, hasSession]);
 
   useEffect(() => {
     if (!authReady || userOk === null || !bootSynced) return;
 
     if (isAuthRoute) {
+      setShowAuthModal(false);
+      setShowRegistration(false);
+      return;
+    }
+
+    // Si no hay Supabase env, no podemos autenticar; evita mostrar modales de login infinitos.
+    if (!SUPA_READY) {
       setShowAuthModal(false);
       setShowRegistration(false);
       return;
@@ -216,7 +219,7 @@ export default function LayoutClient({
     setShowAuthModal(false);
     setRegistrationStartStep(4);
     setShowRegistration(true);
-  }, [authReady, userOk, hasSession, isAuthRoute, bootSynced]);
+  }, [authReady, userOk, hasSession, isAuthRoute, bootSynced, SUPA_READY]);
 
   /* ✅ Eliminamos el flicker: mientras NO esté authReady o NO esté bootSynced
      o ACABAMOS DE HACER SIGNED_IN, no mostramos el gating (ni el formulario) */
