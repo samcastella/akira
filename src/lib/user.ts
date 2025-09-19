@@ -7,15 +7,12 @@ export type Activity = 'sedentario' | 'ligero' | 'moderado' | 'intenso';
 export type Sex = 'masculino' | 'femenino' | 'prefiero_no_decirlo';
 
 export type UserProfile = {
-  // Identidad básica
   userId?: string;
   nombre?: string;
   apellido?: string;
   email?: string;
   username?: string;
   telefono?: string;
-
-  // Personalización / métricas
   sexo?: Sex;
   fechaNacimiento?: string;
   edad?: number;
@@ -23,14 +20,11 @@ export type UserProfile = {
   peso?: number;
   actividad?: Activity;
   caloriasDiarias?: number;
-
-  /** ISO UTC de DB; usado para resolver conflictos */
-  updatedAt?: string | null;
-
+  updatedAt?: string | null; // ISO UTC de DB
   onboardingDone?: boolean;
 };
 
-// 👇 NUEVO: normalizador numérico y comparador de fechas
+// ---- helpers num/fecha
 function parseNumOrNull(v: any): number | null {
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
@@ -42,7 +36,7 @@ function newer(a?: string | null, b?: string | null) {
   return new Date(a!).getTime() - new Date(b!).getTime();
 }
 
-// ===== Claves de LS (retro-compat) =====
+// ===== LS keys =====
 export const LS_USER_KEY = 'akira_user_profile_v2';
 export const LS_USER = 'akira_user_v1';
 export const LS_FIRST_RUN = 'akira_first_run_done';
@@ -54,7 +48,6 @@ export function normalizeEmail(email: string | undefined | null): string {
 export function normalizeUsername(u: string | undefined | null): string {
   return (u ?? '').trim().replace(/^@+/, '').toLowerCase().replace(/\s+/g, '');
 }
-/** Calcula edad (años) a partir de yyyy-mm-dd */
 export function ageFromDOB(dob?: string): number | undefined {
   if (!dob) return undefined;
   const d = new Date(dob);
@@ -74,7 +67,6 @@ function sanitizeUser(u: Partial<UserProfile>): Partial<UserProfile> {
   if (typeof out.telefono === 'string') out.telefono = out.telefono.trim();
   return out;
 }
-/** Evita sobreescribir con undefined/null al hacer merge en LS */
 function keepDefined<T extends Record<string, any>>(obj: T): Partial<T> {
   const out: Partial<T> = {};
   for (const [k, v] of Object.entries(obj)) {
@@ -83,7 +75,7 @@ function keepDefined<T extends Record<string, any>>(obj: T): Partial<T> {
   return out;
 }
 
-// ===== Persistencia local (con migración automática v1 -> v2) =====
+// ===== Persistencia local =====
 export function loadUser(): UserProfile {
   if (typeof window === 'undefined') return {};
   try {
@@ -138,46 +130,30 @@ export function clearUser() {
   try { localStorage.removeItem(LS_USER); } catch {}
 }
 
-/** Reglas mínimas para considerar “completo” */
+/** Perfil “completo” mínimo */
 export function isUserComplete(u: UserProfile | null | undefined): boolean {
   if (!u) return false;
-
-  // Si viene de DB (tiene updatedAt) asumimos perfil base creado
   if (u.updatedAt) return true;
-
-  // O si al menos tiene métricas físicas razonables
   const heightOk = typeof u.estatura === 'number' && u.estatura >= 80 && u.estatura <= 250;
   const weightOk = typeof u.peso === 'number' && u.peso >= 20 && u.peso <= 400;
-
   if (heightOk && weightOk) return true;
-
-  // Si quieres seguir pidiendo datos básicos, mantenlo como "soft"
-  const hasBasics =
-    !!u.nombre?.trim() ||
-    !!u.apellido?.trim() ||
-    !!u.email?.trim() ||
-    !!u.username?.trim();
-
+  const hasBasics = !!u.nombre?.trim() || !!u.apellido?.trim() || !!u.email?.trim() || !!u.username?.trim();
   return !!hasBasics;
 }
 
-// ===== Calorías (Mifflin-St Jeor) =====
+// ===== Calorías =====
 function activityFactor(a: Activity | undefined): number {
   switch (a) {
     case 'ligero': return 1.375;
     case 'moderado': return 1.55;
-    case 'intenso': return 1.725;
+  case 'intenso': return 1.725;
     default: return 1.2;
   }
 }
 export function estimateCalories(u: UserProfile): number | undefined {
   const edad = u.edad ?? ageFromDOB(u.fechaNacimiento);
   if (!u.sexo || edad == null || u.estatura == null || u.peso == null) return undefined;
-  const base =
-    10 * u.peso +
-    6.25 * u.estatura -
-    5 * edad +
-    (u.sexo === 'masculino' ? 5 : u.sexo === 'femenino' ? -161 : 0);
+  const base = 10 * u.peso + 6.25 * u.estatura - 5 * edad + (u.sexo === 'masculino' ? 5 : u.sexo === 'femenino' ? -161 : 0);
   return Math.round(base * activityFactor(u.actividad));
 }
 
@@ -214,7 +190,6 @@ export function dbRowFromProfile(p: Partial<UserProfile>): any {
     peso: parseNumOrNull(p.peso),
     actividad: p.actividad ?? null,
     calorias_diarias: parseNumOrNull(p.caloriasDiarias),
-    // updated_at lo gestiona el trigger en DB
   };
 }
 
@@ -247,10 +222,7 @@ export async function upsertProfile(partial: Partial<UserProfile>): Promise<User
 
   const row = dbRowFromProfile(normalized);
 
-  const { error } = await supabase
-    .from('public_profiles')
-    .upsert(row, { onConflict: 'user_id' });
-
+  const { error } = await supabase.from('public_profiles').upsert(row, { onConflict: 'user_id' });
   if (error) {
     console.error('[upsertProfile] error', error);
     throw error;
@@ -261,7 +233,6 @@ export async function upsertProfile(partial: Partial<UserProfile>): Promise<User
     .select('*')
     .eq('user_id', uid)
     .single();
-
   if (selErr) {
     console.error('[upsertProfile] select fresh error', selErr);
     throw selErr;
@@ -273,7 +244,7 @@ export async function upsertProfile(partial: Partial<UserProfile>): Promise<User
 }
 
 export async function pullProfile(): Promise<UserProfile | null> {
-  if (!isSupabaseEnvReady()) return loadUser() ?? null; // sin ENV devolvemos cache local
+  if (!isSupabaseEnvReady()) return loadUser() ?? null;
   const uid = await getAuthUserId();
   if (!uid) return null;
 
@@ -282,15 +253,12 @@ export async function pullProfile(): Promise<UserProfile | null> {
     .select('*')
     .eq('user_id', uid)
     .maybeSingle();
-
   if (error) {
     console.error('[pullProfile] error', error);
     throw error;
   }
 
   const local = loadUser();
-
-  // normaliza numéricos
   if (local) {
     local.estatura = parseNumOrNull(local.estatura) ?? undefined;
     local.peso = parseNumOrNull(local.peso) ?? undefined;
@@ -299,7 +267,6 @@ export async function pullProfile(): Promise<UserProfile | null> {
 
   const r = remote ? (profileFromDbRow(remote) as UserProfile) : null;
 
-  // Estrategia de reconciliación
   if (r && (!local || newer(r.updatedAt, local.updatedAt) > 0)) {
     saveUser(r);
     return r;
@@ -307,9 +274,7 @@ export async function pullProfile(): Promise<UserProfile | null> {
 
   if (!r && local && local.userId === uid) {
     const row = dbRowFromProfile({ ...local, userId: uid });
-    const { error: upErr } = await supabase
-      .from('public_profiles')
-      .upsert(row, { onConflict: 'user_id' });
+    const { error: upErr } = await supabase.from('public_profiles').upsert(row, { onConflict: 'user_id' });
     if (upErr) console.error('[pullProfile] upsert from local error', upErr);
 
     const { data: fresh } = await supabase
@@ -325,9 +290,7 @@ export async function pullProfile(): Promise<UserProfile | null> {
 
   if (r && local && newer(local.updatedAt, r.updatedAt) > 0) {
     const row = dbRowFromProfile({ ...local, userId: uid });
-    const { error: upErr } = await supabase
-      .from('public_profiles')
-      .upsert(row, { onConflict: 'user_id' });
+    const { error: upErr } = await supabase.from('public_profiles').upsert(row, { onConflict: 'user_id' });
     if (upErr) console.error('[pullProfile] upsert newer local error', upErr);
 
     const { data: fresh } = await supabase
@@ -380,12 +343,10 @@ export function useAuthUserId(): string | null {
   const [uid, setUid] = useState<string | null>(null);
 
   useEffect(() => {
-    // Si no hay ENV, exponemos null y no suscribimos nada
     if (!isSupabaseEnvReady()) {
       setUid(null);
       return;
     }
-
     let mounted = true;
 
     (async () => {
@@ -418,7 +379,6 @@ export function useAuthUserId(): string | null {
  */
 export function onAuthReady(fn: (uid: string) => Promise<void> | void): () => void {
   if (!isSupabaseEnvReady()) {
-    // devolver un no-op cleanup
     return () => {};
   }
 
@@ -441,6 +401,38 @@ export function onAuthReady(fn: (uid: string) => Promise<void> | void): () => vo
     try { (sub as any)?.subscription?.unsubscribe?.(); } catch {}
     try { (sub as any)?.unsubscribe?.(); } catch {}
   };
+}
+
+/* ===== Orquestación de listeners (solicitada por LayoutClient) ===== */
+let __userRealtimeStarted = false;
+let __userRealtimeSub: { unsubscribe?: () => void } | null = null;
+
+/** Arranca listeners internos de user.ts. Idempotente. */
+export function startUserLibRealtime() {
+  if (__userRealtimeStarted) return;
+  if (!isSupabaseEnvReady()) return;
+  __userRealtimeStarted = true;
+
+  // Primer “ping” con usuario actual (para que otros escuchadores reaccionen)
+  supabase.auth.getUser().then(() => {
+    try { window.dispatchEvent(new CustomEvent('akira:user-updated')); } catch {}
+    try { window.dispatchEvent(new CustomEvent('akira:auth-changed', { detail: { initial: true } })); } catch {}
+  });
+
+  // Suscripción a cambios de auth
+  const { data: sub } = supabase.auth.onAuthStateChange((_event, _session) => {
+    try { window.dispatchEvent(new CustomEvent('akira:user-updated')); } catch {}
+    try { window.dispatchEvent(new CustomEvent('akira:auth-changed', { detail: { evt: _event } })); } catch {}
+  });
+
+  __userRealtimeSub = (sub as any)?.subscription ?? (sub as any) ?? null;
+}
+
+/** Detiene los listeners internos. */
+export function stopUserLibRealtime() {
+  try { (__userRealtimeSub as any)?.unsubscribe?.(); } catch {}
+  __userRealtimeSub = null;
+  __userRealtimeStarted = false;
 }
 
 /* ===== Hook para componentes cliente ===== */
