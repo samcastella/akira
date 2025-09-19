@@ -3,7 +3,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
-// import RequireAuth from '@/components/auth/RequireAuth'; // ← eliminado
 
 /* ===========================
    Tipos
@@ -12,15 +11,16 @@ type Sex = 'masculino' | 'femenino' | 'prefiero_no_decirlo';
 
 type PublicProfile = {
   user_id: string;
-  nombre?: string;
-  apellido?: string;
-  sexo?: Sex;
-  instagram?: string;
-  tiktok?: string;
+  nombre?: string | null;
+  apellido?: string | null;
+  sexo?: Sex | null;
+  instagram?: string | null;
+  tiktok?: string | null;
 };
 
 type DayDraft = { date: string; title: string };
 type DayRow = { id: string; day: string; title: string };
+
 type ChallengeRow = {
   id: string;
   code: string;
@@ -29,6 +29,11 @@ type ChallengeRow = {
   start: string;
   end: string;
 };
+
+type MemberIdRow = { challenge_id: string };
+type MemberRow = { challenge_id: string; user_id: string };
+type FriendReqRow = { requester: string };
+type FriendAddRow = { addressee: string };
 
 /* ===========================
    Helpers
@@ -193,7 +198,12 @@ function CreateChallenge({ userId, onCreated }: { userId?: string; onCreated?: (
     // Genera código único con reintentos mínimos
     let code = randomCode();
     for (let i = 0; i < 5; i++) {
-      const { data: clash } = await supabase.from('challenges').select('id').eq('code', code).maybeSingle();
+      const { data: clash } = await supabase
+        .from('challenges')
+        .select('id')
+        .eq('code', code)
+        .maybeSingle()
+        .returns<{ id: string } | null>();
       if (!clash) break;
       code = randomCode();
     }
@@ -203,7 +213,8 @@ function CreateChallenge({ userId, onCreated }: { userId?: string; onCreated?: (
       .from('challenges')
       .insert({ owner_id: userId, title, start, end, code })
       .select('id, code')
-      .single();
+      .single()
+      .returns<{ id: string; code: string }>();
     if (e1) { console.error(e1); return; }
 
     // 2) days
@@ -357,22 +368,35 @@ function MyChallenges({ userId }: { userId?: string }) {
     if (!userId) { setList([]); return; }
     (async () => {
       // retos donde soy miembro
-      const { data: mems } = await supabase.from('challenge_members').select('challenge_id').eq('user_id', userId);
-      const ids = (mems || []).map((m) => m.challenge_id);
+      const { data: mems } = await supabase
+        .from('challenge_members')
+        .select('challenge_id')
+        .eq('user_id', userId)
+        .returns<MemberIdRow[]>();
+
+      const ids = (mems ?? []).map((m: MemberIdRow) => m.challenge_id);
       if (!ids.length) { setList([]); return; }
 
       const { data: challenges } = await supabase
         .from('challenges')
         .select('id, code, owner_id, title, start, end')
         .in('id', ids)
-        .order('start', { ascending: false });
+        .order('start', { ascending: false })
+        .returns<ChallengeRow[]>();
 
       // contar miembros
-      const { data: members } = await supabase.from('challenge_members').select('challenge_id, user_id').in('challenge_id', ids);
-      const counts: Record<string, number> = {};
-      members?.forEach((m) => (counts[m.challenge_id] = (counts[m.challenge_id] || 0) + 1));
+      const { data: members } = await supabase
+        .from('challenge_members')
+        .select('challenge_id, user_id')
+        .in('challenge_id', ids)
+        .returns<MemberRow[]>();
 
-      setList((challenges || []).map((c) => ({ ...c, members_count: counts[c.id] || 1 })));
+      const counts: Record<string, number> = {};
+      (members ?? []).forEach((m: MemberRow) => {
+        counts[m.challenge_id] = (counts[m.challenge_id] ?? 0) + 1;
+      });
+
+      setList((challenges ?? []).map((c: ChallengeRow) => ({ ...c, members_count: counts[c.id] ?? 1 })));
     })();
   }, [userId]);
 
@@ -419,23 +443,30 @@ function EditorDays({ challengeId, ownerId }: { challengeId: string; ownerId: st
   const [days, setDays] = useState<DayRow[]>([]);
   const [myId, setMyId] = useState<string | null>(null);
 
-  useEffect(() => {
-    let alive = true;
-    supabase.auth.getUser().then(({ data }) => {
-      if (!alive) return;
-      setMyId(data.user?.id ?? null);
-    });
-    supabase
+ useEffect(() => {
+  let alive = true;
+
+  (async () => {
+    const { data } = await supabase.auth.getUser();
+    if (!alive) return;
+    setMyId(data.user?.id ?? null);
+
+    const { data: daysData } = await supabase
       .from('challenge_days')
       .select('id, day, title')
       .eq('challenge_id', challengeId)
       .order('day')
-      .then(({ data }) => {
-        if (!alive) return;
-        setDays(data || []);
-      });
-    return () => { alive = false; };
-  }, [challengeId]);
+      .returns<DayRow[]>();
+
+    if (!alive) return;
+    setDays(daysData ?? []);
+  })();
+
+  return () => {
+    alive = false;
+  };
+}, [challengeId]);
+
 
   const canEdit = myId === ownerId;
 
@@ -477,10 +508,13 @@ function Friends({ userId }: { userId?: string }) {
   useEffect(() => {
     let alive = true;
     async function loadAll() {
-      const { data: users } = await supabase.from('public_profiles').select('*');
+      const { data: users } = await supabase
+        .from('public_profiles')
+        .select('*')
+        .returns<PublicProfile[]>();
       if (!alive) return;
       const map: Record<string, PublicProfile> = {};
-      (users || []).forEach((u) => (map[u.user_id] = u));
+      (users ?? []).forEach((u: PublicProfile) => { map[u.user_id] = u; });
       setDir(map);
 
       if (!userId) { // sin sesión: no consultar friendships
@@ -494,27 +528,31 @@ function Friends({ userId }: { userId?: string }) {
         .from('friendships')
         .select('requester')
         .eq('addressee', userId)
-        .eq('status', 'pending');
+        .eq('status', 'pending')
+        .returns<FriendReqRow[]>();
       if (!alive) return;
-      setPendingIn((pendIn || []).map((r) => r.requester));
+      setPendingIn((pendIn || []).map((r: FriendReqRow) => r.requester));
 
       // amigos aceptados
       const { data: acceptedAsReq } = await supabase
         .from('friendships')
         .select('addressee')
         .eq('requester', userId)
-        .eq('status', 'accepted');
+        .eq('status', 'accepted')
+        .returns<FriendAddRow[]>();
+
       const { data: acceptedAsAdd } = await supabase
         .from('friendships')
         .select('requester')
         .eq('addressee', userId)
-        .eq('status', 'accepted');
+        .eq('status', 'accepted')
+        .returns<FriendReqRow[]>();
 
       if (!alive) return;
       const ids = [
-        ...(acceptedAsReq || []).map((r) => r.addressee as string),
-        ...(acceptedAsAdd || []).map((r) => r.requester as string),
-      ];
+  ...(acceptedAsReq || []).map((r: FriendAddRow) => r.addressee),
+  ...(acceptedAsAdd || []).map((r: FriendReqRow) => r.requester),
+];
       setFriends(ids);
     }
     loadAll();

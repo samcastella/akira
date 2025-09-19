@@ -15,6 +15,7 @@ import {
   stopUserLibRealtime,
 } from '@/lib/user';
 import { supabase, isSupabaseEnvReady } from '@/lib/supabaseClient';
+import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import RegistrationModal from '@/components/RegistrationModal';
 import { pullUserPrograms } from '@/lib/programSync';
 
@@ -129,7 +130,8 @@ export default function LayoutClient({
     // ⬇️ arranca los listeners de user.ts (perfil/realtime) una vez sabemos que hay ENV
     startUserLibRealtime();
 
-    const { data: sub } = supabase.auth.onAuthStateChange(async (evt, session) => {
+    const { data: sub } = supabase.auth.onAuthStateChange(
+  async (evt: AuthChangeEvent, session: Session | null) => {
       setHasSession(!!session);
       try {
         window.dispatchEvent(new CustomEvent('akira:auth-changed', { detail: { evt } }));
