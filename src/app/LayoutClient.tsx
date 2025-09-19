@@ -24,7 +24,7 @@ const LS_SEEN_AUTH = 'akira_seen_auth_v1';
 function canEnter(): boolean {
   try {
     const u = loadUser();
-    return isUserComplete(u) || !!u.onboardingDone;
+    return isUserComplete(u) || !!(u as any)?.onboardingDone;
   } catch {
     return false;
   }
@@ -38,7 +38,9 @@ export default function LayoutClient({
   bottomNav: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const isAuthRoute = pathname === '/login' || pathname.startsWith('/auth');
+  const isAuthRoute =
+    pathname === '/login' ||
+    pathname?.startsWith('/auth'); // incluye /auth/callback
 
   const [userOk, setUserOk] = useState<boolean | null>(null);
   const [hasSession, setHasSession] = useState(false);
@@ -47,7 +49,7 @@ export default function LayoutClient({
   /* 👇 Bandera: primera sincronización terminada */
   const [bootSynced, setBootSynced] = useState(false);
 
-  /* 👇 Nueva bandera: suprime el modal de registro justo tras SIGNED_IN */
+  /* 👇 Suprime el modal de registro justo tras SIGNED_IN para evitar parpadeo */
   const [justSignedIn, setJustSignedIn] = useState(false);
 
   /* 👇 Evita flicker SSR: no renderizar modales hasta estar montado en cliente */
@@ -69,11 +71,15 @@ export default function LayoutClient({
 
   useEffect(() => {
     const onUserUpdated = () => setUserOk(canEnter());
-    window.addEventListener('akira:user-updated', onUserUpdated);
-    window.addEventListener('storage', onUserUpdated);
+    if (typeof window !== 'undefined') {
+      window.addEventListener('akira:user-updated', onUserUpdated);
+      window.addEventListener('storage', onUserUpdated);
+    }
     return () => {
-      window.removeEventListener('akira:user-updated', onUserUpdated);
-      window.removeEventListener('storage', onUserUpdated);
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('akira:user-updated', onUserUpdated);
+        window.removeEventListener('storage', onUserUpdated);
+      }
     };
   }, []);
 
@@ -130,6 +136,7 @@ export default function LayoutClient({
       } catch {}
 
       if (evt === 'SIGNED_IN') {
+        // Marca onboardingDone y “visto”
         try {
           localStorage.setItem(LS_SEEN_AUTH, '1');
           const raw = localStorage.getItem(LS_USER_KEY);
@@ -137,6 +144,7 @@ export default function LayoutClient({
           localStorage.setItem(LS_USER_KEY, JSON.stringify({ ...prev, onboardingDone: true }));
           window.dispatchEvent(new CustomEvent('akira:user-updated'));
         } catch {}
+        // Cierra modales inmediatamente y evita flicker
         setUserOk(true);
         setShowAuthModal(false);
         setShowRegistration(false);
@@ -158,6 +166,7 @@ export default function LayoutClient({
         if (canEnter()) setUserOk(true);
       }
 
+      // Si hay sesión pero el perfil aún no permite entrar, mostramos personalización
       const okNow = canEnter();
       if (session && !okNow) {
         type AppMeta = { provider?: string };
@@ -231,6 +240,7 @@ export default function LayoutClient({
       return;
     }
 
+    // Hay sesión pero falta completar perfil → abrir registro en paso 4
     setShowAuthModal(false);
     setRegistrationStartStep(4);
     setShowRegistration(true);

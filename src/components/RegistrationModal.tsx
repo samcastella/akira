@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
-import { UserProfile, estimateCalories, upsertProfile, loadUser, LS_USER_KEY, isUserComplete } from '@/lib/user';
+import { UserProfile, estimateCalories, upsertProfile, loadUser, LS_USER_KEY } from '@/lib/user';
 import { Rocket, ArrowLeft, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { getCopy } from '@/lib/copy';
 import { detectLocale } from '@/lib/locale';
@@ -278,10 +278,10 @@ export default function RegistrationModal({
     const derivedAge = user.edad ?? ageFromDOB(user.fechaNacimiento);
 
     const nextMissing = {
-  fechaNacimiento: derivedAge == null,
-  estatura: user.estatura == null, // null o undefined
-  peso: user.peso == null,         // null o undefined
-};
+      fechaNacimiento: derivedAge == null,
+      estatura: user.estatura == null, // null o undefined
+      peso: user.peso == null, // null o undefined
+    };
 
     setMissing(nextMissing);
     if (nextMissing.fechaNacimiento || nextMissing.estatura || nextMissing.peso) return;
@@ -451,6 +451,11 @@ export default function RegistrationModal({
         return;
       }
 
+      // --- Login OK → cancelamos el timeout cuanto antes
+      clearTimeout(safety);
+      // --- Forzamos que el cliente tenga la sesión en memoria (Safari/WebKit, PKCE)
+      await supabase.auth.getSession().catch(() => {});
+
       // Sesión OK → obtenemos uid y perfil público
       const { data: udata } = await supabase.auth.getUser();
       const uid = udata.user?.id;
@@ -524,13 +529,19 @@ export default function RegistrationModal({
       }
 
       try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
-      router.replace(redirectTo || '/');
+
+      // Cierra el modal (si existe) y navega/refresca para rehidratar la UI
       onClose?.();
+      if (redirectTo) {
+        router.replace(redirectTo);
+      } else {
+        router.refresh();
+      }
     } catch (e: any) {
       console.warn('[login] unexpected error', e);
       setErr(e?.message || 'No se pudo iniciar sesión. Inténtalo de nuevo.');
     } finally {
-      clearTimeout(safety);
+      clearTimeout(safety); // importante también si hubo error
       setLoading(false);
     }
   }
@@ -545,7 +556,7 @@ export default function RegistrationModal({
     setLoading(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
-        redirectTo: authRedirectTo(), // ← y el cambio aquí
+        redirectTo: authRedirectTo(), // /auth/callback
       });
       if (error) throw error;
       setInfo('Te hemos enviado un correo con el enlace para recuperar tu contraseña.');
@@ -670,7 +681,7 @@ export default function RegistrationModal({
             {mode === 'login' ? 'Iniciar sesión' : 'Registro'}
           </h2>
 
-        {mode === 'register' && (
+          {mode === 'register' && (
             <div className="flex items-center gap-2 text-[10px]">
               <StepDot active={step >= 1} />
               <StepDot active={step >= 2} />
@@ -689,7 +700,7 @@ export default function RegistrationModal({
                 <p className="text-base font-extrabold mb-1">¡Bienvenid@ de nuevo!</p>
                 <p className="text-xs text-gray-600">
                   Ya tienes una cuenta creada con este mail. Entra con tu cuenta para continuar o
-                  solicita recuperar al contraseña.
+                  solicita recuperar la contraseña.
                 </p>
               </div>
 
@@ -1006,7 +1017,7 @@ export default function RegistrationModal({
                       </select>
                     </label>
 
-                    <label className="block text-xs md:col-span-2">
+                    <label className="block text xs md:col-span-2">
                       <span className="font-medium">Calorías diarias</span>
                       <div className="mt-1 flex gap-2">
                         <input
