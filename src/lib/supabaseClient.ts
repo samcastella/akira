@@ -1,56 +1,66 @@
 // src/lib/supabaseClient.ts
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-/** Lee env y permite que falte (soft-fail). */
-function envOrNull(name: string): string | null {
-  return process.env[name] ?? null;
-}
-
-const SUPABASE_URL  = envOrNull('NEXT_PUBLIC_SUPABASE_URL');
-const SUPABASE_ANON = envOrNull('NEXT_PUBLIC_SUPABASE_ANON_KEY');
-
-/** Útil para checks en debug/whoami o logs. */
+/** ¿Hay env públicas de Supabase en esta build? */
 export function isSupabaseEnvReady(): boolean {
-  return !!SUPABASE_URL && !!SUPABASE_ANON;
+  return !!process.env.NEXT_PUBLIC_SUPABASE_URL && !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 }
 
-function makeBrowserClient(): SupabaseClient {
-  if (typeof window === 'undefined') {
-    throw new Error('makeBrowserClient() solo en navegador');
-  }
-  if (!SUPABASE_URL || !SUPABASE_ANON) {
-    // Soft-fail: no tumbar la app al cargar, pero dejar rastro claro en consola.
-    console.error('[supabase] Faltan NEXT_PUBLIC_SUPABASE_URL/ANON_KEY en esta build/preview');
-    throw new Error('Supabase no configurado (faltan env públicas NEXT_PUBLIC_SUPABASE_*)');
-  }
-  return createClient(SUPABASE_URL, SUPABASE_ANON, {
+/** Cliente real de Supabase (sólo navegador) */
+function makeRealClient(): SupabaseClient {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL as string;
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string;
+  return createClient(url, anon, {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true,
       flowType: 'pkce',
-      storage: window.localStorage,
+      storage: typeof window !== 'undefined' ? window.localStorage : undefined,
     },
   });
 }
 
-/** Singleton en navegador (evita sesiones “fantasma” por HMR). */
-export function getSupabase(): SupabaseClient {
-  if (typeof window === 'undefined') {
-    throw new Error('getSupabase() solo puede usarse en Client Components');
-  }
-  const g = globalThis as any;
-  if (!g.__akira_supabase__) {
-    g.__akira_supabase__ = makeBrowserClient();
-  }
-  return g.__akira_supabase__ as SupabaseClient;
+/** Cliente deshabilitado: no lanza al importar; rechaza llamadas cuando se usan */
+function makeDisabledClient(): SupabaseClient {
+  const msg = 'Supabase no configurado (faltan env públicas NEXT_PUBLIC_SUPABASE_*)';
+  const handler: ProxyHandler<any> = {
+    get(_t, prop) {
+      // Para inspecciones
+      if (prop === '__disabled__') return true;
+      // Cualquier método devuelve una función async que rechaza
+      return (_: any) => {
+        if (typeof console !== 'undefined') {
+          console.warn('[supabase] cliente deshabilitado:', String(prop), '→', msg);
+        }
+        const err = new Error(msg);
+        // Simula API async
+        return Promise.reject(err);
+      };
+    },
+  };
+  return new Proxy({} as SupabaseClient, handler);
 }
 
-/** Compat: `import { supabase } from "@/lib/supabaseClient"` */
+let _client: SupabaseClient | null = null;
+
+/** Singleton seguro: nunca lanza. Si no hay ENV, devuelve cliente deshabilitado. */
+export function getSupabase(): SupabaseClient {
+  if (_client) return _client;
+  if (isSupabaseEnvReady()) {
+    _client = makeRealClient();
+  } else {
+    console.warn('[supabase] Faltan NEXT_PUBLIC_SUPABASE_URL/ANON_KEY en esta build/preview');
+    _client = makeDisabledClient();
+  }
+  return _client;
+}
+
+/** Compat: `import { supabase } from '@/lib/supabaseClient'` */
 export const supabase = new Proxy({} as SupabaseClient, {
   get(_t, prop) {
     const c = getSupabase();
-    // @ts-expect-error delegación dinámica
+    // @ts-expect-error — delegación dinámica
     return c[prop];
   },
 });
