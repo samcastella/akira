@@ -1,25 +1,28 @@
 // src/lib/supabaseClient.ts
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-function requiredEnv(name: string): string {
-  const v = process.env[name];
-  if (!v) throw new Error(`Falta la variable de entorno ${name}`);
-  return v;
-}
-
-// ✅ helper público para saber si hay ENV (sin lanzar error)
+/** ¿Existen las env públicas de Supabase en esta build/preview? */
 export function isSupabaseEnvReady() {
-  return !!process.env.NEXT_PUBLIC_SUPABASE_URL && !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 }
 
-const SUPABASE_URL  = requiredEnv('NEXT_PUBLIC_SUPABASE_URL');
-const SUPABASE_ANON = requiredEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
+function getEnvOrThrow() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anon) {
+    throw new Error('Supabase no configurado (faltan env públicas NEXT_PUBLIC_SUPABASE_*)');
+  }
+  return { url, anon };
+}
 
 function makeBrowserClient(): SupabaseClient {
   if (typeof window === 'undefined') {
-    throw new Error('makeBrowserClient() solo en navegador');
+    throw new Error('makeBrowserClient() sólo en navegador');
   }
-  return createClient(SUPABASE_URL, SUPABASE_ANON, {
+  // ⚠️ NO leemos env en top-level; sólo aquí y sólo si existen
+  const { url, anon } = getEnvOrThrow();
+
+  return createClient(url, anon, {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
@@ -30,10 +33,10 @@ function makeBrowserClient(): SupabaseClient {
   });
 }
 
-/** Singleton en navegador */
+/** Singleton en navegador; NO crea cliente si nadie lo usa */
 export function getSupabase(): SupabaseClient {
   if (typeof window === 'undefined') {
-    throw new Error('getSupabase() solo puede usarse en Client Components');
+    throw new Error('getSupabase() sólo puede usarse en Client Components');
   }
   const g = globalThis as any;
   if (!g.__akira_supabase__) {
@@ -42,7 +45,7 @@ export function getSupabase(): SupabaseClient {
   return g.__akira_supabase__ as SupabaseClient;
 }
 
-/** Compat por si importan `supabase` directamente */
+/** Compat: poder usar `supabase.<método>` sin instanciar hasta el primer uso */
 export const supabase = new Proxy({} as SupabaseClient, {
   get(_t, prop) {
     const c = getSupabase();
