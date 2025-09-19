@@ -2,7 +2,7 @@
 
 import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase, isSupabaseEnvReady } from '@/lib/supabaseClient';
 import { Eye, EyeOff } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
@@ -18,6 +18,7 @@ function getHashParams() {
 function CallbackInner() {
   const router = useRouter();
   const params = useSearchParams();
+  const SUPA_READY = isSupabaseEnvReady();
 
   const [phase, setPhase] = useState<Phase>('checking');
   const [err, setErr] = useState<string | null>(null);
@@ -40,6 +41,13 @@ function CallbackInner() {
   }, [params]);
 
   useEffect(() => {
+    if (!SUPA_READY) {
+      // Bloquea este flujo cuando no hay ENV; mantenemos UI coherente
+      setPhase('error');
+      setErr('Esta build no tiene Supabase configurado.');
+      return;
+    }
+
     let alive = true;
 
     // ⬇️ Timeout de seguridad: evita quedarse en "Comprobando enlace…" indefinidamente
@@ -63,9 +71,9 @@ function CallbackInner() {
         }
 
         // 0.b) ¿error en hash?
-        const hp = getHashParams();
-        const hashErr = hp.get('error');
-        const hashErrDesc = hp.get('error_description');
+        const hp0 = getHashParams();
+        const hashErr = hp0.get('error');
+        const hashErrDesc = hp0.get('error_description');
         if (hashErr) {
           if (!alive) return;
           setErr(decodeURIComponent(hashErrDesc || hashErr));
@@ -94,6 +102,7 @@ function CallbackInner() {
         }
 
         // 2) ¿trae tokens en el hash? (signup / magic link / recovery)
+        const hp = getHashParams();
         const access_token = hp.get('access_token');
         const refresh_token = hp.get('refresh_token');
         const typeHash = hp.get('type') || linkType || undefined;
@@ -151,7 +160,7 @@ function CallbackInner() {
     })();
 
     return () => { alive = false; clearTimeout(to); };
-  }, [linkType, params, router]);
+  }, [SUPA_READY, linkType, params, router]);
 
   const passError = useMemo(() => {
     if (!password && !confirm) return '';
@@ -165,6 +174,11 @@ function CallbackInner() {
     setErr(null);
     setInfo(null);
     if (passError) return;
+
+    if (!SUPA_READY) {
+      setErr('Esta build no tiene Supabase configurado.');
+      return;
+    }
 
     setLoading(true);
     try {
@@ -182,6 +196,21 @@ function CallbackInner() {
     } finally {
       setLoading(false);
     }
+  }
+
+  // Bloqueo visual si no hay ENV (coherente con Layout)
+  if (!SUPA_READY) {
+    return (
+      <main className="min-h-[100svh] grid place-items-center p-6 text-center" style={{ background: '#FAFAFA' }}>
+        <div className="mx-auto w-full max-w-md space-y-4 bg-white rounded-2xl shadow p-6">
+          <h1 className="text-xl font-semibold">Configuración incompleta</h1>
+          <p className="text-sm">
+            Esta build no tiene las variables públicas de Supabase. No se puede validar el enlace de autenticación.
+          </p>
+          <button onClick={() => router.replace('/login')} className="btn">Volver a Iniciar sesión</button>
+        </div>
+      </main>
+    );
   }
 
   return (

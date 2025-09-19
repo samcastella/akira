@@ -10,6 +10,9 @@ import {
   pullProfile,
   syncLocalToRemoteIfMissing,
   LS_USER_KEY,
+  // ⬇️ orquestación de listeners de user.ts
+  startUserLibRealtime,
+  stopUserLibRealtime,
 } from '@/lib/user';
 import { supabase, isSupabaseEnvReady } from '@/lib/supabaseClient';
 import RegistrationModal from '@/components/RegistrationModal';
@@ -117,6 +120,9 @@ export default function LayoutClient({
     }
     void initAuth();
 
+    // ⬇️ arranca los listeners de user.ts (perfil/realtime) una vez sabemos que hay ENV
+    startUserLibRealtime();
+
     const { data: sub } = supabase.auth.onAuthStateChange(async (evt, session) => {
       setHasSession(!!session);
       try {
@@ -172,6 +178,8 @@ export default function LayoutClient({
       try {
         (sub as any)?.unsubscribe?.();
       } catch {}
+      // ⬇️ detenemos listeners de user.ts
+      stopUserLibRealtime();
       cancelled = true;
     };
   }, [SUPA_READY]);

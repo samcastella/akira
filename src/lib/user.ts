@@ -1,5 +1,5 @@
 // src/lib/user.ts
-import { supabase } from '@/lib/supabaseClient';
+import { supabase, isSupabaseEnvReady } from '@/lib/supabaseClient';
 import { useEffect, useState } from 'react';
 
 // ===== Tipos =====
@@ -41,7 +41,6 @@ function newer(a?: string | null, b?: string | null) {
   if (!a && b) return -1;
   return new Date(a!).getTime() - new Date(b!).getTime();
 }
-
 
 // ===== Claves de LS (retro-compat) =====
 export const LS_USER_KEY = 'akira_user_profile_v2';
@@ -219,11 +218,12 @@ export function dbRowFromProfile(p: Partial<UserProfile>): any {
   };
 }
 
-
 /* ===========================================================
    === SINCRONIZACIÓN CON SUPABASE: upsert / pull / bootstrap ===
    =========================================================== */
+
 export async function getAuthUserId(): Promise<string | null> {
+  if (!isSupabaseEnvReady()) return null;
   const { data, error } = await supabase.auth.getSession();
   if (error) {
     console.warn('[auth.getSession] error', error);
@@ -233,17 +233,17 @@ export async function getAuthUserId(): Promise<string | null> {
 }
 
 export async function upsertProfile(partial: Partial<UserProfile>): Promise<UserProfile> {
+  if (!isSupabaseEnvReady()) throw new Error('Supabase deshabilitado (ENV faltan)');
   const uid = await getAuthUserId();
   if (!uid) throw new Error('No hay sesión activa para upsertProfile');
 
   const normalized: Partial<UserProfile> = {
-  ...partial,
-  estatura: parseNumOrNull(partial.estatura) ?? undefined,
-  peso: parseNumOrNull(partial.peso) ?? undefined,
-  caloriasDiarias: parseNumOrNull(partial.caloriasDiarias) ?? undefined,
-  userId: uid,
-};
-
+    ...partial,
+    estatura: parseNumOrNull(partial.estatura) ?? undefined,
+    peso: parseNumOrNull(partial.peso) ?? undefined,
+    caloriasDiarias: parseNumOrNull(partial.caloriasDiarias) ?? undefined,
+    userId: uid,
+  };
 
   const row = dbRowFromProfile(normalized);
 
@@ -272,8 +272,8 @@ export async function upsertProfile(partial: Partial<UserProfile>): Promise<User
   return profile;
 }
 
-
 export async function pullProfile(): Promise<UserProfile | null> {
+  if (!isSupabaseEnvReady()) return loadUser() ?? null; // sin ENV devolvemos cache local
   const uid = await getAuthUserId();
   if (!uid) return null;
 
@@ -299,24 +299,19 @@ export async function pullProfile(): Promise<UserProfile | null> {
 
   const r = remote ? (profileFromDbRow(remote) as UserProfile) : null;
 
-  // Estrategia:
-  // - Si hay remoto y (no hay local o remoto.updatedAt es más nuevo) → guardar remoto y devolverlo
-  // - Si no hay remoto pero sí local “completo” → subir local y devolver su versión
-  // - Si ambos existen y local es más nuevo (caso raro) → subimos local y guardamos local
+  // Estrategia de reconciliación
   if (r && (!local || newer(r.updatedAt, local.updatedAt) > 0)) {
     saveUser(r);
     return r;
   }
 
   if (!r && local && local.userId === uid) {
-    // crea remoto a partir de local
     const row = dbRowFromProfile({ ...local, userId: uid });
     const { error: upErr } = await supabase
       .from('public_profiles')
       .upsert(row, { onConflict: 'user_id' });
     if (upErr) console.error('[pullProfile] upsert from local error', upErr);
 
-    // re-leer para obtener updated_at real
     const { data: fresh } = await supabase
       .from('public_profiles')
       .select('*')
@@ -328,7 +323,6 @@ export async function pullProfile(): Promise<UserProfile | null> {
     return pf;
   }
 
-  // si ambos existen y local parece más nuevo, subida conservadora
   if (r && local && newer(local.updatedAt, r.updatedAt) > 0) {
     const row = dbRowFromProfile({ ...local, userId: uid });
     const { error: upErr } = await supabase
@@ -336,7 +330,6 @@ export async function pullProfile(): Promise<UserProfile | null> {
       .upsert(row, { onConflict: 'user_id' });
     if (upErr) console.error('[pullProfile] upsert newer local error', upErr);
 
-    // re-lee y guarda
     const { data: fresh } = await supabase
       .from('public_profiles')
       .select('*')
@@ -347,12 +340,11 @@ export async function pullProfile(): Promise<UserProfile | null> {
     return pf;
   }
 
-  // por defecto, conserva local
   return local ?? null;
 }
 
-
 export async function syncLocalToRemoteIfMissing(): Promise<UserProfile | null> {
+  if (!isSupabaseEnvReady()) return loadUser() ?? null;
   const uid = await getAuthUserId();
   if (!uid) return null;
 
@@ -388,6 +380,12 @@ export function useAuthUserId(): string | null {
   const [uid, setUid] = useState<string | null>(null);
 
   useEffect(() => {
+    // Si no hay ENV, exponemos null y no suscribimos nada
+    if (!isSupabaseEnvReady()) {
+      setUid(null);
+      return;
+    }
+
     let mounted = true;
 
     (async () => {
@@ -414,9 +412,17 @@ export function useAuthUserId(): string | null {
   return uid;
 }
 
+/**
+ * Llama a `fn(uid)` la primera vez que hay usuario (y sólo una vez).
+ * No suscribe nada si no hay ENV.
+ */
 export function onAuthReady(fn: (uid: string) => Promise<void> | void): () => void {
-  let called = false;
+  if (!isSupabaseEnvReady()) {
+    // devolver un no-op cleanup
+    return () => {};
+  }
 
+  let called = false;
   const run = (uid: string | null | undefined) => {
     if (called) return;
     if (uid) {
