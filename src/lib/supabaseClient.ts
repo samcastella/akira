@@ -1,4 +1,6 @@
 // src/lib/supabaseClient.ts
+'use client';
+
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 /** ¿Existen las env públicas de Supabase en esta build/preview? */
@@ -15,11 +17,34 @@ function getEnvOrThrow() {
   return { url, anon };
 }
 
+/** Storage seguro: evita crash si localStorage no está disponible */
+function getSafeStorage(): Storage | undefined {
+  if (typeof window === 'undefined') return undefined;
+  try {
+    const testKey = '__supa_test__';
+    window.localStorage.setItem(testKey, '1');
+    window.localStorage.removeItem(testKey);
+    return window.localStorage;
+  } catch {
+    // fallback “no-op” en memoria
+    const mem = new Map<string, string>();
+    return {
+      getItem: (k: string) => (mem.has(k) ? (mem.get(k) as string) : null),
+      setItem: (k: string, v: string) => void mem.set(k, v),
+      removeItem: (k: string) => void mem.delete(k),
+      clear: () => void mem.clear(),
+      key: (i: number) => Array.from(mem.keys())[i] ?? null,
+      get length() {
+        return mem.size;
+      },
+    } as unknown as Storage;
+  }
+}
+
 function makeBrowserClient(): SupabaseClient {
   if (typeof window === 'undefined') {
     throw new Error('makeBrowserClient() sólo en navegador');
   }
-  // ⚠️ NO leemos env en top-level; sólo aquí y sólo si existen
   const { url, anon } = getEnvOrThrow();
 
   return createClient(url, anon, {
@@ -28,7 +53,8 @@ function makeBrowserClient(): SupabaseClient {
       autoRefreshToken: true,
       detectSessionInUrl: true,
       flowType: 'pkce',
-      storage: window.localStorage,
+      storageKey: 'akira.auth',     // ✅ clave estable para toda la app
+      storage: getSafeStorage(),    // ✅ storage tolerante a Safari/privado
     },
   });
 }
