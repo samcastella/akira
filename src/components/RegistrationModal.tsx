@@ -417,12 +417,6 @@ export default function RegistrationModal({
 
     setLoading(true);
 
-    // Timeout de seguridad: evita spinner infinito
-    const safety = setTimeout(() => {
-      setLoading(false);
-      setErr('La solicitud está tardando demasiado. Revisa tu conexión e inténtalo de nuevo.');
-    }, 12000);
-
     try {
       const { data: signData, error: signErr } = await supabase.auth.signInWithPassword({
         email: normalizedEmail,
@@ -441,6 +435,7 @@ export default function RegistrationModal({
             });
             setInfo('Revisa tu bandeja y sigue el enlace para activar tu cuenta.');
           } catch {}
+          setLoading(false);
           return;
         }
         if (msg.includes('invalid login') || msg.includes('invalid credentials')) {
@@ -448,11 +443,10 @@ export default function RegistrationModal({
         } else {
           setErr((signErr as any).message || 'No se pudo iniciar sesión.');
         }
+        setLoading(false);
         return;
       }
 
-      // --- Login OK → cancelamos el timeout cuanto antes
-      clearTimeout(safety);
       // --- Forzamos que el cliente tenga la sesión en memoria (Safari/WebKit, PKCE)
       await supabase.auth.getSession().catch(() => {});
 
@@ -530,18 +524,14 @@ export default function RegistrationModal({
 
       try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
 
-      // Cierra el modal (si existe) y navega/refresca para rehidratar la UI
+      // Cierra el modal (si existe) y recarga completa → Safari-safe
       onClose?.();
-      if (redirectTo) {
-        router.replace(redirectTo);
-      } else {
-        router.refresh();
-      }
+      window.location.assign(redirectTo || '/mizona');
+      return;
     } catch (e: any) {
       console.warn('[login] unexpected error', e);
       setErr(e?.message || 'No se pudo iniciar sesión. Inténtalo de nuevo.');
     } finally {
-      clearTimeout(safety); // importante también si hubo error
       setLoading(false);
     }
   }
@@ -1017,7 +1007,7 @@ export default function RegistrationModal({
                       </select>
                     </label>
 
-                    <label className="block text xs md:col-span-2">
+                    <label className="block text-xs md:col-span-2">
                       <span className="font-medium">Calorías diarias</span>
                       <div className="mt-1 flex gap-2">
                         <input
