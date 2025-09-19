@@ -315,7 +315,7 @@ export default function RegistrationModal({
     window.setTimeout(() => setInfo(null), 2500);
   }
 
-  // ——— Registro por email ———
+  // ——— Registro por email (con confirmación) ———
   async function submitEmailForm(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
@@ -330,7 +330,7 @@ export default function RegistrationModal({
         email: normalizedEmail,
         password,
         options: {
-          emailRedirectTo: authRedirectTo(), // ← único cambio aquí
+          emailRedirectTo: authRedirectTo(), // ← redirección a /auth/callback
           data: { nombre: user.nombre ?? '', apellido: user.apellido ?? '' },
         },
       });
@@ -353,16 +353,21 @@ export default function RegistrationModal({
 
       if (error) throw new Error(error.message || 'No se pudo crear la cuenta.');
 
-      // Guardar básicos locales
-      await upsertProfile({
-        username: normalizedUsername || undefined,
-        nombre: user.nombre,
-        apellido: user.apellido,
-        email: normalizedEmail,
-        telefono: (user.telefono || '').trim() || undefined,
-      });
+      // ✔ Guardar básicos **SOLO en local** (no requiere sesión)
+      try {
+        const prev = loadUser();
+        const nextLocal = {
+          ...prev,
+          username: normalizedUsername || undefined,
+          nombre: user.nombre,
+          apellido: user.apellido,
+          email: normalizedEmail,
+          telefono: (user.telefono || '').trim() || undefined,
+        };
+        localStorage.setItem(LS_USER_KEY, JSON.stringify(nextLocal));
+      } catch {}
 
-      // Perfil público (best-effort) — incluye username y teléfono
+      // Si (por configuración) hubiese sesión inmediata, upsert en DB
       if (data.session?.user) {
         const uid = data.session.user.id;
         const { error: upsertErr } = await supabase
@@ -390,7 +395,8 @@ export default function RegistrationModal({
         }
       }
 
-      setInfo('Te hemos enviado un correo para confirmar tu email. Puedes verificarlo cuando quieras; no es necesario para continuar ahora.');
+      // Mensaje y paso de verificación
+      setInfo('Te hemos enviado un correo para confirmar tu email. Ábrelo desde este dispositivo y toca el enlace.');
       setStep(3);
     } catch (e: any) {
       setErr(e?.message || 'No se pudo completar el registro.');
@@ -566,18 +572,18 @@ export default function RegistrationModal({
   }
 
   function finish() {
-  if (finishing) return;
-  setFinishing(true);
+    if (finishing) return;
+    setFinishing(true);
 
-  // Permitir terminar aunque falten métricas
-  try {
-    setOnboardingDoneSilent();            // marca onboardingDone en local
-    localStorage.setItem(LS_SEEN_AUTH, '1');
-  } catch {}
+    // Permitir terminar aunque falten métricas
+    try {
+      setOnboardingDoneSilent();            // marca onboardingDone en local
+      localStorage.setItem(LS_SEEN_AUTH, '1');
+    } catch {}
 
-  onClose?.();
-  setTimeout(() => { router.replace(redirectTo || '/mizona'); }, 0);
-}
+    onClose?.();
+    setTimeout(() => { router.replace(redirectTo || '/mizona'); }, 0);
+  }
 
   function goLogin() {
     setMode('login');
@@ -834,16 +840,16 @@ export default function RegistrationModal({
                       <span className="font-medium">Repetir contraseña</span>
                       <div className="relative">
                         <input
-  key={`passc-${showPassConfirm ? 't' : 'p'}`}
-  ref={confirmRef}
-  type={showPassConfirm ? 'text' : 'password'}
-  name="new-password-confirm"
-  autoComplete="new-password"
-  className="mt-1 input text-[16px] w-full pr-10"
-  value={confirm}
-  onChange={(e) => setConfirm(e.target.value)}
-  required
-/>
+                          key={`passc-${showPassConfirm ? 't' : 'p'}`}
+                          ref={confirmRef}
+                          type={showPassConfirm ? 'text' : 'password'}
+                          name="new-password-confirm"
+                          autoComplete="new-password"
+                          className="mt-1 input text-[16px] w-full pr-10"
+                          value={confirm}
+                          onChange={(e) => setConfirm(e.target.value)}
+                          required
+                        />
                         <button type="button" aria-pressed={showPassConfirm} onClick={toggleShowPassConfirm} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 opacity-70 hover:opacity-100" aria-label={showPassConfirm ? 'Ocultar contraseña' : 'Mostrar contraseña'}>
                           {showPassConfirm ? <EyeOff size={18} /> : <Eye size={18} />}
                         </button>
@@ -997,12 +1003,11 @@ export default function RegistrationModal({
                     <button
                       type="button"
                       onClick={() => {
-  // Guardar métricas en local (silencioso) y marcar onboarding hecho
-  persistBodyMetrics(undefined, { silent: true });
-  setOnboardingDoneSilent();              // ⬅️ añade esta línea
-  setStep(5);
-}}
-
+                        // Guardar métricas en local (silencioso) y marcar onboarding hecho
+                        persistBodyMetrics(undefined, { silent: true });
+                        setOnboardingDoneSilent();
+                        setStep(5);
+                      }}
                       className="underline underline-offset-2"
                     >
                       Omitir este paso
