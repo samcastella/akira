@@ -278,10 +278,11 @@ export default function RegistrationModal({
     const derivedAge = user.edad ?? ageFromDOB(user.fechaNacimiento);
 
     const nextMissing = {
-      fechaNacimiento: derivedAge == null,
-      estatura: !user.estatura && user.estatura !== 0,
-      peso: !user.peso && user.peso !== 0,
-    };
+  fechaNacimiento: derivedAge == null,
+  estatura: user.estatura == null, // null o undefined
+  peso: user.peso == null,         // null o undefined
+};
+
     setMissing(nextMissing);
     if (nextMissing.fechaNacimiento || nextMissing.estatura || nextMissing.peso) return;
 
@@ -415,16 +416,39 @@ export default function RegistrationModal({
     if (!canLogin) return;
 
     setLoading(true);
+
+    // Timeout de seguridad: evita spinner infinito
+    const safety = setTimeout(() => {
+      setLoading(false);
+      setErr('La solicitud está tardando demasiado. Revisa tu conexión e inténtalo de nuevo.');
+    }, 12000);
+
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data: signData, error: signErr } = await supabase.auth.signInWithPassword({
         email: normalizedEmail,
         password,
       });
-      if (error) {
-        const friendly = /invalid login/i.test(error.message)
-          ? 'Email o contraseña incorrectos.'
-          : error.message;
-        throw new Error(friendly);
+
+      if (signErr) {
+        const msg = (signErr as any)?.message?.toLowerCase?.() || '';
+        if (msg.includes('email not confirmed') || msg.includes('not confirmed')) {
+          setErr('Tu email no está verificado. Te hemos reenviado el correo de verificación.');
+          try {
+            await supabase.auth.resend({
+              type: 'signup',
+              email: normalizedEmail,
+              options: { emailRedirectTo: authRedirectTo() },
+            });
+            setInfo('Revisa tu bandeja y sigue el enlace para activar tu cuenta.');
+          } catch {}
+          return;
+        }
+        if (msg.includes('invalid login') || msg.includes('invalid credentials')) {
+          setErr('Email o contraseña incorrectos.');
+        } else {
+          setErr((signErr as any).message || 'No se pudo iniciar sesión.');
+        }
+        return;
       }
 
       // Sesión OK → obtenemos uid y perfil público
@@ -458,14 +482,14 @@ export default function RegistrationModal({
             .from('public_profiles')
             .upsert({ user_id: uid, username: normalizedUsernameLocal }, { onConflict: 'user_id' });
 
-          if (upErr) {
+          if (!upErr) {
+            finalUsername = normalizedUsernameLocal;
+          } else {
             if (String((upErr as any).code) === '23505') {
               setErr('Este nombre de usuario ya está registrado.');
             } else {
               console.warn('username upsert error', upErr);
             }
-          } else {
-            finalUsername = normalizedUsernameLocal;
           }
 
           // Si no existía fila, creamos básicos
@@ -476,9 +500,7 @@ export default function RegistrationModal({
                 { user_id: uid, nombre: user.nombre || null, apellido: user.apellido || null, sexo: user.sexo || null },
                 { onConflict: 'user_id' }
               );
-            if (upsertBasicsErr2) {
-              console.warn('public_profiles basics upsert error:', upsertBasicsErr2);
-            }
+            if (upsertBasicsErr2) console.warn('public_profiles basics upsert error:', upsertBasicsErr2);
           }
         }
 
@@ -505,8 +527,10 @@ export default function RegistrationModal({
       router.replace(redirectTo || '/');
       onClose?.();
     } catch (e: any) {
-      setErr(e?.message || 'No se pudo iniciar sesión.');
+      console.warn('[login] unexpected error', e);
+      setErr(e?.message || 'No se pudo iniciar sesión. Inténtalo de nuevo.');
     } finally {
+      clearTimeout(safety);
       setLoading(false);
     }
   }
@@ -646,7 +670,7 @@ export default function RegistrationModal({
             {mode === 'login' ? 'Iniciar sesión' : 'Registro'}
           </h2>
 
-          {mode === 'register' && (
+        {mode === 'register' && (
             <div className="flex items-center gap-2 text-[10px]">
               <StepDot active={step >= 1} />
               <StepDot active={step >= 2} />
