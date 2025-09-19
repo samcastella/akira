@@ -1,11 +1,14 @@
 // src/lib/supabaseClient.ts
 'use client';
 
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { createBrowserClient, type SupabaseClient } from '@supabase/ssr';
 
 /** ¿Existen las env públicas de Supabase en esta build/preview? */
 export function isSupabaseEnvReady() {
-  return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+  return Boolean(
+    process.env.NEXT_PUBLIC_SUPABASE_URL &&
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  );
 }
 
 function getEnvOrThrow() {
@@ -17,49 +20,26 @@ function getEnvOrThrow() {
   return { url, anon };
 }
 
-/** Storage seguro: evita crash si localStorage no está disponible */
-function getSafeStorage(): Storage | undefined {
-  if (typeof window === 'undefined') return undefined;
-  try {
-    const testKey = '__supa_test__';
-    window.localStorage.setItem(testKey, '1');
-    window.localStorage.removeItem(testKey);
-    return window.localStorage;
-  } catch {
-    // fallback “no-op” en memoria
-    const mem = new Map<string, string>();
-    return {
-      getItem: (k: string) => (mem.has(k) ? (mem.get(k) as string) : null),
-      setItem: (k: string, v: string) => void mem.set(k, v),
-      removeItem: (k: string) => void mem.delete(k),
-      clear: () => void mem.clear(),
-      key: (i: number) => Array.from(mem.keys())[i] ?? null,
-      get length() {
-        return mem.size;
-      },
-    } as unknown as Storage;
-  }
-}
-
+/** Cliente de navegador que **sincroniza tokens a cookies** (sb-access-token / sb-refresh-token). */
 function makeBrowserClient(): SupabaseClient {
   if (typeof window === 'undefined') {
     throw new Error('makeBrowserClient() sólo en navegador');
   }
   const { url, anon } = getEnvOrThrow();
 
-  return createClient(url, anon, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
-      flowType: 'pkce',
-      storageKey: 'akira.auth',     // ✅ clave estable para toda la app
-      storage: getSafeStorage(),    // ✅ storage tolerante a Safari/privado
-    },
-  });
+  // `createBrowserClient` maneja persistencia, refresh y *cookies* para SSR/middleware.
+  const client = createBrowserClient(url, anon);
+
+  // (Opcional) Debug en dev: poder llamar `supabase.*` desde la consola del navegador.
+  if (process.env.NODE_ENV !== 'production') {
+    // @ts-expect-error debug helper
+    window.supabase = client;
+  }
+
+  return client;
 }
 
-/** Singleton en navegador; NO crea cliente si nadie lo usa */
+/** Singleton en navegador; crea el cliente al primer uso */
 export function getSupabase(): SupabaseClient {
   if (typeof window === 'undefined') {
     throw new Error('getSupabase() sólo puede usarse en Client Components');
@@ -71,7 +51,7 @@ export function getSupabase(): SupabaseClient {
   return g.__akira_supabase__ as SupabaseClient;
 }
 
-/** Compat: poder usar `supabase.<método>` sin instanciar hasta el primer uso */
+/** Proxy de conveniencia para usar `supabase.*` directamente */
 export const supabase = new Proxy({} as SupabaseClient, {
   get(_t, prop) {
     const c = getSupabase();
