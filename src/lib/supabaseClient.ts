@@ -1,18 +1,27 @@
 // src/lib/supabaseClient.ts
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-function requiredEnv(name: string): string {
-  const v = process.env[name];
-  if (!v) throw new Error(`Falta la variable de entorno ${name}`);
-  return v; // <-- ahora es string, no "string | undefined"
+/** Lee env y permite que falte (soft-fail). */
+function envOrNull(name: string): string | null {
+  return process.env[name] ?? null;
 }
 
-const SUPABASE_URL  = requiredEnv('NEXT_PUBLIC_SUPABASE_URL');
-const SUPABASE_ANON = requiredEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
+const SUPABASE_URL  = envOrNull('NEXT_PUBLIC_SUPABASE_URL');
+const SUPABASE_ANON = envOrNull('NEXT_PUBLIC_SUPABASE_ANON_KEY');
+
+/** Útil para checks en debug/whoami o logs. */
+export function isSupabaseEnvReady(): boolean {
+  return !!SUPABASE_URL && !!SUPABASE_ANON;
+}
 
 function makeBrowserClient(): SupabaseClient {
   if (typeof window === 'undefined') {
     throw new Error('makeBrowserClient() solo en navegador');
+  }
+  if (!SUPABASE_URL || !SUPABASE_ANON) {
+    // Soft-fail: no tumbar la app al cargar, pero dejar rastro claro en consola.
+    console.error('[supabase] Faltan NEXT_PUBLIC_SUPABASE_URL/ANON_KEY en esta build/preview');
+    throw new Error('Supabase no configurado (faltan env públicas NEXT_PUBLIC_SUPABASE_*)');
   }
   return createClient(SUPABASE_URL, SUPABASE_ANON, {
     auth: {
@@ -25,7 +34,7 @@ function makeBrowserClient(): SupabaseClient {
   });
 }
 
-/** Singleton en navegador (evita sesiones “fantasma” por HMR) */
+/** Singleton en navegador (evita sesiones “fantasma” por HMR). */
 export function getSupabase(): SupabaseClient {
   if (typeof window === 'undefined') {
     throw new Error('getSupabase() solo puede usarse en Client Components');
@@ -37,7 +46,7 @@ export function getSupabase(): SupabaseClient {
   return g.__akira_supabase__ as SupabaseClient;
 }
 
-/** Compat: `import { supabase } from '@/lib/supabaseClient'` */
+/** Compat: `import { supabase } from "@/lib/supabaseClient"` */
 export const supabase = new Proxy({} as SupabaseClient, {
   get(_t, prop) {
     const c = getSupabase();
