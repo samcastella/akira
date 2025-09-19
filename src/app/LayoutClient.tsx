@@ -46,16 +46,16 @@ export default function LayoutClient({
   /* 👇 Bandera: primera sincronización terminada */
   const [bootSynced, setBootSynced] = useState(false);
 
-/* 👇 Nueva bandera: suprime el modal de registro justo tras SIGNED_IN */
-const [justSignedIn, setJustSignedIn] = useState(false);
+  /* 👇 Nueva bandera: suprime el modal de registro justo tras SIGNED_IN */
+  const [justSignedIn, setJustSignedIn] = useState(false);
 
-/* 👇 Evita flicker SSR: no renderizar modales hasta estar montado en cliente */
-const [mounted, setMounted] = useState(false);
-useEffect(() => { setMounted(true); }, []);
+  /* 👇 Evita flicker SSR: no renderizar modales hasta estar montado en cliente */
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
 
-const [showAuthModal, setShowAuthModal] = useState(false);
-const [showRegistration, setShowRegistration] = useState(false);
-const [registrationStartStep, setRegistrationStartStep] = useState<1 | 2 | 3 | 4 | 5>(1);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showRegistration, setShowRegistration] = useState(false);
+  const [registrationStartStep, setRegistrationStartStep] = useState<1 | 2 | 3 | 4 | 5>(1);
 
   useEffect(() => {
     setUserOk(canEnter());
@@ -96,6 +96,10 @@ const [registrationStartStep, setRegistrationStartStep] = useState<1 | 2 | 3 | 4
       const has = !!data.session;
       setHasSession(has);
       setAuthReady(true);
+      // 🔔 Notifica al resto de la app el estado inicial de sesión
+      try {
+        window.dispatchEvent(new CustomEvent('akira:auth-changed', { detail: { initial: true, has } }));
+      } catch {}
       if (has) {
         // Nota: no marcamos justSignedIn aquí; sólo en el evento SIGNED_IN real
         await syncAll();
@@ -107,33 +111,45 @@ const [registrationStartStep, setRegistrationStartStep] = useState<1 | 2 | 3 | 4
 
     const { data: sub } = supabase.auth.onAuthStateChange(async (evt, session) => {
       setHasSession(!!session);
+      // 🔔 Notifica cambios de auth (login/refresh/update/logout)
+      try {
+        window.dispatchEvent(new CustomEvent('akira:auth-changed', { detail: { evt } }));
+      } catch {}
 
       if (evt === 'SIGNED_IN') {
-  try {
-    localStorage.setItem(LS_SEEN_AUTH, '1');
+        try {
+          localStorage.setItem(LS_SEEN_AUTH, '1');
 
-    // ⬇️ Fuerza pase del gating: marca onboardingDone en local
-    const raw = localStorage.getItem(LS_USER_KEY);
-    const prev = raw ? JSON.parse(raw) : {};
-    localStorage.setItem(LS_USER_KEY, JSON.stringify({ ...prev, onboardingDone: true }));
-    // notifica a los listeners (LayoutClient, hooks, etc.)
-    window.dispatchEvent(new CustomEvent('akira:user-updated'));
-  } catch {}
+          // ⬇️ Fuerza pase del gating: marca onboardingDone en local
+          const raw = localStorage.getItem(LS_USER_KEY);
+          const prev = raw ? JSON.parse(raw) : {};
+          localStorage.setItem(LS_USER_KEY, JSON.stringify({ ...prev, onboardingDone: true }));
+          // notifica a los listeners (LayoutClient, hooks, etc.)
+          window.dispatchEvent(new CustomEvent('akira:user-updated'));
+        } catch {}
 
-  // Ya consideramos al usuario “OK” para entrar
-  setUserOk(true);
+        // Ya consideramos al usuario “OK” para entrar
+        setUserOk(true);
 
-  // Cierra cualquier modal de auth/registro y evita flicker mientras sincroniza
-  setShowAuthModal(false);
-  setShowRegistration(false);
-  setJustSignedIn(true);
-}
+        // Cierra cualquier modal de auth/registro y evita flicker mientras sincroniza
+        setShowAuthModal(false);
+        setShowRegistration(false);
+        setJustSignedIn(true);
+      }
 
       if (session && (evt === 'SIGNED_IN' || evt === 'TOKEN_REFRESHED' || evt === 'USER_UPDATED')) {
         await syncAll();
         if (evt === 'SIGNED_IN') {
           setJustSignedIn(false); // 👈 listo: ya podemos decidir mostrar registro si hiciera falta
         }
+      } else if (evt === 'SIGNED_OUT') {
+        // 🔒 Estado consistente al cerrar sesión
+        setShowAuthModal(false);
+        setShowRegistration(false);
+        setUserOk(false);
+        setBootSynced(true);
+        try { localStorage.removeItem(LS_SEEN_AUTH); } catch {}
+        // no hacemos syncAll sin sesión
       } else {
         if (canEnter()) setUserOk(true);
       }
@@ -159,22 +175,22 @@ const [registrationStartStep, setRegistrationStartStep] = useState<1 | 2 | 3 | 4
   }, []);
 
   /** Rehidratamos PERFIL + PROGRAMAS al volver a foco/online */
-useEffect(() => {
-  const refetch = () => {
-    if (!hasSession) return;
-    void pullProfile().catch(() => {});
-    void pullUserPrograms().catch(() => {});
-  };
-  const onVisibility = () => {
-    if (document.visibilityState === 'visible') refetch();
-  };
-  window.addEventListener('visibilitychange', onVisibility);
-  window.addEventListener('online', refetch);
-  return () => {
-    window.removeEventListener('visibilitychange', onVisibility);
-    window.removeEventListener('online', refetch);
-  };
-}, [hasSession]);
+  useEffect(() => {
+    const refetch = () => {
+      if (!hasSession) return;
+      void pullProfile().catch(() => {});
+      void pullUserPrograms().catch(() => {});
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') refetch();
+    };
+    window.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('online', refetch);
+    return () => {
+      window.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('online', refetch);
+    };
+  }, [hasSession]);
 
   useEffect(() => {
     if (!authReady || userOk === null || !bootSynced) return;
@@ -204,7 +220,8 @@ useEffect(() => {
 
   /* ✅ Eliminamos el flicker: mientras NO esté authReady o NO esté bootSynced
      o ACABAMOS DE HACER SIGNED_IN, no mostramos el gating (ni el formulario) */
-const gating = mounted && authReady && bootSynced && userOk === false && !isAuthRoute && !justSignedIn;
+  const gating =
+    mounted && authReady && bootSynced && userOk === false && !isAuthRoute && !justSignedIn;
 
   const hideNav = pathname === '/bienvenida' || isAuthRoute;
 
