@@ -17,10 +17,10 @@ export default async function WhoAmI() {
     supabase.auth.getSession(),
   ]);
 
-  // Cookies HTTP-only visibles en el request del servidor
-  const c = cookies();
-  const sbAccess = c.get('sb-access-token')?.value ?? null;
-  const sbRefresh = c.get('sb-refresh-token')?.value ?? null;
+// Cookies HTTP-only visibles en el request del servidor (API async en tu runtime)
+const c = await cookies();
+const sbAccess = c.get('sb-access-token')?.value ?? null;
+const sbRefresh = c.get('sb-refresh-token')?.value ?? null;
 
   const serverOut = {
     userId: u.user?.id ?? null,
