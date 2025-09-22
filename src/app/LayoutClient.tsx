@@ -84,17 +84,63 @@ export default function LayoutClient({
     };
   }, []);
 
-  /** Sincroniza perfil remoto->local y programaciones (progreso tareas) */
+  /** util: timeout con etiqueta para no colgarnos en la primera carga */
+  function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+    return new Promise((resolve, reject) => {
+      const to = setTimeout(() => {
+        console.warn(`[syncAll] ${label} timed out after ${ms}ms`);
+        reject(new Error(`${label} timeout`));
+      }, ms);
+      p.then(
+        (v) => {
+          clearTimeout(to);
+          resolve(v);
+        },
+        (e) => {
+          clearTimeout(to);
+          reject(e);
+        }
+      );
+    });
+  }
+
+  /** Sincroniza perfil remoto->local y programaciones (progreso tareas) de forma robusta */
   async function syncAll() {
     try {
-      const remote = await pullProfile();
-      if (!remote) await syncLocalToRemoteIfMissing();
-      await pullUserPrograms();
+      // Bloque 1: perfil (pull y, si falta, seed desde local)
+      await withTimeout(
+        (async () => {
+          try {
+            const remote = await pullProfile();
+            if (!remote) {
+              await syncLocalToRemoteIfMissing();
+            }
+          } catch (e) {
+            console.warn('[syncAll] pullProfile/syncLocalToRemoteIfMissing error:', e);
+          }
+        })(),
+        5000,
+        'profile'
+      );
+
+      // Bloque 2: programaciones
+      await withTimeout(
+        (async () => {
+          try {
+            await pullUserPrograms();
+          } catch (e) {
+            console.warn('[syncAll] pullUserPrograms error:', e);
+          }
+        })(),
+        5000,
+        'programs'
+      );
     } catch (e) {
-      console.warn('[LayoutClient] syncAll error', e);
+      // Si alguno de los dos falla/expira, no bloqueamos la app
+      console.warn('[LayoutClient] syncAll wrapper error:', e);
     } finally {
       if (canEnter()) setUserOk(true);
-      setBootSynced(true);
+      setBootSynced(true); // ✅ siempre dejamos de “pensar”
     }
   }
 
@@ -131,57 +177,58 @@ export default function LayoutClient({
     startUserLibRealtime();
 
     const { data: sub } = supabase.auth.onAuthStateChange(
-  async (evt: AuthChangeEvent, session: Session | null) => {
-      setHasSession(!!session);
-      try {
-        window.dispatchEvent(new CustomEvent('akira:auth-changed', { detail: { evt } }));
-      } catch {}
-
-      if (evt === 'SIGNED_IN') {
-        // ✅ No navegamos aquí: la navegación la hace /auth/callback (server) tras fijar cookies
-        // Marca onboardingDone y “visto”
+      async (evt: AuthChangeEvent, session: Session | null) => {
+        setHasSession(!!session);
         try {
-          localStorage.setItem(LS_SEEN_AUTH, '1');
-          const raw = localStorage.getItem(LS_USER_KEY);
-          const prev = raw ? JSON.parse(raw) : {};
-          localStorage.setItem(LS_USER_KEY, JSON.stringify({ ...prev, onboardingDone: true }));
-          window.dispatchEvent(new CustomEvent('akira:user-updated'));
+          window.dispatchEvent(new CustomEvent('akira:auth-changed', { detail: { evt } }));
         } catch {}
-        // Cierra modales inmediatamente y evita flicker
-        setUserOk(true);
-        setShowAuthModal(false);
-        setShowRegistration(false);
-        setJustSignedIn(true);
-      }
 
-      if (session && (evt === 'SIGNED_IN' || evt === 'TOKEN_REFRESHED' || evt === 'USER_UPDATED')) {
-        await syncAll();
-        if (evt === 'SIGNED_IN') setJustSignedIn(false);
-      } else if (evt === 'SIGNED_OUT') {
-        setShowAuthModal(false);
-        setShowRegistration(false);
-        setUserOk(false);
-        setBootSynced(true);
-        try {
-          localStorage.removeItem(LS_SEEN_AUTH);
-        } catch {}
-      } else {
-        if (canEnter()) setUserOk(true);
-      }
+        if (evt === 'SIGNED_IN') {
+          // ✅ No navegamos aquí: la navegación la hace /auth/callback (server) tras fijar cookies
+          // Marca onboardingDone y “visto”
+          try {
+            localStorage.setItem(LS_SEEN_AUTH, '1');
+            const raw = localStorage.getItem(LS_USER_KEY);
+            const prev = raw ? JSON.parse(raw) : {};
+            localStorage.setItem(LS_USER_KEY, JSON.stringify({ ...prev, onboardingDone: true }));
+            window.dispatchEvent(new CustomEvent('akira:user-updated'));
+          } catch {}
+          // Cierra modales inmediatamente y evita flicker
+          setUserOk(true);
+          setShowAuthModal(false);
+          setShowRegistration(false);
+          setJustSignedIn(true);
+        }
 
-      // Si hay sesión pero el perfil aún no permite entrar, mostramos personalización
-      const okNow = canEnter();
-      if (session && !okNow) {
-        type AppMeta = { provider?: string };
-        const provider = (session.user?.app_metadata as AppMeta | undefined)?.provider;
-        const isOAuth = provider && provider !== 'email' && provider !== 'phone';
-        setShowAuthModal(false);
-        setRegistrationStartStep(isOAuth ? 2 : 4);
-        setShowRegistration(true);
-      } else if (!session) {
-        setShowRegistration(false);
+        if (session && (evt === 'SIGNED_IN' || evt === 'TOKEN_REFRESHED' || evt === 'USER_UPDATED')) {
+          await syncAll();
+          if (evt === 'SIGNED_IN') setJustSignedIn(false);
+        } else if (evt === 'SIGNED_OUT') {
+          setShowAuthModal(false);
+          setShowRegistration(false);
+          setUserOk(false);
+          setBootSynced(true);
+          try {
+            localStorage.removeItem(LS_SEEN_AUTH);
+          } catch {}
+        } else {
+          if (canEnter()) setUserOk(true);
+        }
+
+        // Si hay sesión pero el perfil aún no permite entrar, mostramos personalización
+        const okNow = canEnter();
+        if (session && !okNow) {
+          type AppMeta = { provider?: string };
+          const provider = (session.user?.app_metadata as AppMeta | undefined)?.provider;
+          const isOAuth = provider && provider !== 'email' && provider !== 'phone';
+          setShowAuthModal(false);
+          setRegistrationStartStep(isOAuth ? 2 : 4);
+          setShowRegistration(true);
+        } else if (!session) {
+          setShowRegistration(false);
+        }
       }
-    });
+    );
 
     return () => {
       try {

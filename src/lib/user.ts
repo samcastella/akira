@@ -146,7 +146,7 @@ function activityFactor(a: Activity | undefined): number {
   switch (a) {
     case 'ligero': return 1.375;
     case 'moderado': return 1.55;
-  case 'intenso': return 1.725;
+    case 'intenso': return 1.725;
     default: return 1.2;
   }
 }
@@ -199,12 +199,13 @@ export function dbRowFromProfile(p: Partial<UserProfile>): any {
 
 export async function getAuthUserId(): Promise<string | null> {
   if (!isSupabaseEnvReady()) return null;
-  const { data, error } = await supabase.auth.getSession();
-  if (error) {
-    console.warn('[auth.getSession] error', error);
+  try {
+    const { data } = await supabase.auth.getSession();
+    return data.session?.user?.id ?? null;
+  } catch (e) {
+    console.warn('[auth.getSession] error', e);
     return null;
   }
-  return data.session?.user?.id ?? null;
 }
 
 export async function upsertProfile(partial: Partial<UserProfile>): Promise<UserProfile> {
@@ -243,99 +244,155 @@ export async function upsertProfile(partial: Partial<UserProfile>): Promise<User
   return profile;
 }
 
+/**
+ * Trae el perfil remoto si existe. No lanza: en caso de error devuelve local o null.
+ */
 export async function pullProfile(): Promise<UserProfile | null> {
   if (!isSupabaseEnvReady()) return loadUser() ?? null;
+
   const uid = await getAuthUserId();
-  if (!uid) return null;
+  if (!uid) return loadUser() ?? null;
 
-  const { data: remote, error } = await supabase
-    .from('public_profiles')
-    .select('*')
-    .eq('user_id', uid)
-    .maybeSingle();
-  if (error) {
-    console.error('[pullProfile] error', error);
-    throw error;
-  }
-
-  const local = loadUser();
-  if (local) {
-    local.estatura = parseNumOrNull(local.estatura) ?? undefined;
-    local.peso = parseNumOrNull(local.peso) ?? undefined;
-    local.caloriasDiarias = parseNumOrNull(local.caloriasDiarias) ?? undefined;
-  }
-
-  const r = remote ? (profileFromDbRow(remote) as UserProfile) : null;
-
-  if (r && (!local || newer(r.updatedAt, local.updatedAt) > 0)) {
-    saveUser(r);
-    return r;
-  }
-
-  if (!r && local && local.userId === uid) {
-    const row = dbRowFromProfile({ ...local, userId: uid });
-    const { error: upErr } = await supabase.from('public_profiles').upsert(row, { onConflict: 'user_id' });
-    if (upErr) console.error('[pullProfile] upsert from local error', upErr);
-
-    const { data: fresh } = await supabase
+  try {
+    const { data: remote, error } = await supabase
       .from('public_profiles')
       .select('*')
       .eq('user_id', uid)
-      .single();
+      .maybeSingle();
 
-    const pf = profileFromDbRow(fresh) as UserProfile;
-    saveUser(pf);
-    return pf;
+    if (error) {
+      console.warn('[pullProfile] select error:', error);
+      // devolvemos local para no bloquear
+      return loadUser() ?? null;
+    }
+
+    const local = loadUser();
+    if (local) {
+      // sanea numéricos
+      local.estatura = parseNumOrNull(local.estatura) ?? undefined;
+      local.peso = parseNumOrNull(local.peso) ?? undefined;
+      local.caloriasDiarias = parseNumOrNull(local.caloriasDiarias) ?? undefined;
+    }
+
+    const r = remote ? (profileFromDbRow(remote) as UserProfile) : null;
+
+    // Remoto más nuevo → guardamos y devolvemos
+    if (r && (!local || newer(r.updatedAt, local.updatedAt) > 0)) {
+      saveUser(r);
+      return r;
+    }
+
+    // No hay remoto pero sí local del mismo uid → seed remoto
+    if (!r && local && (local.userId === uid || !local.userId)) {
+      const row = dbRowFromProfile({ ...local, userId: uid });
+      const { error: upErr } = await supabase
+        .from('public_profiles')
+        .upsert(row, { onConflict: 'user_id' });
+      if (upErr) {
+        console.warn('[pullProfile] upsert from local error', upErr);
+        // aún así devolvemos local
+        return local;
+      }
+
+      const { data: fresh, error: sel2 } = await supabase
+        .from('public_profiles')
+        .select('*')
+        .eq('user_id', uid)
+        .single();
+
+      if (sel2) {
+        console.warn('[pullProfile] reselect error after upsert', sel2);
+        return local;
+      }
+
+      const pf = profileFromDbRow(fresh) as UserProfile;
+      saveUser(pf);
+      return pf;
+    }
+
+    // Local más nuevo → empujamos arriba pero no bloqueamos si falla
+    if (r && local && newer(local.updatedAt, r.updatedAt) > 0) {
+      const row = dbRowFromProfile({ ...local, userId: uid });
+      const { error: upErr } = await supabase
+        .from('public_profiles')
+        .upsert(row, { onConflict: 'user_id' });
+      if (upErr) {
+        console.warn('[pullProfile] upsert newer local error', upErr);
+        // devolvemos local igualmente
+        return local;
+      }
+
+      const { data: fresh, error: sel3 } = await supabase
+        .from('public_profiles')
+        .select('*')
+        .eq('user_id', uid)
+        .single();
+      if (sel3) {
+        console.warn('[pullProfile] reselect error after pushing newer local', sel3);
+        return local;
+      }
+
+      const pf = profileFromDbRow(fresh) as UserProfile;
+      saveUser(pf);
+      return pf;
+    }
+
+    // Igual o sin datos → devolvemos lo que haya
+    return (r ?? local ?? null) as UserProfile | null;
+  } catch (e) {
+    console.warn('[pullProfile] unexpected error:', e);
+    return loadUser() ?? null;
   }
-
-  if (r && local && newer(local.updatedAt, r.updatedAt) > 0) {
-    const row = dbRowFromProfile({ ...local, userId: uid });
-    const { error: upErr } = await supabase.from('public_profiles').upsert(row, { onConflict: 'user_id' });
-    if (upErr) console.error('[pullProfile] upsert newer local error', upErr);
-
-    const { data: fresh } = await supabase
-      .from('public_profiles')
-      .select('*')
-      .eq('user_id', uid)
-      .single();
-    const pf = profileFromDbRow(fresh) as UserProfile;
-    saveUser(pf);
-    return pf;
-  }
-
-  return local ?? null;
 }
 
+/**
+ * Si no hay fila remota, intenta crearla desde el local. No lanza.
+ */
 export async function syncLocalToRemoteIfMissing(): Promise<UserProfile | null> {
   if (!isSupabaseEnvReady()) return loadUser() ?? null;
+
   const uid = await getAuthUserId();
-  if (!uid) return null;
+  if (!uid) return loadUser() ?? null;
 
-  const { data, error } = await supabase
-    .from('public_profiles')
-    .select('user_id')
-    .eq('user_id', uid)
-    .maybeSingle();
-
-  if (error) {
-    console.error('[syncLocalToRemoteIfMissing] error SELECT', error);
-    throw error;
-  }
-  if (data) {
-    return await pullProfile();
-  }
-
-  let local: Partial<UserProfile> | null = null;
   try {
-    local = loadUser();
-  } catch {}
+    const { data, error } = await supabase
+      .from('public_profiles')
+      .select('user_id')
+      .eq('user_id', uid)
+      .maybeSingle();
 
-  if (!local || !(local.nombre && local.apellido && local.email)) {
-    return null;
+    if (error) {
+      console.warn('[syncLocalToRemoteIfMissing] SELECT error:', error);
+      return loadUser() ?? null;
+    }
+    if (data) {
+      // ya existe → haz pull normal
+      return await pullProfile();
+    }
+
+    let local: Partial<UserProfile> | null = null;
+    try {
+      local = loadUser();
+    } catch {
+      local = null;
+    }
+
+    if (!local || !(local.nombre && local.apellido && (local.email || local.username))) {
+      // nada útil que seedear
+      return loadUser() ?? null;
+    }
+
+    try {
+      const created = await upsertProfile({ ...local, userId: uid });
+      return created;
+    } catch (e) {
+      console.warn('[syncLocalToRemoteIfMissing] upsert error:', e);
+      return loadUser() ?? null;
+    }
+  } catch (e) {
+    console.warn('[syncLocalToRemoteIfMissing] unexpected error:', e);
+    return loadUser() ?? null;
   }
-
-  const created = await upsertProfile(local);
-  return created;
 }
 
 /* ===== Hooks/Helpers de sesión ===== */
