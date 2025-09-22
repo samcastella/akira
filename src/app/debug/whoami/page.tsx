@@ -15,10 +15,14 @@ export default async function WhoAmI() {
     supabase.auth.getSession(),
   ]);
 
-  // En tu entorno, cookies() es async
   const c = await cookies();
   const all = c.getAll();
-  const hasSb = all.some((ck) => ck.name.startsWith('sb-')); // robusto a cambios de nombre
+
+  // Nuevo esquema: una cookie sb-<project-ref>-auth-token
+  const authCookie = all.find((ck) => ck.name.endsWith('-auth-token') && ck.name.startsWith('sb-'));
+  const hasNewAuthCookie = Boolean(authCookie);
+
+  // Legacy (pueden no existir en versiones nuevas)
   const access = all.find((ck) => ck.name === 'sb-access-token')?.value ?? null;
   const refresh = all.find((ck) => ck.name === 'sb-refresh-token')?.value ?? null;
 
@@ -28,11 +32,12 @@ export default async function WhoAmI() {
     expiresAt: s.session?.expires_at
       ? new Date(s.session.expires_at * 1000).toISOString()
       : null,
-    hasAnySbCookie: hasSb,
-    hasSbAccessCookie: Boolean(access),
-    hasSbRefreshCookie: Boolean(refresh),
+    hasAnySbCookie: all.some((x) => x.name.startsWith('sb-')),
+    hasSbAuthTokenCookie: hasNewAuthCookie,            // ✅ cookie nueva
+    hasSbAccessCookie_LEGACY: Boolean(access),         // ⬅️ legacy
+    hasSbRefreshCookie_LEGACY: Boolean(refresh),       // ⬅️ legacy
     supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || '(no NEXT_PUBLIC_SUPABASE_URL)',
-    cookieNames: all.map((x) => x.name), // útil para debug (no mostramos valores)
+    cookieNames: all.map((x) => x.name),
   };
 
   return (
@@ -45,8 +50,8 @@ export default async function WhoAmI() {
           {JSON.stringify(serverOut, null, 2)}
         </pre>
         <p className="text-xs opacity-70">
-          (Esto es lo que Next.js ve en el servidor. Comprueba <code>cookieNames</code> para ver si
-          llegan cookies <code>sb-*</code>. Si no, revisa el flujo de login password → <code>/auth/set</code>.)
+          Desde Supabase SSR reciente se usa <code>sb-&lt;ref&gt;-auth-token</code> (httpOnly) en vez de
+          <code> sb-access-token</code>/<code>sb-refresh-token</code>.
         </p>
       </section>
 

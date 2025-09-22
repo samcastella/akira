@@ -23,7 +23,6 @@ export async function POST(req: NextRequest): Promise<Response> {
     },
   });
 
-  // Cierra sesión y limpia cookies sb-...
   const { error } = await supabase.auth.signOut({ scope: 'global' });
   if (error) {
     return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
