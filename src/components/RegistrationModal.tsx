@@ -427,10 +427,31 @@ export default function RegistrationModal({
         return;
       }
 
-      // ÉXITO (login por contraseña): recarga directa a la ruta final
-onClose?.();
-window.location.assign(redirectTo || '/mizona');
-return;
+            // ✅ ÉXITO (login por contraseña): sincroniza cookies en servidor y recarga final
+      // 1) Obtén los tokens de la sesión actual del cliente
+      const { data: sess } = await supabase.auth.getSession();
+      const at = sess.session?.access_token;
+      const rt = sess.session?.refresh_token;
+
+      // 2) Envía tokens al servidor para que fije cookies sb-... en la respuesta
+      if (at && rt) {
+        try {
+          await fetch('/auth/set', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ access_token: at, refresh_token: rt }),
+          });
+        } catch {
+          // si falla, seguimos; pero el server podría no ver la sesión
+        }
+      }
+
+      // 3) Recarga dura a la ruta final: nueva request ya con cookies en el servidor
+      onClose?.();
+      window.location.assign(redirectTo || '/mizona');
+      return;
+
     } catch (e: any) {
       console.warn('[login] unexpected error', e);
       setErr(e?.message || 'No se pudo iniciar sesión. Inténtalo de nuevo.');
