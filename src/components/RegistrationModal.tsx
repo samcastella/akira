@@ -427,30 +427,45 @@ export default function RegistrationModal({
         return;
       }
 
-            // ✅ ÉXITO (login por contraseña): sincroniza cookies en servidor y recarga final
-      // 1) Obtén los tokens de la sesión actual del cliente
-      const { data: sess } = await supabase.auth.getSession();
-      const at = sess.session?.access_token;
-      const rt = sess.session?.refresh_token;
+      // ✅ ÉXITO (login por contraseña): sincroniza cookies en servidor y recarga final
 
-      // 2) Envía tokens al servidor para que fije cookies sb-... en la respuesta
-      if (at && rt) {
-        try {
-          await fetch('/auth/set', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ access_token: at, refresh_token: rt }),
-          });
-        } catch {
-          // si falla, seguimos; pero el server podría no ver la sesión
-        }
-      }
+// 1) Espera breve hasta que la sesión tenga tokens (a veces tarda unas decenas de ms)
+let at: string | undefined;
+let rt: string | undefined;
+for (let i = 0; i < 6; i++) {
+  const { data } = await supabase.auth.getSession();
+  at = data.session?.access_token;
+  rt = data.session?.refresh_token;
+  if (at && rt) break;
+  await new Promise((r) => setTimeout(r, 150));
+}
 
-      // 3) Recarga dura a la ruta final: nueva request ya con cookies en el servidor
-      onClose?.();
-      window.location.assign(redirectTo || '/mizona');
-      return;
+// 2) Enviar tokens al servidor para fijar cookies sb-... en la respuesta
+if (at && rt) {
+  try {
+    const resp = await fetch('/auth/set', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ access_token: at, refresh_token: rt }),
+    });
+    // (opcional) inspección si falla:
+    if (!resp.ok) {
+      console.warn('[auth/set] server did not accept tokens', await resp.json().catch(() => ({})));
+    }
+  } catch (e) {
+    console.warn('[auth/set] fetch failed', e);
+    // seguimos igualmente; la navegación puede no llevar cookies si esto falla
+  }
+} else {
+  console.warn('[login] tokens not available yet; proceeding without /auth/set');
+}
+
+// 3) Recarga dura a la ruta final (nueva request ya con cookies en server)
+onClose?.();
+window.location.assign(redirectTo || '/mizona');
+return;
+
 
     } catch (e: any) {
       console.warn('[login] unexpected error', e);
