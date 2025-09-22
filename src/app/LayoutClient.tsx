@@ -41,7 +41,7 @@ export default function LayoutClient({
   const pathname = usePathname();
   const isAuthRoute =
     pathname === '/login' ||
-    pathname?.startsWith('/auth'); // incluye /auth/callback
+    pathname?.startsWith('/auth'); // incluye /auth/callback y /auth/confirmed
 
   const [userOk, setUserOk] = useState<boolean | null>(null);
   const [hasSession, setHasSession] = useState(false);
@@ -138,6 +138,7 @@ export default function LayoutClient({
       } catch {}
 
       if (evt === 'SIGNED_IN') {
+        // ✅ No navegamos aquí: la navegación la hace /auth/callback (server) tras fijar cookies
         // Marca onboardingDone y “visto”
         try {
           localStorage.setItem(LS_SEEN_AUTH, '1');

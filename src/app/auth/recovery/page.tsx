@@ -1,3 +1,4 @@
+// src/app/auth/recovery/page.tsx
 'use client';
 
 import React, { Suspense, useEffect, useMemo, useState } from 'react';
@@ -5,9 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase, isSupabaseEnvReady } from '@/lib/supabaseClient';
 import { Eye, EyeOff } from 'lucide-react';
 
-export const dynamic = 'force-dynamic';
-
-type Phase = 'checking' | 'reset' | 'done' | 'error';
+type Phase = 'checking' | 'reset' | 'error';
 
 function getHashParams() {
   if (typeof window === 'undefined') return new URLSearchParams();
@@ -15,152 +14,19 @@ function getHashParams() {
   return new URLSearchParams(raw);
 }
 
-function CallbackInner() {
+function RecoveryInner() {
   const router = useRouter();
   const params = useSearchParams();
   const SUPA_READY = isSupabaseEnvReady();
 
   const [phase, setPhase] = useState<Phase>('checking');
   const [err, setErr] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
 
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [showPass, setShowPass] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
-
-  // type en query (?type=) o en el hash (#type=)
-  const linkType = useMemo(() => {
-    let t = params.get('type') || undefined;
-    if (typeof window !== 'undefined' && !t && window.location.hash) {
-      const hp = getHashParams();
-      t = hp.get('type') || undefined;
-    }
-    return t;
-  }, [params]);
-
-  useEffect(() => {
-    if (!SUPA_READY) {
-      // Bloquea este flujo cuando no hay ENV; mantenemos UI coherente
-      setPhase('error');
-      setErr('Esta build no tiene Supabase configurado.');
-      return;
-    }
-
-    let alive = true;
-
-    // ⬇️ Timeout de seguridad: evita quedarse en "Comprobando enlace…" indefinidamente
-    const to = setTimeout(() => {
-      if (!alive) return;
-      setPhase('error');
-      setErr('No se pudo validar el enlace (tiempo de espera agotado).');
-    }, 8000);
-
-    (async () => {
-      try {
-        // 0) ¿error en querystring?
-        const qpErr = params.get('error');
-        const qpErrDesc = params.get('error_description');
-        if (qpErr) {
-          if (!alive) return;
-          setErr(decodeURIComponent(qpErrDesc || qpErr));
-          setPhase('error');
-          clearTimeout(to);
-          return;
-        }
-
-        // 0.b) ¿error en hash?
-        const hp0 = getHashParams();
-        const hashErr = hp0.get('error');
-        const hashErrDesc = hp0.get('error_description');
-        if (hashErr) {
-          if (!alive) return;
-          setErr(decodeURIComponent(hashErrDesc || hashErr));
-          setPhase('error');
-          clearTimeout(to);
-          return;
-        }
-
-        // 1) ¿venimos de OAuth/PKCE con ?code=...?
-        const code = params.get('code');
-        if (code && typeof window !== 'undefined') {
-          try {
-            await supabase.auth.exchangeCodeForSession(window.location.href);
-            // Confirmamos sesión por si el proveedor tarda en reflejarla
-            const { data: s } = await supabase.auth.getSession();
-            if (s.session) {
-              if (!alive) return;
-              setPhase('done');
-              clearTimeout(to);
-              router.replace('/auth/confirmed');
-              return;
-            }
-          } catch {
-            // si no funciona, seguimos probando tokens del hash
-          }
-        }
-
-        // 2) ¿trae tokens en el hash? (signup / magic link / recovery)
-        const hp = getHashParams();
-        const access_token = hp.get('access_token');
-        const refresh_token = hp.get('refresh_token');
-        const typeHash = hp.get('type') || linkType || undefined;
-
-        if (access_token && refresh_token) {
-          // Establece sesión directamente
-          const { error: setErrSes } = await supabase.auth.setSession({
-            access_token,
-            refresh_token,
-          });
-          if (setErrSes) throw setErrSes;
-
-          // Confirmamos sesión
-          const { data: s } = await supabase.auth.getSession();
-          if (!s.session) throw new Error('No se pudo establecer la sesión');
-
-          if (!alive) return;
-
-          // Si es recovery → mostrar formulario
-          if (typeHash === 'recovery') {
-            setPhase('reset');
-            setInfo('Introduce tu nueva contraseña.');
-            clearTimeout(to);
-            return;
-          }
-
-          // Resto de tipos válidos → confirmado
-          setPhase('done');
-          clearTimeout(to);
-          router.replace('/auth/confirmed');
-          return;
-        }
-
-        // 3) Como último recurso, ¿ya hay sesión activa?
-        const { data: sdata } = await supabase.auth.getSession();
-        if (sdata.session) {
-          if (!alive) return;
-          setPhase('done');
-          clearTimeout(to);
-          router.replace('/auth/confirmed');
-          return;
-        }
-
-        // Nada de lo anterior → error
-        if (!alive) return;
-        setPhase('error');
-        setErr('No se pudo validar el enlace (faltan parámetros o ha expirado).');
-      } catch (e: any) {
-        if (!alive) return;
-        setErr(e?.message || 'No se pudo procesar el enlace.');
-        setPhase('error');
-      } finally {
-        clearTimeout(to);
-      }
-    })();
-
-    return () => { alive = false; clearTimeout(to); };
-  }, [SUPA_READY, linkType, params, router]);
 
   const passError = useMemo(() => {
     if (!password && !confirm) return '';
@@ -169,48 +35,76 @@ function CallbackInner() {
     return '';
   }, [password, confirm]);
 
-  async function submitNewPassword(e: React.FormEvent) {
-    e.preventDefault();
-    setErr(null);
-    setInfo(null);
-    if (passError) return;
-
+  useEffect(() => {
     if (!SUPA_READY) {
       setErr('Esta build no tiene Supabase configurado.');
+      setPhase('error');
       return;
     }
 
+    let alive = true;
+    const safety = setTimeout(() => {
+      if (!alive) return;
+      setPhase('error');
+      setErr('No se pudo validar el enlace (tiempo de espera agotado).');
+    }, 8000);
+
+    (async () => {
+      try {
+        const hp = getHashParams();
+        const access_token = hp.get('access_token');
+        const refresh_token = hp.get('refresh_token');
+        const type = hp.get('type') || params.get('type');
+
+        if (type !== 'recovery' || !access_token || !refresh_token) {
+          setPhase('error');
+          setErr('Enlace inválido o incompleto.');
+          clearTimeout(safety);
+          return;
+        }
+
+        const { error: setErrSes } = await supabase.auth.setSession({
+          access_token,
+          refresh_token,
+        });
+        if (setErrSes) {
+          setErr(setErrSes.message || 'No se pudo establecer la sesión de recuperación.');
+          setPhase('error');
+          clearTimeout(safety);
+          return;
+        }
+
+        setPhase('reset');
+        clearTimeout(safety);
+      } catch (e: any) {
+        setErr(e?.message || 'No se pudo procesar el enlace.');
+        setPhase('error');
+        clearTimeout(safety);
+      }
+    })();
+
+    return () => {
+      alive = false;
+      clearTimeout(safety);
+    };
+  }, [SUPA_READY, params]);
+
+  async function submitNewPassword(e: React.FormEvent) {
+    e.preventDefault();
+    if (passError) return;
     setLoading(true);
     try {
       const { error } = await supabase.auth.updateUser({ password });
       if (error) throw error;
-
       const { data } = await supabase.auth.getUser();
       const email = data.user?.email || '';
       await supabase.auth.signOut();
-
-      setPhase('done');
       router.replace(`/login?reset=ok${email ? `&email=${encodeURIComponent(email)}` : ''}`);
     } catch (e: any) {
       setErr(e?.message || 'No se pudo actualizar la contraseña.');
     } finally {
       setLoading(false);
     }
-  }
-
-  // Bloqueo visual si no hay ENV (coherente con Layout)
-  if (!SUPA_READY) {
-    return (
-      <main className="min-h-[100svh] grid place-items-center p-6 text-center" style={{ background: '#FAFAFA' }}>
-        <div className="mx-auto w-full max-w-md space-y-4 bg-white rounded-2xl shadow p-6">
-          <h1 className="text-xl font-semibold">Configuración incompleta</h1>
-          <p className="text-sm">
-            Esta build no tiene las variables públicas de Supabase. No se puede validar el enlace de autenticación.
-          </p>
-          <button onClick={() => router.replace('/login')} className="btn">Volver a Iniciar sesión</button>
-        </div>
-      </main>
-    );
   }
 
   return (
@@ -231,7 +125,9 @@ function CallbackInner() {
           {phase === 'reset' && (
             <>
               <h1 className="text-lg font-bold mb-2">Restablecer contraseña</h1>
-              <p className="text-xs text-gray-600 mb-4">Estás autenticad@ temporalmente para cambiar tu contraseña.</p>
+              <p className="text-xs text-gray-600 mb-4">
+                Estás autenticad@ temporalmente para cambiar tu contraseña.
+              </p>
 
               <form onSubmit={submitNewPassword} className="space-y-3">
                 <label className="block text-xs">
@@ -278,10 +174,13 @@ function CallbackInner() {
 
                 {passError && <p className="text-[11px] text-red-600">{passError}</p>}
                 {err && <p className="text-[11px] text-red-600">{err}</p>}
-                {info && <p className="text-[11px] text-amber-700">{info}</p>}
 
                 <div className="flex items-center justify-end gap-2">
-                  <button type="submit" disabled={!!passError || loading} className="btn disabled:opacity-50">
+                  <button
+                    type="submit"
+                    disabled={!!passError || loading}
+                    className="btn disabled:opacity-50"
+                  >
                     {loading ? 'Actualizando…' : 'Guardar nueva contraseña'}
                   </button>
                 </div>
@@ -289,17 +188,15 @@ function CallbackInner() {
             </>
           )}
 
-          {phase === 'done' && <div className="text-sm">Redirigiendo…</div>}
-
           {phase === 'error' && (
             <>
               <h1 className="text-lg font-bold mb-2">Enlace inválido</h1>
-              <p className="text-xs text-gray-600 mb-2">
-                No hemos podido validar tu enlace.
-              </p>
+              <p className="text-xs text-gray-600 mb-2">No hemos podido validar tu enlace.</p>
               {err && <p className="text-[11px] text-red-600">{err}</p>}
               <div className="mt-3">
-                <button onClick={() => router.replace('/login')} className="btn">Ir a Iniciar sesión</button>
+                <button onClick={() => router.replace('/login')} className="btn">
+                  Ir a Iniciar sesión
+                </button>
               </div>
             </>
           )}
@@ -309,10 +206,10 @@ function CallbackInner() {
   );
 }
 
-export default function Page() {
+export default function RecoveryPage() {
   return (
     <Suspense fallback={<div className="min-h-[100svh] flex items-center justify-center">Cargando…</div>}>
-      <CallbackInner />
+      <RecoveryInner />
     </Suspense>
   );
 }

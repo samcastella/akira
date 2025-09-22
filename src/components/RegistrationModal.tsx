@@ -32,19 +32,22 @@ type Props = {
 
 const LS_SEEN_AUTH = 'akira_seen_auth_v1';
 
-/** URL absoluta a /auth/callback del entorno actual (local/preview/prod) */
-function authRedirectTo(): string | undefined {
+/** URL absoluta a /auth/callback con ?redirect=... (cliente/servidor) */
+function authRedirectTo(target: string = '/mizona'): string {
+  const build = (base: string) =>
+    `${base.replace(/\/$/, '')}/auth/callback?redirect=${encodeURIComponent(target)}`;
+
   if (typeof window !== 'undefined') {
-    return `${window.location.origin}/auth/callback`;
+    return build(window.location.origin);
   }
-  const base =
-    process.env.NEXT_PUBLIC_SITE_URL ||
+  const envBase =
+    (process.env.NEXT_PUBLIC_SITE_URL || '').trim() ||
     (process.env.NEXT_PUBLIC_VERCEL_URL
-      ? process.env.NEXT_PUBLIC_VERCEL_URL.startsWith('http')
-        ? process.env.NEXT_PUBLIC_VERCEL_URL
-        : `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
-      : undefined);
-  return base ? `${base}/auth/callback` : undefined;
+      ? (process.env.NEXT_PUBLIC_VERCEL_URL.startsWith('http')
+          ? process.env.NEXT_PUBLIC_VERCEL_URL
+          : `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`) as string
+      : '');
+  return build(envBase || '');
 }
 
 /** calcula edad (años) a partir de yyyy-mm-dd */
@@ -162,34 +165,33 @@ export default function RegistrationModal({
     if (mode !== 'register' || step !== 2) return;
 
     const raw = user.username ?? '';
-    const val = normalizeUsername(raw);
-
-    if (!val) {
-      setUsernameStatus('idle');
-      return;
-    }
-
-    setUsernameStatus('checking');
-    const t = setTimeout(async () => {
-      try {
-        const { data, error } = await supabase
-          .from('public_profiles')
-          .select('user_id')
-          .eq('username', val)
-          .limit(1)
-          .maybeSingle();
-
-        if (error && !/No rows/i.test(error.message)) {
-          setUsernameStatus('error');
-          return;
-        }
-        setUsernameStatus(data ? 'taken' : 'free');
-      } catch {
-        setUsernameStatus('error');
+    theVal: {
+      const val = normalizeUsername(raw);
+      if (!val) {
+        setUsernameStatus('idle');
+        break theVal;
       }
-    }, 400);
+      setUsernameStatus('checking');
+      const t = setTimeout(async () => {
+        try {
+          const { data, error } = await supabase
+            .from('public_profiles')
+            .select('user_id')
+            .eq('username', val)
+            .limit(1)
+            .maybeSingle();
 
-    return () => clearTimeout(t);
+          if (error && !/No rows/i.test(error.message)) {
+            setUsernameStatus('error');
+            return;
+          }
+          setUsernameStatus(data ? 'taken' : 'free');
+        } catch {
+          setUsernameStatus('error');
+        }
+      }, 400);
+      return () => clearTimeout(t);
+    }
   }, [user.username, mode, step]);
 
   // Validación del paso 2
@@ -213,15 +215,12 @@ export default function RegistrationModal({
     return '';
   }, [password, confirm]);
 
-  /** Guarda métricas en local y, best-effort, en Supabase.
-   *  Si opts.silent === true, NO emite el evento 'akira:user-updated'
-   *  (así el modal no se cierra) y solo actualiza localStorage.
-   */
+  /** Guarda métricas en local y, best-effort, en Supabase. */
   function persistBodyMetrics(extra?: Partial<FormUser>, opts?: { silent?: boolean }) {
     const merged: Partial<FormUser> = {
       sexo: user.sexo,
       fechaNacimiento: user.fechaNacimiento,
-      edad: user.edad, // compat
+      edad: user.edad,
       estatura: user.estatura,
       peso: user.peso,
       actividad: user.actividad,
@@ -260,9 +259,7 @@ export default function RegistrationModal({
             telefono: user.telefono ?? null,
           })
           .eq('user_id', uid);
-      } catch {
-        // noop
-      }
+      } catch {}
     })();
   }
 
@@ -339,7 +336,7 @@ export default function RegistrationModal({
         email: normalizedEmail,
         password,
         options: {
-          emailRedirectTo: authRedirectTo(),
+          emailRedirectTo: authRedirectTo(redirectTo),
           data: { nombre: user.nombre ?? '', apellido: user.apellido ?? '' },
         },
       });
@@ -360,34 +357,13 @@ export default function RegistrationModal({
         localStorage.setItem(LS_USER_KEY, JSON.stringify(nextLocal));
       } catch {}
 
-      // Si hubiese sesión inmediata, persistimos perfil y redirigimos
+      // Si por configuración hubiese sesión inmediata, enviamos a callback para fijar cookies server-side
       if (data.session?.user) {
-        const uid = data.session.user.id;
-
-        // upsert perfil público (crea si no existe)
-        await supabase
-          .from('public_profiles')
-          .upsert(
-            {
-              user_id: uid,
-              nombre: user.nombre || null,
-              apellido: user.apellido || null,
-              sexo: user.sexo || null,
-              username: normalizedUsername || null,
-              telefono: (user.telefono || '').trim() || null,
-            },
-            { onConflict: 'user_id' }
-          );
-
         try {
           localStorage.setItem(LS_SEEN_AUTH, '1');
-          const prev = loadUser();
-          localStorage.setItem(LS_USER_KEY, JSON.stringify({ ...(prev || {}), onboardingDone: true }));
-          window.dispatchEvent(new CustomEvent('akira:user-updated'));
         } catch {}
-
         onClose?.();
-        window.location.assign(redirectTo || '/mizona');
+        window.location.assign(authRedirectTo(redirectTo));
         return;
       }
 
@@ -420,7 +396,7 @@ export default function RegistrationModal({
     }, 12000);
 
     try {
-      const { data: signData, error: signErr } = await supabase.auth.signInWithPassword({
+      const { error: signErr } = await supabase.auth.signInWithPassword({
         email: normalizedEmail,
         password,
       });
@@ -433,7 +409,7 @@ export default function RegistrationModal({
             await supabase.auth.resend({
               type: 'signup',
               email: normalizedEmail,
-              options: { emailRedirectTo: authRedirectTo() },
+              options: { emailRedirectTo: authRedirectTo(redirectTo) },
             });
             setInfo('Revisa tu bandeja y sigue el enlace para activar tu cuenta.');
           } catch {}
@@ -451,95 +427,9 @@ export default function RegistrationModal({
         return;
       }
 
-      // Forzamos que el cliente tenga la sesión en memoria (Safari/WebKit, PKCE)
-      await supabase.auth.getSession().catch(() => {});
-
-      // Sesión OK → obtenemos uid y perfil público
-      const { data: udata } = await supabase.auth.getUser();
-      const uid = udata.user?.id;
-      const email = udata.user?.email || normalizedEmail;
-
-      const normalizedUsernameLocal = (user.username || '')
-        .trim()
-        .replace(/^@+/, '')
-        .toLowerCase()
-        .replace(/\s+/g, '');
-
-      let finalUsername: string | undefined = undefined;
-
-      if (uid) {
-        // Traemos lo necesario
-        const { data: profile, error: profErr } = await supabase
-          .from('public_profiles')
-          .select(
-            'nombre, apellido, sexo, username, telefono, edad, estatura, peso, calorias_diarias, fecha_nacimiento'
-          )
-          .eq('user_id', uid)
-          .maybeSingle();
-
-        if (profErr) console.warn('profile fetch error', profErr);
-
-        finalUsername = (profile?.username as string | null) || undefined;
-
-        // Si en BD no hay username pero en local sí, intentamos fijarlo ahora
-        if (!finalUsername && normalizedUsernameLocal) {
-          const { error: upErr } = await supabase
-            .from('public_profiles')
-            .upsert({ user_id: uid, username: normalizedUsernameLocal }, { onConflict: 'user_id' });
-
-          if (!upErr) {
-            finalUsername = normalizedUsernameLocal;
-          } else {
-            if (String((upErr as any).code) === '23505') {
-              setErr('Este nombre de usuario ya está registrado.');
-            } else {
-              console.warn('username upsert error', upErr);
-            }
-          }
-
-          // Si no existía fila, creamos básicos
-          if (!profile) {
-            const { error: upsertBasicsErr2 } = await supabase
-              .from('public_profiles')
-              .upsert(
-                {
-                  user_id: uid,
-                  nombre: user.nombre || null,
-                  apellido: user.apellido || null,
-                  sexo: user.sexo || null,
-                },
-                { onConflict: 'user_id' }
-              );
-            if (upsertBasicsErr2) console.warn('public_profiles basics upsert error:', upsertBasicsErr2);
-          }
-        }
-
-        // Guardamos en local TODO
-        await upsertProfile({
-          email,
-          nombre: profile?.nombre ?? user.nombre ?? '',
-          apellido: profile?.apellido ?? user.apellido ?? '',
-          sexo: (profile?.sexo as Sex | undefined) ?? user.sexo,
-          username: (finalUsername ?? normalizedUsernameLocal) || undefined,
-          telefono: profile?.telefono ?? user.telefono,
-          // campos de personalización
-          fechaNacimiento: profile?.fecha_nacimiento ?? user.fechaNacimiento,
-          edad: profile?.edad ?? user.edad,
-          estatura: profile?.estatura ?? user.estatura,
-          peso: profile?.peso ?? user.peso,
-          caloriasDiarias: profile?.calorias_diarias ?? user.caloriasDiarias,
-        });
-      } else {
-        await upsertProfile({ email });
-      }
-
-      try {
-        localStorage.setItem(LS_SEEN_AUTH, '1');
-      } catch {}
-
-      // Cierra el modal (si existe) y recarga completa → Safari-safe
+      // Flujo estable: deja que el server fije cookies y redirija sin flicker
       onClose?.();
-      window.location.assign(redirectTo || '/mizona');
+      window.location.href = authRedirectTo(redirectTo);
       return;
     } catch (e: any) {
       console.warn('[login] unexpected error', e);
@@ -559,10 +449,17 @@ export default function RegistrationModal({
     }
     setLoading(true);
     try {
+      const origin =
+        typeof window !== 'undefined'
+          ? window.location.origin.replace(/\/$/, '')
+          : (process.env.NEXT_PUBLIC_SITE_URL || '').replace(/\/$/, '');
+      const recoveryUrl = `${origin}/auth/recovery`;
+
       const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
-        redirectTo: authRedirectTo(), // /auth/callback
+        redirectTo: recoveryUrl, // ← nueva ruta de recuperación
       });
       if (error) throw error;
+
       setInfo('Te hemos enviado un correo con el enlace para recuperar tu contraseña.');
     } catch (e: any) {
       setErr(e?.message || 'No se pudo enviar el enlace de recuperación.');
@@ -584,7 +481,7 @@ export default function RegistrationModal({
       const { error } = await supabase.auth.resend({
         type: 'signup',
         email,
-        options: { emailRedirectTo: authRedirectTo() },
+        options: { emailRedirectTo: authRedirectTo(redirectTo) },
       });
       if (error) throw error;
       setInfo('Te hemos reenviado el correo de verificación. Revisa tu bandeja.');
@@ -937,7 +834,13 @@ export default function RegistrationModal({
                         <button
                           type="button"
                           aria-pressed={showPass}
-                          onClick={toggleShowPass}
+                          onClick={() => {
+                            setShowPass((v) => !v);
+                            requestAnimationFrame(() => {
+                              const el = passRef.current;
+                              if (el) try { el.setAttribute('type', !showPass ? 'text' : 'password'); } catch {}
+                            });
+                          }}
                           className="absolute right-2 top-1/2 -translate-y-1/2 p-1 opacity-70 hover:opacity-100"
                           aria-label={showPass ? 'Ocultar contraseña' : 'Mostrar contraseña'}
                         >
@@ -963,7 +866,13 @@ export default function RegistrationModal({
                         <button
                           type="button"
                           aria-pressed={showPassConfirm}
-                          onClick={toggleShowPassConfirm}
+                          onClick={() => {
+                            setShowPassConfirm((v) => !v);
+                            requestAnimationFrame(() => {
+                              const el = confirmRef.current;
+                              if (el) try { el.setAttribute('type', !showPassConfirm ? 'text' : 'password'); } catch {}
+                            });
+                          }}
                           className="absolute right-2 top-1/2 -translate-y-1/2 p-1 opacity-70 hover:opacity-100"
                           aria-label={
                             showPassConfirm ? 'Ocultar contraseña' : 'Mostrar contraseña'
@@ -1166,7 +1075,6 @@ export default function RegistrationModal({
                     <button
                       type="button"
                       onClick={() => {
-                        // Guardar métricas en local (silencioso) y marcar onboarding hecho
                         persistBodyMetrics(undefined, { silent: true });
                         setOnboardingDoneSilent();
                         setStep(5);

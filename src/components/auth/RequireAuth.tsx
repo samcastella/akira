@@ -1,8 +1,9 @@
+// src/components/auth/RequireAuth.tsx
 'use client';
 
 import React from 'react';
-import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabaseClient';
+import { usePathname } from 'next/navigation';
+import { supabase, isSupabaseEnvReady } from '@/lib/supabaseClient';
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 
 type Props = {
@@ -10,79 +11,102 @@ type Props = {
   /**
    * Comportamiento cuando NO hay sesión:
    * - null (por defecto): NO redirige. Deja que el Layout muestre el overlay (recomendado).
-   * - string (p.ej. '/login'): redirige a esa ruta.
+   * - string (p.ej. '/login'): redirige a esa ruta. Si es '/login', añadirá ?redirect=<ruta-actual>.
    */
   redirectTo?: string | null;
   /** UI mientras comprobamos sesión */
   fallback?: React.ReactNode;
 };
 
-function RequireAuth({
+export default function RequireAuth({
   children,
-  redirectTo = null, // ⬅️ overlay mode por defecto (sin redirección)
-  fallback = null,
+  redirectTo = null, // overlay mode por defecto
+  fallback = <div className="p-4 text-sm">Comprobando sesión…</div>,
 }: Props) {
-  const router = useRouter();
+  const pathname = usePathname();
+  const SUPA_READY = isSupabaseEnvReady();
+
   const [mounted, setMounted] = React.useState(false);
-  const [status, setStatus] = React.useState<'loading' | 'authed' | 'noauth' | 'redirecting'>('loading');
+  const [checked, setChecked] = React.useState(false);
+  const [hasSession, setHasSession] = React.useState(false);
 
   React.useEffect(() => {
     setMounted(true);
   }, []);
 
+  // Chequeo inicial + suscripción (sin navegar en SIGNED_IN)
   React.useEffect(() => {
+    if (!SUPA_READY) {
+      // Sin env -> no podemos autenticar; marca como “sin sesión” y deja overlay/redirect actuar
+      setHasSession(false);
+      setChecked(true);
+      return;
+    }
+
     let active = true;
 
-    // 1) Chequeo inicial
     (async () => {
-      const { data }: { data: { session: Session | null } } = await supabase.auth.getSession();
-      if (!active) return;
-      if (data.session) {
-        setStatus('authed');
-      } else {
-        if (redirectTo) {
-          setStatus('redirecting');
-          router.replace(redirectTo);
-        } else {
-          setStatus('noauth'); // deja al Layout mostrar el overlay
-        }
+      try {
+        const { data }: { data: { session: Session | null } } = await supabase.auth.getSession();
+        if (!active) return;
+        setHasSession(!!data.session);
+      } catch {
+        if (!active) return;
+        setHasSession(false);
+      } finally {
+        if (active) setChecked(true);
       }
     })();
 
-    // 2) Suscripción a cambios de sesión
     const { data: sub } = supabase.auth.onAuthStateChange(
-      (evt: AuthChangeEvent, session: Session | null) => {
+      (_evt: AuthChangeEvent, session: Session | null) => {
         if (!active) return;
-        if (session) {
-          setStatus('authed');
-        } else {
-          if (redirectTo) {
-            setStatus('redirecting');
-            router.replace(redirectTo);
-          } else {
-            setStatus('noauth');
-          }
-        }
+        // Solo sincronizamos estado; NO navegamos aquí.
+        setHasSession(!!session);
       }
     );
 
     return () => {
       active = false;
       try {
-        // @supabase/supabase-js v2
-        sub.subscription?.unsubscribe?.();
+        // v2: dos variantes posibles según minor
+        (sub as any)?.subscription?.unsubscribe?.();
+        (sub as any)?.unsubscribe?.();
       } catch {}
     };
-  }, [router, redirectTo]);
+  }, [SUPA_READY]);
+
+  // Redirección única si se solicitó y no hay sesión
+  React.useEffect(() => {
+    if (!checked) return;
+    if (hasSession) return;
+    if (!redirectTo) return;
+
+    // Construye destino final (si es /login, añade ?redirect=<ruta-actual>)
+    const dest =
+      redirectTo === '/login'
+        ? `/login?redirect=${encodeURIComponent(pathname || '/')}`
+        : redirectTo;
+
+    // Redirección con recarga (segura para cookies)
+    if (typeof window !== 'undefined') {
+      window.location.replace(dest);
+    }
+  }, [checked, hasSession, redirectTo, pathname]);
 
   // Evita SSR/flicker
   if (!mounted) return null;
 
-  if (status === 'loading') return <>{fallback}</>;
-  if (status !== 'authed') return null; // en overlay mode, el Layout pondrá el modal encima
+  // Mientras comprobamos, muestra fallback
+  if (!checked) return <>{fallback}</>;
 
+  // Si no hay sesión:
+  // - overlay mode (redirectTo === null): no renderizamos hijos; el Layout pondrá el modal encima.
+  // - redirect mode: ya estamos redirigiendo; no pintes nada.
+  if (!hasSession) return null;
+
+  // Autenticado → renderiza contenido protegido
   return <>{children}</>;
 }
 
-export default RequireAuth;
 export { RequireAuth };
