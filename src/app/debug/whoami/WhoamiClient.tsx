@@ -1,4 +1,3 @@
-// src/app/debug/whoami/WhoamiClient.tsx
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -6,25 +5,45 @@ import { supabase } from '@/lib/supabaseClient';
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import { logoutAndResetApp } from '@/lib/logout';
 
+type ClientOut = {
+  client_userId: string | null;
+  client_email: string | null;
+  client_expiresAt: string | null;
+  client_user_via_getUser: string | null;
+  hasLocalStorageAuthKey: boolean | null;
+};
+
 export default function WhoamiClient() {
-  const [out, setOut] = useState<any>(null);
+  const [out, setOut] = useState<ClientOut | null>(null);
   const [log, setLog] = useState<Array<[AuthChangeEvent, boolean, number]>>([]);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
   async function read() {
-    const { data } = await supabase.auth.getSession();
-    const s = data.session ?? null;
+    const [{ data: s }, { data: u }] = await Promise.all([
+      supabase.auth.getSession(),
+      supabase.auth.getUser(),
+    ]);
+    const session = s.session ?? null;
+
+    let hasKey: boolean | null = null;
+    try {
+      hasKey = typeof window !== 'undefined' ? !!localStorage.getItem('akira.auth') : null;
+    } catch {
+      hasKey = null;
+    }
+
     setOut({
-      client_userId: s?.user?.id ?? null,
-      client_email: s?.user?.email ?? null,
-      client_expiresAt: s?.expires_at ? new Date(s.expires_at * 1000).toISOString() : null,
+      client_userId: session?.user?.id ?? null,
+      client_email: session?.user?.email ?? null,
+      client_expiresAt: session?.expires_at ? new Date(session.expires_at * 1000).toISOString() : null,
+      client_user_via_getUser: u.user?.id ?? null,
+      hasLocalStorageAuthKey: hasKey,
     });
   }
 
   useEffect(() => {
     void read();
-
     const { data: sub } = supabase.auth.onAuthStateChange(
       (event: AuthChangeEvent, session: Session | null) => {
         setLog((old) => [...old.slice(-20), [event, !!session?.user?.id, Date.now()]]);
@@ -34,17 +53,13 @@ export default function WhoamiClient() {
         } catch {}
       }
     );
-
     return () => {
-      try {
-        // @supabase/supabase-js v2
-        sub.subscription?.unsubscribe?.();
-      } catch {}
+      try { sub.subscription?.unsubscribe?.(); } catch {}
     };
   }, []);
 
   async function forceRefreshSession() {
-    await supabase.auth.getSession();
+    await supabase.auth.getSession(); // fuerza refresco en memoria
     await read();
   }
 
@@ -52,7 +67,7 @@ export default function WhoamiClient() {
     setBusy(true);
     setMsg(null);
     try {
-      // 1) Asegura que tenemos tokens en cliente
+      // Espera breve por si aún no están los tokens
       let at: string | undefined;
       let rt: string | undefined;
       for (let i = 0; i < 6; i++) {
@@ -64,11 +79,10 @@ export default function WhoamiClient() {
       }
 
       if (!at || !rt) {
-        setMsg('No hay tokens en la sesión del cliente.');
+        setMsg('No hay tokens en la sesión del cliente (aún).');
         return;
       }
 
-      // 2) Enviar tokens al endpoint server para fijar cookies httpOnly
       const resp = await fetch('/auth/set', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -82,8 +96,7 @@ export default function WhoamiClient() {
         return;
       }
 
-      setMsg('Cookies server sincronizadas. Recargando...');
-      // Recarga para que el server reciba la request con cookies nuevas
+      setMsg('Cookies del servidor sincronizadas. Recargando…');
       setTimeout(() => window.location.reload(), 200);
     } catch (e: any) {
       setMsg(e?.message || 'Fallo al sincronizar cookies en el servidor.');
