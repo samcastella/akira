@@ -4,24 +4,25 @@ import { getSupabaseServer } from '@/lib/supabaseServer';
 import WhoamiClient from './WhoamiClient';
 
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
 
 export default async function WhoAmI() {
-  // getSupabaseServer usa @supabase/ssr y cookies async
+  // Cliente server-side de Supabase (usa @supabase/ssr con cookies getAll/setAll)
   const supabase = await getSupabaseServer();
 
-  // Pedimos user + session en paralelo
+  // Pedimos user + session en paralelo (sin cache)
   const [{ data: u }, { data: s }] = await Promise.all([
     supabase.auth.getUser(),
     supabase.auth.getSession(),
   ]);
 
-  // En tu runtime cookies() es async
-  const c = await cookies();
+  // Cookies HTTP-only visibles en el request del servidor
+  const c = cookies();
   const sbAccess = c.get('sb-access-token')?.value ?? null;
   const sbRefresh = c.get('sb-refresh-token')?.value ?? null;
 
   const serverOut = {
-    // — SSR —
     userId: u.user?.id ?? null,
     email: u.user?.email ?? null,
     expiresAt: s.session?.expires_at
@@ -43,7 +44,8 @@ export default async function WhoAmI() {
         </pre>
         <p className="text-xs opacity-70">
           (Esto es lo que Next.js ve en el servidor. Si aquí sale <code>null</code>,
-          revisa el <code>middleware</code> y los Redirect URLs de Supabase).
+          revisa el <code>middleware</code>, los Redirect URLs de Supabase y que el
+          login por contraseña esté llamando a <code>/auth/set</code>).
         </p>
       </section>
 
