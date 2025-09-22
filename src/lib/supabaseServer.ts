@@ -1,33 +1,29 @@
 // src/lib/supabaseServer.ts
 import { cookies } from 'next/headers';
-import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { createServerClient } from '@supabase/ssr';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-export async function getSupabaseServer(): Promise<SupabaseClient> {
-  // En tu setup cookies() es async; si fuese sync, quita el "await"
-  const cookieStore = await cookies();
+const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !anon) {
-    throw new Error('Faltan NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY');
-  }
+/**
+ * Crea un cliente de Supabase para Server Components/Route Handlers (App Router)
+ * usando el store de cookies de Next. Se debe llamar por request (no singleton).
+ */
+export async function getSupabaseServer(): Promise<SupabaseClient> {
+  const store = await cookies(); // en tu runtime es async
 
   return createServerClient(url, anon, {
     cookies: {
       get(name: string) {
-        return cookieStore.get(name)?.value;
+        return store.get(name)?.value;
       },
-      set(name: string, value: string, options: CookieOptions) {
-        // En entornos read-only puede lanzar; lo envolvemos
-        try {
-          cookieStore.set({ name, value, ...options });
-        } catch {}
+      set(name: string, value: string, options: any) {
+        // Nota: en Server Components, Next permite mutar el cookie store
+        store.set(name, value, options);
       },
-      remove(name: string, options: CookieOptions) {
-        try {
-          cookieStore.set({ name, value: '', ...options, maxAge: 0 });
-        } catch {}
+      remove(name: string, options: any) {
+        store.set(name, '', { ...options, maxAge: 0 });
       },
     },
   });

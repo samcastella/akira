@@ -8,19 +8,19 @@ export const revalidate = 0;
 export const fetchCache = 'force-no-store';
 
 export default async function WhoAmI() {
-  // Cliente server-side de Supabase (usa @supabase/ssr con cookies getAll/setAll)
   const supabase = await getSupabaseServer();
 
-  // Pedimos user + session en paralelo (sin cache)
   const [{ data: u }, { data: s }] = await Promise.all([
     supabase.auth.getUser(),
     supabase.auth.getSession(),
   ]);
 
-// Cookies HTTP-only visibles en el request del servidor (API async en tu runtime)
-const c = await cookies();
-const sbAccess = c.get('sb-access-token')?.value ?? null;
-const sbRefresh = c.get('sb-refresh-token')?.value ?? null;
+  // En tu entorno, cookies() es async
+  const c = await cookies();
+  const all = c.getAll();
+  const hasSb = all.some((ck) => ck.name.startsWith('sb-')); // robusto a cambios de nombre
+  const access = all.find((ck) => ck.name === 'sb-access-token')?.value ?? null;
+  const refresh = all.find((ck) => ck.name === 'sb-refresh-token')?.value ?? null;
 
   const serverOut = {
     userId: u.user?.id ?? null,
@@ -28,9 +28,11 @@ const sbRefresh = c.get('sb-refresh-token')?.value ?? null;
     expiresAt: s.session?.expires_at
       ? new Date(s.session.expires_at * 1000).toISOString()
       : null,
-    hasSbAccessCookie: Boolean(sbAccess),
-    hasSbRefreshCookie: Boolean(sbRefresh),
+    hasAnySbCookie: hasSb,
+    hasSbAccessCookie: Boolean(access),
+    hasSbRefreshCookie: Boolean(refresh),
     supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || '(no NEXT_PUBLIC_SUPABASE_URL)',
+    cookieNames: all.map((x) => x.name), // útil para debug (no mostramos valores)
   };
 
   return (
@@ -43,9 +45,8 @@ const sbRefresh = c.get('sb-refresh-token')?.value ?? null;
           {JSON.stringify(serverOut, null, 2)}
         </pre>
         <p className="text-xs opacity-70">
-          (Esto es lo que Next.js ve en el servidor. Si aquí sale <code>null</code>,
-          revisa el <code>middleware</code>, los Redirect URLs de Supabase y que el
-          login por contraseña esté llamando a <code>/auth/set</code>).
+          (Esto es lo que Next.js ve en el servidor. Comprueba <code>cookieNames</code> para ver si
+          llegan cookies <code>sb-*</code>. Si no, revisa el flujo de login password → <code>/auth/set</code>.)
         </p>
       </section>
 
