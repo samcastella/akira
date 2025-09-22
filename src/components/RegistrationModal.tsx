@@ -427,10 +427,10 @@ export default function RegistrationModal({
         return;
       }
 
-      // Flujo estable: deja que el server fije cookies y redirija sin flicker
-      onClose?.();
-      window.location.href = authRedirectTo(redirectTo);
-      return;
+      // ÉXITO (login por contraseña): recarga directa a la ruta final
+onClose?.();
+window.location.assign(redirectTo || '/mizona');
+return;
     } catch (e: any) {
       console.warn('[login] unexpected error', e);
       setErr(e?.message || 'No se pudo iniciar sesión. Inténtalo de nuevo.');
