@@ -1,32 +1,33 @@
-// src/app/auth/signout/route.ts
-import { NextResponse, type NextRequest } from 'next/server';
+// Server sign-out: limpia la cookie httpOnly sb-*-auth-token
+import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
-
-export const dynamic = 'force-dynamic';
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-export async function POST(req: NextRequest): Promise<Response> {
+export const dynamic = 'force-dynamic';
+
+export async function POST() {
+  // Usamos la API moderna de @supabase/ssr (getAll/setAll)
+  const reqCookies = await cookies();
   const res = NextResponse.json({ ok: true });
 
   const supabase = createServerClient(url, anon, {
     cookies: {
       getAll() {
-        return req.cookies.getAll().map((c) => ({ name: c.name, value: c.value }));
+        return reqCookies.getAll();
       },
-      setAll(cookies) {
-        cookies.forEach(({ name, value, options }) => {
+      setAll(cookiesToSet) {
+        for (const { name, value, options } of cookiesToSet) {
           res.cookies.set(name, value, options);
-        });
+        }
       },
     },
   });
 
-  const { error } = await supabase.auth.signOut({ scope: 'global' });
-  if (error) {
-    return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
-  }
+  // Esto elimina la sesión y, MUY IMPORTANTE, instruye a setAll() a borrar la cookie httpOnly
+  await supabase.auth.signOut();
 
   return res;
 }

@@ -4,33 +4,36 @@
 import { supabase } from '@/lib/supabaseClient';
 
 /**
- * Cierra sesión globalmente, limpia estado local y pide al servidor
- * que elimine las cookies de Supabase (sb-...).
- * Luego redirige a /login (o a la ruta indicada).
+ * Cierra sesión de forma robusta:
+ * 1) Pide al servidor que borre la cookie httpOnly de Supabase (sb-*-auth-token).
+ * 2) Cierra sesión del SDK en el cliente (memoria + storage).
+ * 3) Limpia storage local de la app.
+ * 4) Redirige (por defecto a /login).
  */
 export async function logoutAndResetApp(redirectTo: string = '/login') {
-  // 1) Cierre de sesión en cliente (borra memoria + storage de supabase-js)
-  try {
-    await supabase.auth.signOut({ scope: 'global' as any });
-  } catch {
-    // noop
-  }
-
-  // 2) Cierre de sesión en servidor (elimina cookies sb-... httpOnly)
+  // 1) Server sign-out: borra cookie httpOnly sb-*-auth-token
   try {
     await fetch('/auth/signout', {
       method: 'POST',
       credentials: 'include',
-    }).catch(() => {});
-    // Pequeña espera para asegurarnos de que el navegador aplica las cookies de la respuesta
-    await new Promise((r) => setTimeout(r, 80));
+      cache: 'no-store',
+      headers: { 'content-type': 'application/json' },
+    });
+    // pequeño margen para aplicar Set-Cookie
+    await new Promise((r) => setTimeout(r, 150));
   } catch {
-    // noop
+    // no-op
+  }
+
+  // 2) Client sign-out: borra sesión en memoria y storage del SDK
+  try {
+    await supabase.auth.signOut({ scope: 'global' as any });
+  } catch {
+    // no-op
   }
 
   // 3) Limpieza de almacenamiento local de la app
   try {
-    // Borra claves con prefijo akira_
     const clearPrefix = (storage: Storage, prefix: string) => {
       const keys: string[] = [];
       for (let i = 0; i < storage.length; i++) {
@@ -40,30 +43,26 @@ export async function logoutAndResetApp(redirectTo: string = '/login') {
       keys.forEach((k) => storage.removeItem(k));
     };
 
-    // Tus claves de app
+    // Claves propias
     clearPrefix(localStorage, 'akira_');
     clearPrefix(sessionStorage, 'akira_');
 
-    // Clave del auth de Supabase que definimos en supabaseClient.ts
-    // (guardado en localStorage a menos que estuviera en el fallback en memoria)
-    try {
-      localStorage.removeItem('akira.auth');
-    } catch {}
+    // Clave de auth del SDK (definida en supabaseClient.ts)
+    try { localStorage.removeItem('akira.auth'); } catch {}
 
-    // Otras banderas que usas
-    try {
-      localStorage.removeItem('akira_seen_auth_v1');
-    } catch {}
+    // Bandera de “visto” que usas en la UI
+    try { localStorage.removeItem('akira_seen_auth_v1'); } catch {}
 
-    // Notifica a listeners internos (por si quieres reaccionar en UI)
-    try {
-      window.dispatchEvent(new CustomEvent('akira:user-updated'));
-    } catch {}
+    // Algunas previews añaden este JWT propio de Vercel; lo limpiamos por si acaso
+    try { document.cookie = `_vercel_jwt=; Max-Age=0; path=/`; } catch {}
+
+    // Notificación a listeners internos
+    try { window.dispatchEvent(new CustomEvent('akira:user-updated')); } catch {}
   } catch {
-    // noop
+    // no-op
   }
 
-  // 4) Reinicio duro (evita volver con atrás)
+  // 4) Redirección “dura”
   try {
     window.location.replace(redirectTo);
   } catch {
