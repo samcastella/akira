@@ -1,5 +1,6 @@
 // src/app/auth/set/route.ts
-import { NextResponse, type NextRequest } from 'next/server';
+import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
 
 export const dynamic = 'force-dynamic';
@@ -7,39 +8,45 @@ export const dynamic = 'force-dynamic';
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-export async function POST(req: NextRequest): Promise<Response> {
-  // Preparamos una respuesta JSON “vacía” a la que iremos añadiendo cookies
-  const res = NextResponse.json({ ok: true });
+/**
+ * Devuelve al cliente access_token/refresh_token leyendo la cookie httpOnly
+ * sb-<ref>-auth-token que sólo ve el servidor. Con esto el cliente puede
+ * hidratar el SDK (supabase.auth.setSession({...})) y persistir en localStorage.
+ */
+export async function POST(): Promise<Response> {
+  // Respuesta que también usaremos para propagar set-cookies si Supabase las emite
+  const res = NextResponse.json({ ok: false }, { status: 401 });
+
+  // En Next 14+, cookies() puede requerir await (edge/runtime modernos)
+  const reqCookies = await cookies();
 
   const supabase = createServerClient(url, anon, {
     cookies: {
       getAll() {
-        return req.cookies.getAll().map((c) => ({ name: c.name, value: c.value }));
+        // Pasamos TODAS las cookies del request al cliente SSR de Supabase
+        return reqCookies.getAll();
       },
-      setAll(cookies) {
-        cookies.forEach(({ name, value, options }) => {
+      setAll(cookiesToSet) {
+        // Propaga set-cookie de Supabase a la respuesta (renovaciones, borrados, etc.)
+        for (const { name, value, options } of cookiesToSet) {
           res.cookies.set(name, value, options);
-        });
+        }
       },
     },
   });
 
-  try {
-    const body = await req.json().catch(() => ({} as any));
-    const { access_token, refresh_token } = body || {};
+  // Lee la sesión del servidor (en base a la cookie httpOnly sb-...-auth-token)
+  const { data, error } = await supabase.auth.getSession();
 
-    if (!access_token || !refresh_token) {
-      return NextResponse.json({ ok: false, error: 'Missing tokens' }, { status: 400 });
-    }
-
-    const { error } = await supabase.auth.setSession({ access_token, refresh_token });
-    if (error) {
-      return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
-    }
-
-    // Éxito: devolvemos la respuesta a la que ya se han añadido las cookies
-    return res;
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || 'Bad request' }, { status: 400 });
+  if (error || !data.session) {
+    return NextResponse.json({ ok: false, error: 'no-session' }, { status: 401 });
   }
+
+  // Devolvemos tokens para que el cliente haga supabase.auth.setSession(...)
+  return NextResponse.json({
+    ok: true,
+    access_token: data.session.access_token,
+    refresh_token: data.session.refresh_token,
+    expires_at: data.session.expires_at,
+  });
 }

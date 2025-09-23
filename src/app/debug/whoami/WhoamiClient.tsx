@@ -63,43 +63,41 @@ export default function WhoamiClient() {
     await read();
   }
 
+  /**
+   * Lee la cookie httpOnly en el servidor (/auth/set),
+   * recibe access/refresh y los inyecta en el SDK del cliente.
+   */
   async function syncServerCookies() {
     setBusy(true);
     setMsg(null);
     try {
-      // Espera breve por si aún no están los tokens
-      let at: string | undefined;
-      let rt: string | undefined;
-      for (let i = 0; i < 6; i++) {
-        const { data } = await supabase.auth.getSession();
-        at = data.session?.access_token;
-        rt = data.session?.refresh_token;
-        if (at && rt) break;
-        await new Promise((r) => setTimeout(r, 120));
-      }
-
-      if (!at || !rt) {
-        setMsg('No hay tokens en la sesión del cliente (aún).');
-        return;
-      }
-
       const resp = await fetch('/auth/set', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ access_token: at, refresh_token: rt }),
+        cache: 'no-store',
+        headers: { 'content-type': 'application/json' },
       });
 
+      const j = await resp.json().catch(() => ({}));
       if (!resp.ok) {
-        const j = await resp.json().catch(() => ({}));
-        setMsg(`Servidor no aceptó tokens (${resp.status}): ${j?.error || 'error'}`);
+        setMsg(`Servidor sin sesión (${resp.status})${j?.error ? `: ${j.error}` : ''}`);
         return;
       }
 
-      setMsg('Cookies del servidor sincronizadas. Recargando…');
-      setTimeout(() => window.location.reload(), 200);
+      const at = j?.access_token as string | undefined;
+      const rt = j?.refresh_token as string | undefined;
+
+      if (!at || !rt) {
+        setMsg('El servidor no devolvió tokens válidos.');
+        return;
+      }
+
+      await supabase.auth.setSession({ access_token: at, refresh_token: rt });
+      await supabase.auth.getSession().catch(() => {});
+      setMsg('Sesión del cliente hidratada desde cookie httpOnly.');
+      await read();
     } catch (e: any) {
-      setMsg(e?.message || 'Fallo al sincronizar cookies en el servidor.');
+      setMsg(e?.message || 'Fallo al sincronizar sesión desde el servidor.');
     } finally {
       setBusy(false);
     }
