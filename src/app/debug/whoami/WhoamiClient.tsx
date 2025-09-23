@@ -64,14 +64,14 @@ export default function WhoamiClient() {
   }
 
   /**
-   * Lee la cookie httpOnly en el servidor (/auth/set),
-   * recibe access/refresh y los inyecta en el SDK del cliente.
+   * Pide al servidor (via /auth/get) que lea su cookie httpOnly sb-*-auth-token
+   * y nos devuelva access/refresh; luego hidratamos el SDK del cliente.
    */
   async function syncServerCookies() {
     setBusy(true);
     setMsg(null);
     try {
-      const resp = await fetch('/auth/set', {
+      const resp = await fetch('/auth/get', {
         method: 'POST',
         credentials: 'include',
         cache: 'no-store',

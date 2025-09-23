@@ -429,43 +429,46 @@ export default function RegistrationModal({
 
       // ✅ ÉXITO (login por contraseña): sincroniza cookies en servidor y recarga final
 
-// 1) Espera breve hasta que la sesión tenga tokens (a veces tarda unas decenas de ms)
+// 1) Espera breve hasta que la sesión tenga tokens (algunos navegadores tardan unos ms)
 let at: string | undefined;
 let rt: string | undefined;
-for (let i = 0; i < 6; i++) {
+for (let i = 0; i < 8; i++) {
   const { data } = await supabase.auth.getSession();
   at = data.session?.access_token;
   rt = data.session?.refresh_token;
   if (at && rt) break;
-  await new Promise((r) => setTimeout(r, 150));
+  await new Promise((r) => setTimeout(r, 120));
 }
 
-// 2) Enviar tokens al servidor para fijar cookies sb-... en la respuesta
+// 2) Enviar tokens al servidor para fijar la cookie httpOnly sb-*-auth-token
 if (at && rt) {
   try {
     const resp = await fetch('/auth/set', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
       credentials: 'include',
+      cache: 'no-store',
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ access_token: at, refresh_token: rt }),
     });
-    // (opcional) inspección si falla:
     if (!resp.ok) {
+      // No bloqueamos el flujo por esto, pero lo dejamos logueado
       console.warn('[auth/set] server did not accept tokens', await resp.json().catch(() => ({})));
+    } else {
+      // pequeño margen para aplicar Set-Cookie en el navegador
+      await new Promise((r) => setTimeout(r, 80));
     }
   } catch (e) {
     console.warn('[auth/set] fetch failed', e);
-    // seguimos igualmente; la navegación puede no llevar cookies si esto falla
+    // seguimos igualmente; la navegación puede no llevar la cookie si esto falla
   }
 } else {
   console.warn('[login] tokens not available yet; proceeding without /auth/set');
 }
 
-// 3) Recarga dura a la ruta final (nueva request ya con cookies en server)
+// 3) Recarga dura a la ruta final (para que el server ya reciba la cookie httpOnly)
 onClose?.();
 window.location.assign(redirectTo || '/mizona');
 return;
-
 
     } catch (e: any) {
       console.warn('[login] unexpected error', e);
