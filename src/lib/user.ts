@@ -197,15 +197,58 @@ export function dbRowFromProfile(p: Partial<UserProfile>): any {
    === SINCRONIZACIÓN CON SUPABASE: upsert / pull / bootstrap ===
    =========================================================== */
 
+/**
+ * Hidrata la sesión del cliente desde la cookie httpOnly del servidor
+ * llamando a /auth/set (tu endpoint devuelve access/refresh si hay cookie).
+ */
+async function ensureClientSessionFromServer(): Promise<boolean> {
+  try {
+    const resp = await fetch('/auth/set', {
+      method: 'POST',
+      credentials: 'include',
+      cache: 'no-store',
+      headers: { 'content-type': 'application/json' },
+    });
+    if (!resp.ok) return false;
+    const j = await resp.json().catch(() => ({} as any));
+    const at = j?.access_token as string | undefined;
+    const rt = j?.refresh_token as string | undefined;
+    if (!at || !rt) return false;
+
+    await supabase.auth.setSession({ access_token: at, refresh_token: rt });
+    await supabase.auth.getSession().catch(() => {});
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function getAuthUserId(): Promise<string | null> {
   if (!isSupabaseEnvReady()) return null;
+
+  // 1) Intento directo con getUser (suele ser lo más rápido)
+  try {
+    const { data } = await supabase.auth.getUser();
+    if (data.user?.id) return data.user.id;
+  } catch {}
+
+  // 2) Intento con getSession
   try {
     const { data } = await supabase.auth.getSession();
-    return data.session?.user?.id ?? null;
-  } catch (e) {
-    console.warn('[auth.getSession] error', e);
-    return null;
+    if (data.session?.user?.id) return data.session.user.id;
+  } catch {}
+
+  // 3) Plan B: hidratar desde cookie del servidor y reintentar
+  const hydrated = await ensureClientSessionFromServer();
+  if (hydrated) {
+    try {
+      const { data } = await supabase.auth.getUser();
+      return data.user?.id ?? null;
+    } catch {
+      return null;
+    }
   }
+  return null;
 }
 
 export async function upsertProfile(partial: Partial<UserProfile>): Promise<UserProfile> {
