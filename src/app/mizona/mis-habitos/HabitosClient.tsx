@@ -7,25 +7,35 @@ import { Check, Plus } from 'lucide-react';
 import type { HabitMaster } from '@/components/habits/HabitForm';
 import { useUserProfile, useAuthUserId } from '@/lib/user';
 
-/* Programas: helpers para checks diarios */
-import {
-  PROGRAMS,
-  getRelativeDayIndexForDate,
-  isTaskTodayCompleted,
-  toggleTaskToday,
-  loadStore as loadProgramsStore,
-} from '@/data/programs';
-
+import { PROGRAMS } from '@/data/programs'; // solo usamos PROGRAMS
 import { loadActive } from '@/lib/programsLocal';
 import { pullUserPrograms } from '@/lib/programSync';
 
+/* =========================
+   Constantes / Tipos
+   ========================= */
 const LS_HABITS_MASTER = 'akira_habits_master_v1';
 const LS_HABITS_DAILY = 'akira_habits_daily_v1';
+const LS_PROGRAM_CHECKS = 'akira_programs_daily_checks_v1'; // { [slug]: { [dayIdx]: { [taskId]: true } } }
 
 type DailyEntry = { done: boolean; doneAt?: number };
 type DailyMap = Record<string, Record<string, DailyEntry>>;
+type HabitView = HabitMaster & { done: boolean };
 
-/* ===== Helpers almacenamiento ===== */
+type ProgramTask = { id?: string; label: string; detail?: string; tags?: string[] };
+type ProgramDef = {
+  slug: string;
+  title: string;
+  days?: { day: number; tasks: ProgramTask[] }[];
+};
+type ActiveProgramsStore = Record<
+  string,
+  { currentDay?: number; current_day?: number; dayIndex?: number; [k: string]: any }
+>;
+
+/* =========================
+   Helpers de almacenamiento
+   ========================= */
 function loadMasterHabits(): HabitMaster[] {
   if (typeof window === 'undefined') return [];
   try {
@@ -49,7 +59,25 @@ function saveDaily(map: DailyMap) {
   localStorage.setItem(LS_HABITS_DAILY, JSON.stringify(map));
 }
 
-/* ===== Fechas (LOCAL) ===== */
+/* Checks por tarea de programa (día actual) */
+type ChecksMap = Record<string, Record<number, Record<string, true>>>;
+function loadProgramChecks(): ChecksMap {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(LS_PROGRAM_CHECKS);
+    return raw ? (JSON.parse(raw) as ChecksMap) : {};
+  } catch {
+    return {};
+  }
+}
+function saveProgramChecks(map: ChecksMap) {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(LS_PROGRAM_CHECKS, JSON.stringify(map));
+}
+
+/* =========================
+   Fechas
+   ========================= */
 const dateKey = (d = new Date()) => {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -67,32 +95,9 @@ const isWeekendDay = (d: Date) => {
 };
 const parseKeyToDate = (k: string) => new Date(`${k}T00:00:00`);
 
-/* ===== Tipado de lista para render ===== */
-type HabitView = HabitMaster & { done: boolean };
-
-/* ===== Confeti (opcional) ===== */
-async function confettiBurst(evt?: React.MouseEvent, big = false) {
-  try {
-    const { default: confetti } = await import('canvas-confetti');
-    const x = evt?.clientX ?? window.innerWidth / 2;
-    const y = evt?.clientY ?? window.innerHeight / 2;
-    const ox = Math.min(Math.max(x / window.innerWidth, 0), 1);
-    const oy = Math.min(Math.max(y / window.innerHeight, 0), 1);
-
-    confetti({
-      particleCount: big ? 180 : 80,
-      spread: big ? 90 : 65,
-      startVelocity: big ? 45 : 35,
-      ticks: 220,
-      gravity: 0.9,
-      origin: { x: ox, y: oy },
-      scalar: big ? 1.05 : 0.9,
-      zIndex: 9999,
-    });
-  } catch {}
-}
-
-/* ===== UI helpers ===== */
+/* =========================
+   UI helpers
+   ========================= */
 const BORDER = '#E5E7EB';
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
@@ -116,20 +121,64 @@ function EmptyBar({ label, href }: { label: string; href: string }) {
   );
 }
 
-/* ===== Mini barra con checks del programa para HOY ===== */
-function ProgramMiniBar({ slug }: { slug: string }) {
-  // Buscar el programa por slug (array u objeto)
-  const program: any =
-    (PROGRAMS as any)[slug] ||
-    (Array.isArray(PROGRAMS) ? (PROGRAMS as any[]).find((p) => p.slug === slug) : null);
+/* =========================
+   Confeti
+   ========================= */
+async function confettiBurst(evt?: React.MouseEvent, big = false) {
+  try {
+    const { default: confetti } = await import('canvas-confetti');
+    const x = evt?.clientX ?? window.innerWidth / 2;
+    const y = evt?.clientY ?? window.innerHeight / 2;
+    const ox = Math.min(Math.max(x / window.innerWidth, 0), 1);
+    const oy = Math.min(Math.max(y / window.innerHeight, 0), 1);
+
+    confetti({
+      particleCount: big ? 180 : 80,
+      spread: big ? 90 : 65,
+      startVelocity: big ? 45 : 35,
+      ticks: 220,
+      gravity: 0.9,
+      origin: { x: ox, y: oy },
+      scalar: big ? 1.05 : 0.9,
+      zIndex: 9999,
+    });
+  } catch {}
+}
+
+/* =========================
+   Mini barra de programa (checks locales)
+   ========================= */
+function getProgramBySlug(slug: string): ProgramDef | null {
+  const src: any = PROGRAMS as any;
+  if (!src) return null;
+  if (Array.isArray(src)) return (src as ProgramDef[]).find((p) => p.slug === slug) || null;
+  return (src as Record<string, ProgramDef>)[slug] || null;
+}
+function getTodayIndexFromActive(active: ActiveProgramsStore, slug: string) {
+  const p = active?.[slug] || {};
+  // Preferimos currentDay (1-based), si no, current_day, si no, dayIndex (0-based)
+  const oneBased = typeof p.currentDay === 'number' ? p.currentDay : typeof p.current_day === 'number' ? p.current_day : undefined;
+  if (typeof oneBased === 'number') return Math.max(0, (oneBased as number) - 1);
+  if (typeof p.dayIndex === 'number') return Math.max(0, p.dayIndex as number);
+  return 0;
+}
+
+function ProgramMiniBar({
+  slug,
+  activeStore,
+  onToggle,
+  isChecked,
+}: {
+  slug: string;
+  activeStore: ActiveProgramsStore;
+  onToggle: (slug: string, dayIdx: number, taskId: string) => void;
+  isChecked: (slug: string, dayIdx: number, taskId: string) => boolean;
+}) {
+  const program = getProgramBySlug(slug);
   if (!program) return null;
 
-  const todayIdx =
-    typeof getRelativeDayIndexForDate === 'function'
-      ? getRelativeDayIndexForDate(slug, new Date())
-      : 0;
-
-  const tasks: any[] = program?.days?.[todayIdx]?.tasks || [];
+  const dayIdx = getTodayIndexFromActive(activeStore, slug);
+  const tasks: ProgramTask[] = program?.days?.[dayIdx]?.tasks || [];
 
   return (
     <div className="rounded-2xl border px-4 py-3" style={{ borderColor: 'var(--line, rgba(0,0,0,.16))' }}>
@@ -138,13 +187,13 @@ function ProgramMiniBar({ slug }: { slug: string }) {
         <span className="text-xs text-black/50">Hoy no hay tareas.</span>
       ) : (
         <ul className="flex items-center gap-8">
-          {tasks.map((t) => {
-            const checked =
-              typeof isTaskTodayCompleted === 'function' ? isTaskTodayCompleted(slug, t.id) : false;
+          {tasks.map((t, i) => {
+            const taskId = String(t.id ?? `${slug}-d${dayIdx}-t${i}`);
+            const checked = isChecked(slug, dayIdx, taskId);
             return (
-              <li key={t.id}>
+              <li key={taskId}>
                 <button
-                  onClick={() => toggleTaskToday?.(slug, t.id)}
+                  onClick={() => onToggle(slug, dayIdx, taskId)}
                   className="grid h-6 w-6 place-items-center rounded-full border"
                   title={checked ? 'Desmarcar' : 'Marcar'}
                   aria-label={checked ? `Desmarcar ${t.label}` : `Marcar ${t.label}`}
@@ -165,13 +214,20 @@ function ProgramMiniBar({ slug }: { slug: string }) {
   );
 }
 
-/* ===== Componente principal ===== */
+/* =========================
+   Componente principal
+   ========================= */
 export default function HabitosClient() {
   const [masters, setMasters] = useState<HabitMaster[]>([]);
   const [daily, setDaily] = useState<DailyMap>({});
   const [today, setToday] = useState<string>(dateKey());
 
-  // rollover a medianoche (local)
+  const [activePrograms, setActivePrograms] = useState<string[]>([]);
+  const [activeStore, setActiveStore] = useState<ActiveProgramsStore>({});
+  const [checks, setChecks] = useState<ChecksMap>({});
+  const [checksVersion, setChecksVersion] = useState<number>(0); // para forzar re-render cuando cambian checks
+
+  // rollover a medianoche
   const midnightTimer = useRef<number | null>(null);
   useEffect(() => {
     const schedule = () => {
@@ -199,26 +255,27 @@ export default function HabitosClient() {
   const greetingName = firstName || username || 'usuario/a';
   const avatar = (user?.foto as string | undefined) || undefined;
 
-  // Programas activos (desde storage + sync)
-  const [activePrograms, setActivePrograms] = useState<string[]>([]);
-
+  // cargar estado inicial + sync de programas
   const uid = useAuthUserId();
   useEffect(() => {
     setMasters(loadMasterHabits());
     setDaily(loadDaily());
+    setChecks(loadProgramChecks());
 
     const readActives = () => {
       try {
-        const store = loadActive(); // { [slug]: LocalProgram }
-        setActivePrograms(Object.keys(store || {}));
+        const store = (loadActive() || {}) as ActiveProgramsStore;
+        setActiveStore(store);
+        setActivePrograms(Object.keys(store));
       } catch {
+        setActiveStore({});
         setActivePrograms([]);
       }
     };
 
     readActives();
 
-    // Pull remoto y refresco local
+    // Pull remoto → fusiona en local
     const hydrate = async () => {
       try {
         if (uid) await pullUserPrograms();
@@ -228,15 +285,22 @@ export default function HabitosClient() {
     hydrate();
 
     const onProgramsUpdated = () => readActives();
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === LS_PROGRAM_CHECKS) setChecks(loadProgramChecks());
+    };
+
     window.addEventListener('storage', onProgramsUpdated);
     window.addEventListener('akira:programs-updated', onProgramsUpdated as EventListener);
+    window.addEventListener('storage', onStorage);
+
     return () => {
       window.removeEventListener('storage', onProgramsUpdated);
       window.removeEventListener('akira:programs-updated', onProgramsUpdated as EventListener);
+      window.removeEventListener('storage', onStorage);
     };
   }, [uid]);
 
-  // asegurar bucket de hoy
+  // asegurar bucket de hoy (hábitos personales)
   useEffect(() => {
     if (masters.length === 0) return;
     ensureDailyForDate(today);
@@ -261,7 +325,7 @@ export default function HabitosClient() {
     });
   }
 
-  // helpers de aplicabilidad
+  // helpers hábitos personales
   function applicableMasterIds(dKey: string) {
     const d = parseKeyToDate(dKey);
     return masters
@@ -269,8 +333,6 @@ export default function HabitosClient() {
       .filter((h) => !(h.weekend === false && isWeekendDay(d)))
       .map((h) => h.id);
   }
-
-  // toggle hábito personal
   function toggleDone(habitId: string, dKey?: string, evt?: React.MouseEvent) {
     const key = dKey ?? today;
     const bucket = daily[key] ?? {};
@@ -305,63 +367,44 @@ export default function HabitosClient() {
       .map((h) => ({ ...h, done: !!bucket[h.id]?.done }));
   }, [masters, daily, today]);
 
+  // checks de programas (local)
+  const isTaskChecked = (slug: string, dayIdx: number, taskId: string) =>
+    !!checks?.[slug]?.[dayIdx]?.[taskId];
+
+  const toggleTaskChecked = (slug: string, dayIdx: number, taskId: string) => {
+    setChecks((prev) => {
+      const next: ChecksMap = { ...(prev || {}) };
+      next[slug] = { ...(next[slug] || {}) };
+      next[slug][dayIdx] = { ...(next[slug][dayIdx] || {}) };
+      if (next[slug][dayIdx][taskId]) {
+        delete next[slug][dayIdx][taskId];
+      } else {
+        next[slug][dayIdx][taskId] = true;
+      }
+      saveProgramChecks(next);
+      return next;
+    });
+    setChecksVersion((v) => v + 1);
+  };
+
   /* ===== RENDER ===== */
   return (
     <main className="mx-auto w-full max-w-3xl px-5 sm:px-6 md:px-8 py-6" style={{ background: 'white' }}>
       {/* Cabecera minimalista con avatar pequeño clicable */}
-      <section className="mb-5 flex items-center gap-3">
-        <Link
-          href="/mizona/perfil"
-          className="rounded-full overflow-hidden flex items-center justify-center"
-          style={{ width: 32, height: 32, border: `1px solid ${BORDER}`, background: '#f7f7f7' }}
-          aria-label="Ir a mi perfil"
-          title="Mi perfil"
-        >
-          {avatar ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={avatar} alt="Foto de perfil" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-          ) : (
-            <span style={{ fontSize: 16, color: '#9ca3af' }}>👤</span>
-          )}
-        </Link>
-        <div className="min-w-0">
-          <h1 className="text-xl font-extrabold m-0 leading-none">Hola {greetingName},</h1>
-          <p className="mt-1 text-sm text-black/70 m-0">Gestiona tus hábitos y retos diarios.</p>
-        </div>
-      </section>
+      <HeaderMinimal avatar={avatar} greetingName={greetingName} />
 
       {/* Menú superior (se mantiene) */}
-      <nav className="mb-4 flex flex-wrap gap-3">
-        <Link href="/mizona" className="btn" style={{ background: 'black', color: 'white', border: '1px solid black' }}>
-          Mis hábitos
-        </Link>
-        <Link
-          href="/mizona/crear-habitos"
-          className="btn"
-          style={{ background: 'white', color: 'black', border: '1px solid var(--line)' }}
-        >
-          Crear hábito
-        </Link>
-        <Link href="/mizona/logros" className="btn" style={{ background: 'white', color: 'black', border: '1px solid var(--line)' }}>
-          Logros
-        </Link>
-        <Link href="/mizona/perfil" className="btn" style={{ background: 'white', color: 'black', border: '1px solid var(--line)' }}>
-          Mi perfil
-        </Link>
-        <Link
-          href="/mizona/calendarios"
-          className="btn"
-          style={{ background: 'white', color: 'black', border: '1px solid var(--line)' }}
-        >
-          Calendarios
-        </Link>
-      </nav>
+      <TopMenu />
 
       {/* RETOS PARA HOY */}
       <SectionTitle>
         Retos para hoy —{' '}
         <span className="font-normal">
-          {new Date(`${today}T00:00:00`).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}
+          {new Date(`${today}T00:00:00`).toLocaleDateString('es-ES', {
+            weekday: 'long',
+            day: 'numeric',
+            month: 'long',
+          })}
         </span>
       </SectionTitle>
 
@@ -408,9 +451,15 @@ export default function HabitosClient() {
       <section className="mb-6">
         <SubTitle>Programas activos</SubTitle>
         {activePrograms?.length ? (
-          <div className="space-y-3">
+          <div className="space-y-3" key={checksVersion /* fuerza refresco simple */}>
             {activePrograms.map((slug) => (
-              <ProgramMiniBar key={slug} slug={slug} />
+              <ProgramMiniBar
+                key={slug}
+                slug={slug}
+                activeStore={activeStore}
+                onToggle={toggleTaskChecked}
+                isChecked={isTaskChecked}
+              />
             ))}
           </div>
         ) : (
@@ -424,5 +473,55 @@ export default function HabitosClient() {
         <EmptyBar label="Añadir reto con amigos" href="/mis-amigos" />
       </section>
     </main>
+  );
+}
+
+/* =========================
+   Subcomponentes simples
+   ========================= */
+function HeaderMinimal({ avatar, greetingName }: { avatar?: string; greetingName: string }) {
+  return (
+    <section className="mb-5 flex items-center gap-3">
+      <Link
+        href="/mizona/perfil"
+        className="rounded-full overflow-hidden flex items-center justify-center"
+        style={{ width: 32, height: 32, border: `1px solid ${BORDER}`, background: '#f7f7f7' }}
+        aria-label="Ir a mi perfil"
+        title="Mi perfil"
+      >
+        {avatar ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={avatar} alt="Foto de perfil" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        ) : (
+          <span style={{ fontSize: 16, color: '#9ca3af' }}>👤</span>
+        )}
+      </Link>
+      <div className="min-w-0">
+        <h1 className="text-xl font-extrabold m-0 leading-none">Hola {greetingName},</h1>
+        <p className="mt-1 text-sm text-black/70 m-0">Gestiona tus hábitos y retos diarios.</p>
+      </div>
+    </section>
+  );
+}
+
+function TopMenu() {
+  return (
+    <nav className="mb-4 flex flex-wrap gap-3">
+      <Link href="/mizona" className="btn" style={{ background: 'black', color: 'white', border: '1px solid black' }}>
+        Mis hábitos
+      </Link>
+      <Link href="/mizona/crear-habitos" className="btn" style={{ background: 'white', color: 'black', border: '1px solid var(--line)' }}>
+        Crear hábito
+      </Link>
+      <Link href="/mizona/logros" className="btn" style={{ background: 'white', color: 'black', border: '1px solid var(--line)' }}>
+        Logros
+      </Link>
+      <Link href="/mizona/perfil" className="btn" style={{ background: 'white', color: 'black', border: '1px solid var(--line)' }}>
+        Mi perfil
+      </Link>
+      <Link href="/mizona/calendarios" className="btn" style={{ background: 'white', color: 'black', border: '1px solid var(--line)' }}>
+        Calendarios
+      </Link>
+    </nav>
   );
 }
