@@ -7,7 +7,7 @@ import { Check, Plus } from 'lucide-react';
 import type { HabitMaster } from '@/components/habits/HabitForm';
 import { useUserProfile, useAuthUserId } from '@/lib/user';
 
-import { PROGRAMS } from '@/data/programs'; // solo usamos PROGRAMS
+import { PROGRAMS } from '@/data/programs'; // solo usamos PROGRAMS (para pintar mini-barras)
 import { loadActive } from '@/lib/programsLocal';
 import { pullUserPrograms } from '@/lib/programSync';
 
@@ -157,7 +157,12 @@ function getProgramBySlug(slug: string): ProgramDef | null {
 function getTodayIndexFromActive(active: ActiveProgramsStore, slug: string) {
   const p = active?.[slug] || {};
   // Preferimos currentDay (1-based), si no, current_day, si no, dayIndex (0-based)
-  const oneBased = typeof p.currentDay === 'number' ? p.currentDay : typeof p.current_day === 'number' ? p.current_day : undefined;
+  const oneBased =
+    typeof p.currentDay === 'number'
+      ? p.currentDay
+      : typeof p.current_day === 'number'
+      ? p.current_day
+      : undefined;
   if (typeof oneBased === 'number') return Math.max(0, (oneBased as number) - 1);
   if (typeof p.dayIndex === 'number') return Math.max(0, p.dayIndex as number);
   return 0;
@@ -215,6 +220,19 @@ function ProgramMiniBar({
 }
 
 /* =========================
+   Filtros/normalización de programas activos
+   ========================= */
+function hasValidDay(node: any) {
+  const d = node?.currentDay ?? node?.current_day ?? node?.dayIndex;
+  return Number.isFinite(d);
+}
+function normalizeSlug(slug: string) {
+  // Si necesitas mapear alias (p.ej., 'lectura-30' <-> 'lectura') hazlo aquí.
+  // Por ahora devolvemos tal cual.
+  return slug;
+}
+
+/* =========================
    Componente principal
    ========================= */
 export default function HabitosClient() {
@@ -265,8 +283,14 @@ export default function HabitosClient() {
     const readActives = () => {
       try {
         const store = (loadActive() || {}) as ActiveProgramsStore;
+
+        // Solo aceptamos entradas con día definido y normalizamos slug
+        const validSlugs = Object.entries(store)
+          .filter(([, node]) => hasValidDay(node))
+          .map(([slug]) => normalizeSlug(slug));
+
         setActiveStore(store);
-        setActivePrograms(Object.keys(store));
+        setActivePrograms(Array.from(new Set(validSlugs)));
       } catch {
         setActiveStore({});
         setActivePrograms([]);
