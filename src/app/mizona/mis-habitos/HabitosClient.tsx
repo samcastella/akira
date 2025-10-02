@@ -7,8 +7,13 @@ import { Check, Plus } from 'lucide-react';
 import type { HabitMaster } from '@/components/habits/HabitForm';
 import { useUserProfile, useAuthUserId } from '@/lib/user';
 
-import { PROGRAMS } from '@/data/programs'; // solo usamos PROGRAMS (para pintar mini-barras)
-import { loadActive } from '@/lib/programsLocal';
+import { PROGRAMS } from '@/data/programs';
+import {
+  initProgramsLocal,
+  getActiveSlugs,
+  getDayIndexFor,
+  LS_ACTIVE as LS_PROGRAMS_ACTIVE, // para escuchar cambios cross-tab
+} from '@/lib/programsLocal';
 import { pullUserPrograms } from '@/lib/programSync';
 
 /* =========================
@@ -17,7 +22,6 @@ import { pullUserPrograms } from '@/lib/programSync';
 const LS_HABITS_MASTER = 'akira_habits_master_v1';
 const LS_HABITS_DAILY = 'akira_habits_daily_v1';
 const LS_PROGRAM_CHECKS = 'akira_programs_daily_checks_v1'; // { [slug]: { [dayIdx]: { [taskId]: true } } }
-const LS_PROGRAMS_ACTIVE = 'akira_programs_active_v1';
 
 type DailyEntry = { done: boolean; doneAt?: number };
 type DailyMap = Record<string, Record<string, DailyEntry>>;
@@ -29,10 +33,6 @@ type ProgramDef = {
   title: string;
   days?: { day: number; tasks: ProgramTask[] }[];
 };
-type ActiveProgramsStore = Record<
-  string,
-  { currentDay?: number | string; current_day?: number | string; dayIndex?: number | string; [k: string]: any }
->;
 
 /* =========================
    Helpers de almacenamiento
@@ -147,13 +147,11 @@ async function confettiBurst(evt?: React.MouseEvent, big = false) {
 }
 
 /* =========================
-   Slugs & Programas
+   Programas
    ========================= */
-/** Slug canónico: SIN sufijo -30 */
 function normalizeSlug(slug: string) {
   return String(slug).replace(/-30$/, '');
 }
-
 function getProgramBySlug(slug: string): ProgramDef | null {
   const src: any = PROGRAMS as any;
   if (!src) return null;
@@ -162,28 +160,12 @@ function getProgramBySlug(slug: string): ProgramDef | null {
   return (src as Record<string, ProgramDef>)[s] || null;
 }
 
-/** Calcula el índice del día (0-based) desde cualquier formato (number o string) */
-function getTodayIndexFromActive(active: ActiveProgramsStore, slug: string) {
-  const p = active?.[slug] || active?.[normalizeSlug(slug)] || {};
-  // Preferimos currentDay/current_day (1-based). Si no existen, usamos dayIndex (0-based).
-  const rawOneBased = p.currentDay ?? p.current_day;
-  if (rawOneBased !== undefined) {
-    const n = Math.max(1, Number(rawOneBased) || 1); // coerce + clamp
-    return n - 1;
-  }
-  const n0 = Number(p.dayIndex);
-  if (Number.isFinite(n0)) return Math.max(0, n0);
-  return 0;
-}
-
 function ProgramMiniBar({
   slug,
-  activeStore,
   onToggle,
   isChecked,
 }: {
   slug: string;
-  activeStore: ActiveProgramsStore;
   onToggle: (slug: string, dayIdx: number, taskId: string) => void;
   isChecked: (slug: string, dayIdx: number, taskId: string) => boolean;
 }) {
@@ -191,7 +173,7 @@ function ProgramMiniBar({
   if (!program) return null;
 
   const canonSlug = program.slug; // ya normalizado
-  const dayIdx = getTodayIndexFromActive(activeStore, canonSlug);
+  const dayIdx = getDayIndexFor(canonSlug) ?? 0;
   const tasks: ProgramTask[] = program?.days?.[dayIdx]?.tasks || [];
 
   return (
@@ -229,16 +211,6 @@ function ProgramMiniBar({
 }
 
 /* =========================
-   Filtros/normalización de programas activos
-   ========================= */
-/** Acepta números o strings ("2") y los convierte a número */
-function hasValidDay(node: any) {
-  const raw = node?.currentDay ?? node?.current_day ?? node?.dayIndex;
-  const n = Number(raw);
-  return Number.isFinite(n);
-}
-
-/* =========================
    Componente principal
    ========================= */
 export default function HabitosClient() {
@@ -247,7 +219,6 @@ export default function HabitosClient() {
   const [today, setToday] = useState<string>(dateKey());
 
   const [activePrograms, setActivePrograms] = useState<string[]>([]);
-  const [activeStore, setActiveStore] = useState<ActiveProgramsStore>({});
   const [checks, setChecks] = useState<ChecksMap>({});
   const [checksVersion, setChecksVersion] = useState<number>(0); // para forzar re-render cuando cambian checks
 
@@ -261,6 +232,8 @@ export default function HabitosClient() {
       const ms = next.getTime() - now.getTime();
       midnightTimer.current = window.setTimeout(() => {
         setToday(dateKey());
+        // si cambia el día, también refrescamos los índices
+        setActivePrograms(getActiveSlugs());
         schedule();
       }, ms + 1000);
     };
@@ -298,67 +271,34 @@ export default function HabitosClient() {
     if (checksChanged) saveProgramChecks(checksNorm);
     setChecks(checksNorm);
 
-    const readActives = () => {
-      try {
-        const raw = (loadActive() || {}) as ActiveProgramsStore;
+    // Inicializa sistema local (migra legacy → canónico) y carga slugs activos
+    const refreshActives = () => setActivePrograms(getActiveSlugs());
+    initProgramsLocal();
+    refreshActives();
 
-        // === MIGRACIÓN activos -> slugs canónicos ===
-        let changed = false;
-        const norm: ActiveProgramsStore = {};
-        for (const [slug, node] of Object.entries(raw)) {
-          const ns = normalizeSlug(slug);
-          // Si colisiona, prioriza el que tenga día definido
-          if (norm[ns]) {
-            const a = norm[ns];
-            const an = Number(a?.currentDay ?? a?.current_day ?? a?.dayIndex);
-            const bn = Number(node?.currentDay ?? node?.current_day ?? node?.dayIndex);
-            norm[ns] = Number.isFinite(an) ? a : node;
-          } else {
-            norm[ns] = node;
-          }
-          if (ns !== slug) changed = true;
-        }
-        if (changed) {
-          localStorage.setItem(LS_PROGRAMS_ACTIVE, JSON.stringify(norm));
-          window.dispatchEvent(new Event('akira:programs-updated'));
-        }
-
-        const validSlugs = Object.entries(norm)
-          .filter(([, node]) => hasValidDay(node))
-          .map(([slug]) => normalizeSlug(slug));
-
-        setActiveStore(norm);
-        setActivePrograms(Array.from(new Set(validSlugs)));
-      } catch {
-        setActiveStore({});
-        setActivePrograms([]);
-      }
-    };
-
-    readActives();
-
-    // Pull remoto → fusiona en local
+    // Pull remoto → fusiona en local → recarga slugs
     const hydrate = async () => {
       try {
         if (uid) await pullUserPrograms();
       } catch {}
-      readActives();
+      initProgramsLocal();
+      refreshActives();
     };
     hydrate();
 
-    const onProgramsUpdated = () => readActives();
+    // Escuchar cambios de almacenamiento (checks y programas activos)
     const onStorage = (e: StorageEvent) => {
       if (e.key === LS_PROGRAM_CHECKS) setChecks(loadProgramChecks());
+      if (e.key === LS_PROGRAMS_ACTIVE) refreshActives();
     };
+    const onProgramsUpdated = () => refreshActives();
 
-    window.addEventListener('storage', onProgramsUpdated);
-    window.addEventListener('akira:programs-updated', onProgramsUpdated as EventListener);
     window.addEventListener('storage', onStorage);
+    window.addEventListener('akira:programs-updated', onProgramsUpdated as EventListener);
 
     return () => {
-      window.removeEventListener('storage', onProgramsUpdated);
-      window.removeEventListener('akira:programs-updated', onProgramsUpdated as EventListener);
       window.removeEventListener('storage', onStorage);
+      window.removeEventListener('akira:programs-updated', onProgramsUpdated as EventListener);
     };
   }, [uid]);
 
@@ -454,7 +394,7 @@ export default function HabitosClient() {
       {/* Cabecera minimalista con avatar pequeño clicable */}
       <HeaderMinimal avatar={avatar} greetingName={greetingName} />
 
-      {/* Menú superior (se mantiene) */}
+      {/* Menú superior */}
       <TopMenu />
 
       {/* RETOS PARA HOY */}
@@ -517,7 +457,6 @@ export default function HabitosClient() {
               <ProgramMiniBar
                 key={slug}
                 slug={slug}
-                activeStore={activeStore}
                 onToggle={toggleTaskChecked}
                 isChecked={isTaskChecked}
               />
