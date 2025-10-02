@@ -89,31 +89,86 @@ export function migrateCompat(): void {
 }
 
 /* =========================
-   Helpers de LECTURA para Mi zona
-   (no modifican almacenamiento)
+   Compatibilidad de lectura (mapa o array)
+   ========================= */
+
+// Detecta y lee cualquier forma de "activos" que podamos encontrar
+function readRawActiveAny():
+  | { kind: 'map'; map: LocalStore }
+  | { kind: 'array'; arr: string[] }
+  | { kind: 'empty' } {
+  if (!isBrowser()) return { kind: 'empty' };
+
+  // Preferencia: clave canónica
+  const raw = localStorage.getItem(LS_ACTIVE);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return { kind: 'array', arr: parsed.filter(Boolean).map(String) };
+      }
+      if (parsed && typeof parsed === 'object') {
+        return { kind: 'map', map: parsed as LocalStore };
+      }
+    } catch {}
+  }
+
+  // Fallback arrays legacy
+  const legacyArrayKeys = ['akira_programs_active', 'akira_active_programs_v1'];
+  for (const k of legacyArrayKeys) {
+    const r = localStorage.getItem(k);
+    if (!r) continue;
+    try {
+      const p = JSON.parse(r);
+      if (Array.isArray(p)) {
+        return { kind: 'array', arr: p.filter(Boolean).map(String) };
+      }
+    } catch {}
+  }
+
+  return { kind: 'empty' };
+}
+
+/* =========================
+   Helpers de LECTURA para Mi zona (no escriben)
    ========================= */
 
 /** Slugs activos en orden reciente (canónicos SOLO al devolver, no guardamos). */
 export function getActiveSlugs(): string[] {
-  const store = loadActive();
-  return Object.values(store)
-    .filter(p => p?.status === 'active')
-    .sort((a, b) => (b?.updatedAt ?? 0) - (a?.updatedAt ?? 0))
-    .map(p => canonicalSlug(p.programSlug)!)
-    .filter(Boolean);
+  const any = readRawActiveAny();
+
+  if (any.kind === 'array') {
+    return Array.from(new Set(any.arr.map(s => canonicalSlug(s)!).filter(Boolean)));
+  }
+
+  if (any.kind === 'map') {
+    const store = any.map;
+    return Object.values(store)
+      .filter(p => p?.status === 'active')
+      .sort((a, b) => (b?.updatedAt ?? 0) - (a?.updatedAt ?? 0))
+      .map(p => canonicalSlug(p.programSlug)!)
+      .filter(Boolean);
+  }
+
+  return [];
 }
 
 /** Devuelve YYYY-MM-DD calculado desde startedAt si existe. */
 export function getStartDateYMD(slugRaw: string): string | undefined {
-  const store = loadActive();
-  // buscamos exacto y por variante canónica
-  const entry =
-    store[slugRaw] ??
-    store[canonicalSlug(slugRaw) ?? ''] ??
-    // también invertimos la búsqueda: si guardaste canónico, busca con -30
-    store[`${slugRaw}-30`];
+  const any = readRawActiveAny();
 
-  return ymdFromEpochMs(entry?.startedAt);
+  if (any.kind === 'map') {
+    const store = any.map;
+    // buscamos exacto y por variante canónica/inversa
+    const entry =
+      store[slugRaw] ??
+      store[canonicalSlug(slugRaw) ?? ''] ??
+      store[`${slugRaw}-30`];
+    return ymdFromEpochMs(entry?.startedAt);
+  }
+
+  // Si solo existe array, no hay startedAt almacenado
+  return undefined;
 }
 
 /**
@@ -124,36 +179,43 @@ export function getStartDateYMD(slugRaw: string): string | undefined {
  *  3) Si no hay datos → 0
  */
 export function getDayIndexFor(slugRaw: string, todayYmd?: string): number {
-  const store = loadActive();
-  const entry =
-    store[slugRaw] ??
-    store[canonicalSlug(slugRaw) ?? ''] ??
-    store[`${slugRaw}-30`];
+  const any = readRawActiveAny();
 
-  // 1) startedAt → diff
-  if (entry?.startedAt) {
-    const start = ymdFromEpochMs(entry.startedAt)!;
-    const today =
-      todayYmd && /^\d{4}-\d{2}-\d{2}$/.test(todayYmd)
-        ? todayYmd
-        : (() => {
-            const now = new Date();
-            const z = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
-            return z.toISOString().slice(0, 10);
-          })();
-    const a = Date.parse(start);
-    const b = Date.parse(today);
-    if (Number.isFinite(a) && Number.isFinite(b)) {
-      const diff = Math.floor((b - a) / 86400000);
-      return diff < 0 ? 0 : diff;
+  if (any.kind === 'map') {
+    const store = any.map;
+    const entry =
+      store[slugRaw] ??
+      store[canonicalSlug(slugRaw) ?? ''] ??
+      store[`${slugRaw}-30`];
+
+    // 1) startedAt → diff
+    if (entry?.startedAt) {
+      const start = ymdFromEpochMs(entry.startedAt)!;
+      const today =
+        todayYmd && /^\d{4}-\d{2}-\d{2}$/.test(todayYmd)
+          ? todayYmd
+          : (() => {
+              const now = new Date();
+              const z = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+              return z.toISOString().slice(0, 10);
+            })();
+      const a = Date.parse(start);
+      const b = Date.parse(today);
+      if (Number.isFinite(a) && Number.isFinite(b)) {
+        const diff = Math.floor((b - a) / 86400000);
+        return diff < 0 ? 0 : diff;
+      }
     }
+
+    // 2) progress.currentDay → 0-based
+    const cd = Number(entry?.progress?.currentDay);
+    if (Number.isFinite(cd) && cd > 0) return cd - 1;
+
+    // 3) fallback
+    return 0;
   }
 
-  // 2) progress.currentDay → 0-based
-  const cd = Number(entry?.progress?.currentDay);
-  if (Number.isFinite(cd) && cd > 0) return cd - 1;
-
-  // 3) fallback
+  // Solo array de slugs → empezado hoy → día 0
   return 0;
 }
 
