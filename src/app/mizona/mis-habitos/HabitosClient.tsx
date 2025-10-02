@@ -17,6 +17,7 @@ import { pullUserPrograms } from '@/lib/programSync';
 const LS_HABITS_MASTER = 'akira_habits_master_v1';
 const LS_HABITS_DAILY = 'akira_habits_daily_v1';
 const LS_PROGRAM_CHECKS = 'akira_programs_daily_checks_v1'; // { [slug]: { [dayIdx]: { [taskId]: true } } }
+const LS_PROGRAMS_ACTIVE = 'akira_programs_active_v1';
 
 type DailyEntry = { done: boolean; doneAt?: number };
 type DailyMap = Record<string, Record<string, DailyEntry>>;
@@ -146,22 +147,28 @@ async function confettiBurst(evt?: React.MouseEvent, big = false) {
 }
 
 /* =========================
-   Mini barra de programa (checks locales)
+   Slugs & Programas
    ========================= */
+/** Slug canónico: SIN sufijo -30 */
+function normalizeSlug(slug: string) {
+  return String(slug).replace(/-30$/, '');
+}
+
 function getProgramBySlug(slug: string): ProgramDef | null {
   const src: any = PROGRAMS as any;
   if (!src) return null;
-  if (Array.isArray(src)) return (src as ProgramDef[]).find((p) => p.slug === slug) || null;
-  return (src as Record<string, ProgramDef>)[slug] || null;
+  const s = normalizeSlug(slug);
+  if (Array.isArray(src)) return (src as ProgramDef[]).find((p) => p.slug === s) || null;
+  return (src as Record<string, ProgramDef>)[s] || null;
 }
 
 /** Calcula el índice del día (0-based) desde cualquier formato (number o string) */
 function getTodayIndexFromActive(active: ActiveProgramsStore, slug: string) {
-  const p = active?.[slug] || {};
+  const p = active?.[slug] || active?.[normalizeSlug(slug)] || {};
   // Preferimos currentDay/current_day (1-based). Si no existen, usamos dayIndex (0-based).
   const rawOneBased = p.currentDay ?? p.current_day;
   if (rawOneBased !== undefined) {
-    const n = Math.max(1, Number(rawOneBased) || 1); // Coerce + clamp (mínimo día 1)
+    const n = Math.max(1, Number(rawOneBased) || 1); // coerce + clamp
     return n - 1;
   }
   const n0 = Number(p.dayIndex);
@@ -183,23 +190,24 @@ function ProgramMiniBar({
   const program = getProgramBySlug(slug);
   if (!program) return null;
 
-  const dayIdx = getTodayIndexFromActive(activeStore, slug);
+  const canonSlug = program.slug; // ya normalizado
+  const dayIdx = getTodayIndexFromActive(activeStore, canonSlug);
   const tasks: ProgramTask[] = program?.days?.[dayIdx]?.tasks || [];
 
   return (
     <div className="rounded-2xl border px-4 py-3" style={{ borderColor: 'var(--line, rgba(0,0,0,.16))' }}>
-      <div className="text-sm font-medium mb-2 truncate">{program.title || slug}</div>
+      <div className="text-sm font-medium mb-2 truncate">{program.title || canonSlug}</div>
       {tasks.length === 0 ? (
         <span className="text-xs text-black/50">Hoy no hay tareas.</span>
       ) : (
         <ul className="flex items-center gap-8">
           {tasks.map((t, i) => {
-            const taskId = String(t.id ?? `${slug}-d${dayIdx}-t${i}`);
-            const checked = isChecked(slug, dayIdx, taskId);
+            const taskId = String(t.id ?? `${canonSlug}-d${dayIdx}-t${i}`);
+            const checked = isChecked(canonSlug, dayIdx, taskId);
             return (
               <li key={taskId}>
                 <button
-                  onClick={() => onToggle(slug, dayIdx, taskId)}
+                  onClick={() => onToggle(canonSlug, dayIdx, taskId)}
                   className="grid h-6 w-6 place-items-center rounded-full border"
                   title={checked ? 'Desmarcar' : 'Marcar'}
                   aria-label={checked ? `Desmarcar ${t.label}` : `Marcar ${t.label}`}
@@ -228,11 +236,6 @@ function hasValidDay(node: any) {
   const raw = node?.currentDay ?? node?.current_day ?? node?.dayIndex;
   const n = Number(raw);
   return Number.isFinite(n);
-}
-function normalizeSlug(slug: string) {
-  // Si necesitas mapear alias (p.ej., 'lectura-30' <-> 'lectura') hazlo aquí.
-  // Por ahora devolvemos tal cual.
-  return slug;
 }
 
 /* =========================
@@ -281,18 +284,50 @@ export default function HabitosClient() {
   useEffect(() => {
     setMasters(loadMasterHabits());
     setDaily(loadDaily());
-    setChecks(loadProgramChecks());
+
+    // === MIGRACIÓN checks -> slugs canónicos ===
+    const checks0 = loadProgramChecks();
+    let checksChanged = false;
+    const checksNorm: ChecksMap = {};
+    for (const [slug, byDay] of Object.entries(checks0 || {})) {
+      const ns = normalizeSlug(slug);
+      if (!checksNorm[ns]) checksNorm[ns] = {};
+      Object.assign(checksNorm[ns], byDay);
+      if (ns !== slug) checksChanged = true;
+    }
+    if (checksChanged) saveProgramChecks(checksNorm);
+    setChecks(checksNorm);
 
     const readActives = () => {
       try {
-        const store = (loadActive() || {}) as ActiveProgramsStore;
+        const raw = (loadActive() || {}) as ActiveProgramsStore;
 
-        // Solo aceptamos entradas con día válido (número o string coercible) y normalizamos slug
-        const validSlugs = Object.entries(store)
+        // === MIGRACIÓN activos -> slugs canónicos ===
+        let changed = false;
+        const norm: ActiveProgramsStore = {};
+        for (const [slug, node] of Object.entries(raw)) {
+          const ns = normalizeSlug(slug);
+          // Si colisiona, prioriza el que tenga día definido
+          if (norm[ns]) {
+            const a = norm[ns];
+            const an = Number(a?.currentDay ?? a?.current_day ?? a?.dayIndex);
+            const bn = Number(node?.currentDay ?? node?.current_day ?? node?.dayIndex);
+            norm[ns] = Number.isFinite(an) ? a : node;
+          } else {
+            norm[ns] = node;
+          }
+          if (ns !== slug) changed = true;
+        }
+        if (changed) {
+          localStorage.setItem(LS_PROGRAMS_ACTIVE, JSON.stringify(norm));
+          window.dispatchEvent(new Event('akira:programs-updated'));
+        }
+
+        const validSlugs = Object.entries(norm)
           .filter(([, node]) => hasValidDay(node))
           .map(([slug]) => normalizeSlug(slug));
 
-        setActiveStore(store);
+        setActiveStore(norm);
         setActivePrograms(Array.from(new Set(validSlugs)));
       } catch {
         setActiveStore({});
