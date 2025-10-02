@@ -30,7 +30,7 @@ type ProgramDef = {
 };
 type ActiveProgramsStore = Record<
   string,
-  { currentDay?: number; current_day?: number; dayIndex?: number; [k: string]: any }
+  { currentDay?: number | string; current_day?: number | string; dayIndex?: number | string; [k: string]: any }
 >;
 
 /* =========================
@@ -154,17 +154,18 @@ function getProgramBySlug(slug: string): ProgramDef | null {
   if (Array.isArray(src)) return (src as ProgramDef[]).find((p) => p.slug === slug) || null;
   return (src as Record<string, ProgramDef>)[slug] || null;
 }
+
+/** Calcula el índice del día (0-based) desde cualquier formato (number o string) */
 function getTodayIndexFromActive(active: ActiveProgramsStore, slug: string) {
   const p = active?.[slug] || {};
-  // Preferimos currentDay (1-based), si no, current_day, si no, dayIndex (0-based)
-  const oneBased =
-    typeof p.currentDay === 'number'
-      ? p.currentDay
-      : typeof p.current_day === 'number'
-      ? p.current_day
-      : undefined;
-  if (typeof oneBased === 'number') return Math.max(0, (oneBased as number) - 1);
-  if (typeof p.dayIndex === 'number') return Math.max(0, p.dayIndex as number);
+  // Preferimos currentDay/current_day (1-based). Si no existen, usamos dayIndex (0-based).
+  const rawOneBased = p.currentDay ?? p.current_day;
+  if (rawOneBased !== undefined) {
+    const n = Math.max(1, Number(rawOneBased) || 1); // Coerce + clamp (mínimo día 1)
+    return n - 1;
+  }
+  const n0 = Number(p.dayIndex);
+  if (Number.isFinite(n0)) return Math.max(0, n0);
   return 0;
 }
 
@@ -222,9 +223,11 @@ function ProgramMiniBar({
 /* =========================
    Filtros/normalización de programas activos
    ========================= */
+/** Acepta números o strings ("2") y los convierte a número */
 function hasValidDay(node: any) {
-  const d = node?.currentDay ?? node?.current_day ?? node?.dayIndex;
-  return Number.isFinite(d);
+  const raw = node?.currentDay ?? node?.current_day ?? node?.dayIndex;
+  const n = Number(raw);
+  return Number.isFinite(n);
 }
 function normalizeSlug(slug: string) {
   // Si necesitas mapear alias (p.ej., 'lectura-30' <-> 'lectura') hazlo aquí.
@@ -284,7 +287,7 @@ export default function HabitosClient() {
       try {
         const store = (loadActive() || {}) as ActiveProgramsStore;
 
-        // Solo aceptamos entradas con día definido y normalizamos slug
+        // Solo aceptamos entradas con día válido (número o string coercible) y normalizamos slug
         const validSlugs = Object.entries(store)
           .filter(([, node]) => hasValidDay(node))
           .map(([slug]) => normalizeSlug(slug));
@@ -328,7 +331,6 @@ export default function HabitosClient() {
   useEffect(() => {
     if (masters.length === 0) return;
     ensureDailyForDate(today);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [masters, today]);
 
   function ensureDailyForDate(dKey: string) {
