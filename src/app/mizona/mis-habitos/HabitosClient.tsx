@@ -381,7 +381,7 @@ export default function HabitosClient() {
     const d = parseKeyToDate(dKey);
     return masters
       .filter((h) => isInRange(dKey, h.startDate, h.endDate))
-      .filter((h) => !(h.weekend === false && isWeekendDay(d)))
+      .filter((h) => !(h.weekend === false && isWeekendDay(d))) // <-- FIX
       .map((h) => h.id);
   }
   function toggleDone(habitId: string, dKey?: string, evt?: React.MouseEvent) {
@@ -414,7 +414,7 @@ export default function HabitosClient() {
     const bucket = daily[today] ?? {};
     return masters
       .filter((h) => isInRange(today, h.startDate, h.endDate))
-      .filter((h) => !(h.weekend === false && isWeekendDay(d)))
+      .filter((h) => !(h.weekend === false && isWeekendDay(d))) // <-- FIX
       .map((h) => ({ ...h, done: !!bucket[h.id]?.done }));
   }, [masters, daily, today]);
 
