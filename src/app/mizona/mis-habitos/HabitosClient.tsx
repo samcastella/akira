@@ -13,7 +13,7 @@ import {
   initProgramsLocal,
   getActiveSlugs,
   getDayIndexFor,
-  LS_ACTIVE as LS_PROGRAMS_ACTIVE, // para escuchar cambios cross-tab
+  LS_ACTIVE as LS_PROGRAMS_ACTIVE, // 'akira_programs_active_v1'
 } from '@/lib/programsLocal';
 import { pullUserPrograms } from '@/lib/programSync';
 
@@ -23,6 +23,7 @@ import { pullUserPrograms } from '@/lib/programSync';
 const LS_HABITS_MASTER = 'akira_habits_master_v1';
 const LS_HABITS_DAILY = 'akira_habits_daily_v1';
 const LS_PROGRAM_CHECKS = 'akira_programs_daily_checks_v1'; // { [slug]: { [dayIdx]: { [taskId]: true } } }
+const LS_PROGRAMS_ACTIVE_LEGACY = 'akira_program_active'; // legacy single-object (por si acaso)
 
 type DailyEntry = { done: boolean; doneAt?: number };
 type DailyMap = Record<string, Record<string, DailyEntry>>;
@@ -171,7 +172,15 @@ function ProgramMiniBar({
   isChecked: (slug: string, dayIdx: number, taskId: string) => boolean;
 }) {
   const program = getProgramBySlug(slug);
-  if (!program) return null;
+
+  // Debug: si no se encuentra el programa en la tabla, mostramos una píldora con el slug
+  if (!program) {
+    return (
+      <div className="rounded-2xl border px-4 py-3" style={{ borderColor: 'var(--line, rgba(0,0,0,.16))' }}>
+        <div className="text-sm text-black/60">Programa no encontrado en datos: <b>{slug}</b></div>
+      </div>
+    );
+  }
 
   const canonSlug = program.slug; // ya normalizado
   const dayIdx = getDayIndexFor(canonSlug) ?? 0;
@@ -211,6 +220,20 @@ function ProgramMiniBar({
   );
 }
 
+/* Pequeño componente de depuración: lista los slugs detectados */
+function ActiveSlugsChips({ slugs }: { slugs: string[] }) {
+  if (!slugs?.length) return null;
+  return (
+    <div className="mb-2 flex flex-wrap gap-2">
+      {slugs.map((s) => (
+        <span key={s} className="text-xs rounded-full border px-2 py-1 text-black/70">
+          {s}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 /* =========================
    Componente principal
    ========================= */
@@ -235,7 +258,7 @@ export default function HabitosClient() {
       const ms = next.getTime() - now.getTime();
       midnightTimer.current = window.setTimeout(() => {
         setToday(dateKey());
-        // refresco de slugs por si cambia el índice del día
+        // refresco por si cambia el índice del día
         setActivePrograms(getActiveSlugs());
         schedule();
       }, ms + 1000);
@@ -250,8 +273,7 @@ export default function HabitosClient() {
   const user = (useUserProfile?.() as any) || {};
   const username = String(user?.username ?? '').trim();
   const fullName = String(user?.nombre ?? '').trim();
-  const parts = fullName.split(/\s+/).filter(Boolean);
-  const firstName = parts[0] || '';
+  const firstName = (fullName.split(/\s+/).filter(Boolean)[0] || '');
   const greetingName = firstName || username || 'usuario/a';
   const avatar = (user?.foto as string | undefined) || undefined;
 
@@ -265,7 +287,7 @@ export default function HabitosClient() {
     const checks0 = loadProgramChecks();
     const checksNorm: ChecksMap = {};
     for (const [slug, byDay] of Object.entries(checks0 || {})) {
-      const ns = normalizeSlug(slug);
+      const ns = String(slug).replace(/-30$/, '');
       if (!checksNorm[ns]) checksNorm[ns] = {};
       Object.assign(checksNorm[ns], byDay);
     }
@@ -294,9 +316,11 @@ export default function HabitosClient() {
     const onVisibility = () => { if (!document.hidden) refreshActives(); };
     const onFocus = () => refreshActives();
     const onStorage = (e: StorageEvent) => {
-      if (e.key === LS_PROGRAMS_ACTIVE || e.key === LS_PROGRAM_CHECKS) {
-        if (e.key === LS_PROGRAMS_ACTIVE) refreshActives();
-        if (e.key === LS_PROGRAM_CHECKS) setChecks(loadProgramChecks());
+      if (e.key === LS_PROGRAMS_ACTIVE || e.key === LS_PROGRAMS_ACTIVE_LEGACY) {
+        refreshActives();
+      }
+      if (e.key === LS_PROGRAM_CHECKS) {
+        setChecks(loadProgramChecks());
       }
     };
 
@@ -463,6 +487,10 @@ export default function HabitosClient() {
       {/* 2) Programas activos */}
       <section className="mb-6">
         <SubTitle>Programas activos</SubTitle>
+
+        {/* chips de depuración: siempre muestran los slugs activos detectados */}
+        <ActiveSlugsChips slugs={activePrograms} />
+
         {activePrograms?.length ? (
           <div className="space-y-3" key={checksVersion /* fuerza refresco simple */}>
             {activePrograms.map((slug) => (
