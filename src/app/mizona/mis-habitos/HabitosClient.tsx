@@ -13,7 +13,7 @@ import {
   initProgramsLocal,
   getActiveSlugs,
   getDayIndexFor,
-  LS_ACTIVE as LS_PROGRAMS_ACTIVE, // 'akira_programs_active_v1'
+  LS_ACTIVE as LS_PROGRAMS_ACTIVE,
 } from '@/lib/programsLocal';
 import { pullUserPrograms } from '@/lib/programSync';
 
@@ -23,7 +23,7 @@ import { pullUserPrograms } from '@/lib/programSync';
 const LS_HABITS_MASTER = 'akira_habits_master_v1';
 const LS_HABITS_DAILY = 'akira_habits_daily_v1';
 const LS_PROGRAM_CHECKS = 'akira_programs_daily_checks_v1';
-const LS_PROGRAMS_ACTIVE_LEGACY = 'akira_program_active'; // legacy single-object
+const LS_PROGRAMS_ACTIVE_LEGACY = 'akira_program_active'; // legacy
 
 type DailyEntry = { done: boolean; doneAt?: number };
 type DailyMap = Record<string, Record<string, DailyEntry>>;
@@ -149,49 +149,104 @@ async function confettiBurst(evt?: React.MouseEvent, big = false) {
 }
 
 /* =========================
-   Programas: lookup con fallbacks fuertes
+   Programas: lookup robusto
    ========================= */
 function normalizeSlug(slug: string) {
   return String(slug).replace(/-30$/, '');
 }
 
-// caché en módulo
-let __PROGRAMS_CACHE: any = null;
+// caches de módulo
+let __PROGRAMS_SRC: any = null;
+let __PROGRAMS_INDEX: Record<string, ProgramDef> | null = null;
+
+function pickExport(mod: any) {
+  return (
+    mod?.PROGRAMS ??
+    mod?.default ??
+    mod?.PROGRAMS_MAP ??
+    mod?.PROGRAM_LIST ??
+    mod?.programs ??
+    null
+  );
+}
+
+function indexPrograms(src: any) {
+  if (!src) return;
+  const map: Record<string, ProgramDef> = {};
+  if (Array.isArray(src)) {
+    for (const p of src as ProgramDef[]) {
+      if (p?.slug) map[normalizeSlug(p.slug)] = p;
+    }
+  } else if (typeof src === 'object') {
+    for (const v of Object.values(src as Record<string, ProgramDef>)) {
+      if (v?.slug) map[normalizeSlug(v.slug)] = v;
+    }
+    // además, si vienen por clave directa { 'detox-tecnologico': {...} }
+    for (const [k, v] of Object.entries(src as Record<string, ProgramDef>)) {
+      if (v?.slug) map[normalizeSlug(k)] = v as ProgramDef;
+    }
+  }
+  __PROGRAMS_SRC = src;
+  __PROGRAMS_INDEX = map;
+}
 
 function readProgramsSource(): any {
-  // 1) import estático (si vino)
-  if (PROGRAMS) return PROGRAMS;
-  // 2) caché previa
-  if (__PROGRAMS_CACHE) return __PROGRAMS_CACHE;
-  // 3) globals posibles en runtime
+  if (__PROGRAMS_SRC) return __PROGRAMS_SRC;
+
+  // 1) import estático
+  if (PROGRAMS) {
+    indexPrograms(PROGRAMS as any);
+    return __PROGRAMS_SRC;
+  }
+
+  // 2) globals de runtime
   if (typeof window !== 'undefined') {
     const w: any = window;
-    return w.__PROGRAMS || w.PROGRAMS || null;
+    const g = w.__PROGRAMS || w.PROGRAMS || null;
+    if (g) {
+      indexPrograms(g);
+      return __PROGRAMS_SRC;
+    }
   }
   return null;
+}
+
+async function hydratePrograms(): Promise<boolean> {
+  // si ya hay, nada
+  if (readProgramsSource()) return true;
+
+  try {
+    const mod = await import('@/data/programs');
+    const picked = pickExport(mod);
+    if (picked) {
+      indexPrograms(picked);
+      return true;
+    }
+  } catch {
+    /* noop */
+  }
+
+  // último intento: mirar de nuevo globals (pueden haberse inyectado después)
+  if (typeof window !== 'undefined') {
+    const w: any = window;
+    const g = w.__PROGRAMS || w.PROGRAMS || null;
+    if (g) {
+      indexPrograms(g);
+      return true;
+    }
+  }
+  return false;
 }
 
 function getProgramBySlug(slug: string): ProgramDef | null {
+  if (!__PROGRAMS_INDEX) readProgramsSource();
   const s = normalizeSlug(slug);
-  const src: any = readProgramsSource();
-
-  if (!src) return null;
-
-  if (Array.isArray(src)) {
-    return (src as ProgramDef[]).find((p) => normalizeSlug(p.slug) === s) || null;
-  }
-  if (typeof src === 'object') {
-    // por clave directa…
-    if ((src as Record<string, ProgramDef>)[s]) return (src as Record<string, ProgramDef>)[s];
-    // …o por coincidencia de p.slug
-    const hit = Object.values(src as Record<string, ProgramDef>).find(
-      (p) => normalizeSlug((p as ProgramDef).slug) === s
-    );
-    return (hit as ProgramDef) || null;
-  }
-  return null;
+  return __PROGRAMS_INDEX?.[s] || null;
 }
 
+/* =========================
+   Componentes UI de Programas
+   ========================= */
 function ProgramMiniBar({
   slug,
   onToggle,
@@ -201,10 +256,10 @@ function ProgramMiniBar({
   slug: string;
   onToggle: (slug: string, dayIdx: number, taskId: string) => void;
   isChecked: (slug: string, dayIdx: number, taskId: string) => boolean;
-  programsTick: number; // fuerza reevaluación cuando se hidratan PROGRAMS
+  programsTick: number; // fuerza reevaluar getProgramBySlug cuando cambia
 }) {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  void programsTick; // sólo para re-render
+  // usar programsTick para re-render
+  void programsTick;
 
   const program = getProgramBySlug(slug);
 
@@ -218,7 +273,7 @@ function ProgramMiniBar({
     );
   }
 
-  const canonSlug = program.slug; // ya normalizado
+  const canonSlug = program.slug;
   const dayIdx = getDayIndexFor(canonSlug) ?? 0;
   const tasks: ProgramTask[] = program?.days?.[dayIdx]?.tasks || [];
 
@@ -283,52 +338,31 @@ export default function HabitosClient() {
   const [activePrograms, setActivePrograms] = useState<string[]>([]);
   const [checks, setChecks] = useState<ChecksMap>({});
   const [checksVersion, setChecksVersion] = useState<number>(0);
-  const [programsTick, setProgramsTick] = useState<number>(0); // re-render cuando se hidratan datasets
+  const [programsTick, setProgramsTick] = useState<number>(0);
 
-  // Hidratar PROGRAMS en cliente (runtime o lazy import) + mini-poll para globals que llegan tarde
+  // Hidratar PROGRAMS en cliente + mini-poll
   useEffect(() => {
     let tries = 0;
-    let stop = false;
+    let cancelled = false;
 
     const bump = () => setProgramsTick((t) => t + 1);
 
-    const tryHydrate = async () => {
-      if (stop) return;
-
-      // ya hay algo?
-      let src = readProgramsSource();
-
-      // si no hay, mira window.* y luego haz lazy import
-      if (!src && typeof window !== 'undefined') {
-        const w: any = window;
-        if (w.__PROGRAMS || w.PROGRAMS) src = w.__PROGRAMS || w.PROGRAMS;
-      }
-      if (!src) {
-        try {
-          const mod = await import('@/data/programs');
-          src = (mod as any)?.PROGRAMS || null;
-        } catch {
-          /* noop */
-        }
-      }
-
-      // cachear si conseguimos algo
-      if (src) {
-        __PROGRAMS_CACHE = src;
+    const step = async () => {
+      if (cancelled) return;
+      const ok = await hydratePrograms();
+      if (ok) {
         bump();
         return;
       }
-
-      // reintentar un poco (por si layout inyecta globals tras montar)
       if (tries < 10) {
         tries += 1;
-        setTimeout(tryHydrate, 200);
+        setTimeout(step, 200);
       }
     };
 
-    tryHydrate();
+    step();
     return () => {
-      stop = true;
+      cancelled = true;
     };
   }, []);
 
@@ -360,7 +394,7 @@ export default function HabitosClient() {
   const greetingName = firstName || username || 'usuario/a';
   const avatar = (user?.foto as string | undefined) || undefined;
 
-  // cargar estado inicial + sync de programas (reactivo)
+  // cargar estado inicial + sync de programas
   const uid = useAuthUserId();
   useEffect(() => {
     setMasters(loadMasterHabits());
@@ -377,12 +411,12 @@ export default function HabitosClient() {
     if (JSON.stringify(checks0) !== JSON.stringify(checksNorm)) saveProgramChecks(checksNorm);
     setChecks(checksNorm);
 
-    // Init + primer refresco de slugs
+    // Init + primer refresco
     initProgramsLocal();
     const refreshActives = () => setActivePrograms(getActiveSlugs());
     refreshActives();
 
-    // micro-poll tras montar (cubre “acabo de empezar programa”)
+    // micro-poll tras montar
     const t0 = setTimeout(refreshActives, 250);
     const t1 = setTimeout(refreshActives, 750);
     const t2 = setTimeout(refreshActives, 1200);
