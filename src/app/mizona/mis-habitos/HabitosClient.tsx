@@ -149,17 +149,42 @@ async function confettiBurst(evt?: React.MouseEvent, big = false) {
 }
 
 /* =========================
-   Programas
+   Programas: lookup con fallbacks
    ========================= */
 function normalizeSlug(slug: string) {
   return String(slug).replace(/-30$/, '');
 }
+
+/** Caché interna para hidratar datos cuando el import estático no llega al cliente. */
+let __PROGRAMS_CACHE: any = null;
+
 function getProgramBySlug(slug: string): ProgramDef | null {
-  const src: any = PROGRAMS as any;
-  if (!src) return null;
   const s = normalizeSlug(slug);
-  if (Array.isArray(src)) return (src as ProgramDef[]).find((p) => p.slug === s) || null;
-  return (src as Record<string, ProgramDef>)[s] || null;
+
+  // 1) import estático (si llegó al bundle de cliente)
+  const fromImport: any = (PROGRAMS as any) || null;
+  if (fromImport) {
+    if (Array.isArray(fromImport)) return fromImport.find((p) => normalizeSlug(p.slug) === s) || null;
+    if (typeof fromImport === 'object') return (fromImport as Record<string, ProgramDef>)[s] || null;
+  }
+
+  // 2) caché / window.__PROGRAMS (inyectado en runtime)
+  const srcCache: any =
+    __PROGRAMS_CACHE ||
+    (typeof window !== 'undefined' ? (window as any).__PROGRAMS : null);
+
+  if (srcCache) {
+    if (Array.isArray(srcCache)) return srcCache.find((p: any) => normalizeSlug(p.slug) === s) || null;
+    if (typeof srcCache === 'object') {
+      return (
+        (srcCache as Record<string, ProgramDef>)[s] ||
+        Object.values(srcCache as Record<string, ProgramDef>).find((p) => normalizeSlug(p.slug) === s) ||
+        null
+      );
+    }
+  }
+
+  return null;
 }
 
 function ProgramMiniBar({
@@ -173,11 +198,12 @@ function ProgramMiniBar({
 }) {
   const program = getProgramBySlug(slug);
 
-  // Debug: si no se encuentra el programa en la tabla, mostramos una píldora con el slug
   if (!program) {
     return (
       <div className="rounded-2xl border px-4 py-3" style={{ borderColor: 'var(--line, rgba(0,0,0,.16))' }}>
-        <div className="text-sm text-black/60">Programa no encontrado en datos: <b>{slug}</b></div>
+        <div className="text-sm text-black/60">
+          Programa no encontrado en datos: <b>{slug}</b>
+        </div>
       </div>
     );
   }
@@ -220,7 +246,7 @@ function ProgramMiniBar({
   );
 }
 
-/* Pequeño componente de depuración: lista los slugs detectados */
+/* Depuración: chips con slugs detectados */
 function ActiveSlugsChips({ slugs }: { slugs: string[] }) {
   if (!slugs?.length) return null;
   return (
@@ -248,6 +274,28 @@ export default function HabitosClient() {
   const [checks, setChecks] = useState<ChecksMap>({});
   const [checksVersion, setChecksVersion] = useState<number>(0); // para forzar re-render cuando cambian checks
 
+  // Rellenar caché de PROGRAMS en cliente (window.__PROGRAMS o lazy import)
+  useEffect(() => {
+    (async () => {
+      try {
+        if (!__PROGRAMS_CACHE && typeof window !== 'undefined') {
+          const runtime = (window as any).__PROGRAMS;
+          if (runtime) {
+            __PROGRAMS_CACHE = runtime;
+            return;
+          }
+          // fallback: intenta lazy import del módulo de datos
+          const mod = await import('@/data/programs');
+          if ((mod as any)?.PROGRAMS) {
+            __PROGRAMS_CACHE = (mod as any).PROGRAMS;
+          }
+        }
+      } catch {
+        // silencioso
+      }
+    })();
+  }, []);
+
   // rollover a medianoche
   const midnightTimer = useRef<number | null>(null);
   useEffect(() => {
@@ -258,7 +306,6 @@ export default function HabitosClient() {
       const ms = next.getTime() - now.getTime();
       midnightTimer.current = window.setTimeout(() => {
         setToday(dateKey());
-        // refresco por si cambia el índice del día
         setActivePrograms(getActiveSlugs());
         schedule();
       }, ms + 1000);
@@ -299,7 +346,7 @@ export default function HabitosClient() {
     const refreshActives = () => setActivePrograms(getActiveSlugs());
     refreshActives();
 
-    // micro-poll tras montar (cubre caso “acabo de empezar programa”)
+    // micro-poll tras montar
     const t0 = setTimeout(refreshActives, 250);
     const t1 = setTimeout(refreshActives, 750);
     const t2 = setTimeout(refreshActives, 1200);
@@ -316,12 +363,8 @@ export default function HabitosClient() {
     const onVisibility = () => { if (!document.hidden) refreshActives(); };
     const onFocus = () => refreshActives();
     const onStorage = (e: StorageEvent) => {
-      if (e.key === LS_PROGRAMS_ACTIVE || e.key === LS_PROGRAMS_ACTIVE_LEGACY) {
-        refreshActives();
-      }
-      if (e.key === LS_PROGRAM_CHECKS) {
-        setChecks(loadProgramChecks());
-      }
+      if (e.key === LS_PROGRAMS_ACTIVE || e.key === LS_PROGRAMS_ACTIVE_LEGACY) refreshActives();
+      if (e.key === LS_PROGRAM_CHECKS) setChecks(loadProgramChecks());
     };
 
     window.addEventListener('akira:programs-updated', onProgramsUpdated as EventListener);
@@ -488,7 +531,7 @@ export default function HabitosClient() {
       <section className="mb-6">
         <SubTitle>Programas activos</SubTitle>
 
-        {/* chips de depuración: siempre muestran los slugs activos detectados */}
+        {/* chips de depuración: muestran los slugs activos detectados */}
         <ActiveSlugsChips slugs={activePrograms} />
 
         {activePrograms?.length ? (
