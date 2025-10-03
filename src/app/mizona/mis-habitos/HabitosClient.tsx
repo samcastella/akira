@@ -3,6 +3,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { Check, Plus } from 'lucide-react';
 import type { HabitMaster } from '@/components/habits/HabitForm';
 import { useUserProfile, useAuthUserId } from '@/lib/user';
@@ -214,6 +215,8 @@ function ProgramMiniBar({
    Componente principal
    ========================= */
 export default function HabitosClient() {
+  const pathname = usePathname();
+
   const [masters, setMasters] = useState<HabitMaster[]>([]);
   const [daily, setDaily] = useState<DailyMap>({});
   const [today, setToday] = useState<string>(dateKey());
@@ -232,7 +235,7 @@ export default function HabitosClient() {
       const ms = next.getTime() - now.getTime();
       midnightTimer.current = window.setTimeout(() => {
         setToday(dateKey());
-        // si cambia el día, también refrescamos los índices
+        // refresco de slugs por si cambia el índice del día
         setActivePrograms(getActiveSlugs());
         schedule();
       }, ms + 1000);
@@ -252,55 +255,64 @@ export default function HabitosClient() {
   const greetingName = firstName || username || 'usuario/a';
   const avatar = (user?.foto as string | undefined) || undefined;
 
-  // cargar estado inicial + sync de programas
+  // cargar estado inicial + sync de programas (reactivo)
   const uid = useAuthUserId();
   useEffect(() => {
     setMasters(loadMasterHabits());
     setDaily(loadDaily());
 
-    // === MIGRACIÓN checks -> slugs canónicos ===
+    // Normalizar checks a slugs canónicos
     const checks0 = loadProgramChecks();
-    let checksChanged = false;
     const checksNorm: ChecksMap = {};
     for (const [slug, byDay] of Object.entries(checks0 || {})) {
       const ns = normalizeSlug(slug);
       if (!checksNorm[ns]) checksNorm[ns] = {};
       Object.assign(checksNorm[ns], byDay);
-      if (ns !== slug) checksChanged = true;
     }
-    if (checksChanged) saveProgramChecks(checksNorm);
+    if (JSON.stringify(checks0) !== JSON.stringify(checksNorm)) saveProgramChecks(checksNorm);
     setChecks(checksNorm);
 
-    // Inicializa sistema local (migra legacy → canónico) y carga slugs activos
-    const refreshActives = () => setActivePrograms(getActiveSlugs());
+    // Init + primer refresco
     initProgramsLocal();
+    const refreshActives = () => setActivePrograms(getActiveSlugs());
     refreshActives();
 
-    // Pull remoto → fusiona en local → recarga slugs
-    const hydrate = async () => {
-      try {
-        if (uid) await pullUserPrograms();
-      } catch {}
+    // micro-poll tras montar (cubre caso “acabo de empezar programa”)
+    const t0 = setTimeout(refreshActives, 250);
+    const t1 = setTimeout(refreshActives, 750);
+    const t2 = setTimeout(refreshActives, 1200);
+
+    // Pull remoto → recarga
+    (async () => {
+      try { if (uid) await pullUserPrograms(); } catch {}
       initProgramsLocal();
       refreshActives();
-    };
-    hydrate();
+    })();
 
-    // Escuchar cambios de almacenamiento (checks y programas activos)
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === LS_PROGRAM_CHECKS) setChecks(loadProgramChecks());
-      if (e.key === LS_PROGRAMS_ACTIVE) refreshActives();
-    };
+    // listeners MISMA pestaña + cross-tab
     const onProgramsUpdated = () => refreshActives();
+    const onVisibility = () => { if (!document.hidden) refreshActives(); };
+    const onFocus = () => refreshActives();
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === LS_PROGRAMS_ACTIVE || e.key === LS_PROGRAM_CHECKS) {
+        if (e.key === LS_PROGRAMS_ACTIVE) refreshActives();
+        if (e.key === LS_PROGRAM_CHECKS) setChecks(loadProgramChecks());
+      }
+    };
 
-    window.addEventListener('storage', onStorage);
     window.addEventListener('akira:programs-updated', onProgramsUpdated as EventListener);
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('storage', onStorage);
 
     return () => {
-      window.removeEventListener('storage', onStorage);
+      clearTimeout(t0); clearTimeout(t1); clearTimeout(t2);
       window.removeEventListener('akira:programs-updated', onProgramsUpdated as EventListener);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('storage', onStorage);
     };
-  }, [uid]);
+  }, [uid, pathname]);
 
   // asegurar bucket de hoy (hábitos personales)
   useEffect(() => {
