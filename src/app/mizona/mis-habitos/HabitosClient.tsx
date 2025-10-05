@@ -148,10 +148,17 @@ async function confettiBurst(evt?: React.MouseEvent, big = false) {
 }
 
 /* =========================
-   Programas: lookup (solo window.__PROGRAMS)
+   Programas: lookup (usa __PROGRAMS + __PROGRAMS_ALIASES)
    ========================= */
+function getAliases(): Record<string, string> {
+  if (typeof window === 'undefined') return {};
+  return ((window as any).__PROGRAMS_ALIASES ?? {}) as Record<string, string>;
+}
 function normalizeSlug(slug: string) {
-  return String(slug).replace(/-30$/, '');
+  const s = String(slug || '');
+  const alias = getAliases()[s];
+  // Prioriza alias explícito y, si no existe, quita sufijo legacy -30
+  return (alias ?? s).replace(/-30$/, '');
 }
 
 function getProgramBySlug(slug: string): ProgramDef | null {
@@ -278,7 +285,7 @@ export default function HabitosClient() {
       const ms = next.getTime() - now.getTime();
       midnightTimer.current = window.setTimeout(() => {
         setToday(dateKey());
-        setActivePrograms(getActiveSlugs());
+        setActivePrograms(normalizeSlugs(getActiveSlugs()));
         schedule();
       }, ms + 1000);
     };
@@ -292,7 +299,7 @@ export default function HabitosClient() {
   const user = (useUserProfile?.() as any) || {};
   const username = String(user?.username ?? '').trim();
   const fullName = String(user?.nombre ?? '').trim();
-  const firstName = (fullName.split(/\s+/).filter(Boolean)[0] || '');
+  const firstName = fullName.split(/\s+/).filter(Boolean)[0] || '';
   const greetingName = firstName || username || 'usuario/a';
   const avatar = (user?.foto as string | undefined) || undefined;
 
@@ -302,20 +309,21 @@ export default function HabitosClient() {
     setMasters(loadMasterHabits());
     setDaily(loadDaily());
 
-    // Normalizar checks a slugs canónicos
+    // Normalizar checks a slugs canónicos (aplica alias + fallback -30)
     const checks0 = loadProgramChecks();
     const checksNorm: ChecksMap = {};
+    const aliases = getAliases();
     for (const [slug, byDay] of Object.entries(checks0 || {})) {
-      const ns = String(slug).replace(/-30$/, '');
-      if (!checksNorm[ns]) checksNorm[ns] = {};
-      Object.assign(checksNorm[ns], byDay);
+      const target = (aliases[slug] ?? slug).replace(/-30$/, '');
+      if (!checksNorm[target]) checksNorm[target] = {};
+      Object.assign(checksNorm[target], byDay);
     }
     if (JSON.stringify(checks0) !== JSON.stringify(checksNorm)) saveProgramChecks(checksNorm);
     setChecks(checksNorm);
 
     // Init + primer refresco
     initProgramsLocal();
-    const refreshActives = () => setActivePrograms(getActiveSlugs());
+    const refreshActives = () => setActivePrograms(normalizeSlugs(getActiveSlugs()));
     refreshActives();
 
     // pequeño doble-check por si hay latencia en otras pestañas
@@ -381,7 +389,7 @@ export default function HabitosClient() {
     const d = parseKeyToDate(dKey);
     return masters
       .filter((h) => isInRange(dKey, h.startDate, h.endDate))
-      .filter((h) => !(h.weekend === false && isWeekendDay(d))) // <-- FIX
+      .filter((h) => !(h.weekend === false && isWeekendDay(d)))
       .map((h) => h.id);
   }
   function toggleDone(habitId: string, dKey?: string, evt?: React.MouseEvent) {
@@ -414,7 +422,7 @@ export default function HabitosClient() {
     const bucket = daily[today] ?? {};
     return masters
       .filter((h) => isInRange(today, h.startDate, h.endDate))
-      .filter((h) => !(h.weekend === false && isWeekendDay(d))) // <-- FIX
+      .filter((h) => !(h.weekend === false && isWeekendDay(d)))
       .map((h) => ({ ...h, done: !!bucket[h.id]?.done }));
   }, [masters, daily, today]);
 
@@ -573,4 +581,12 @@ function TopMenu() {
       </Link>
     </nav>
   );
+}
+
+/* =========================
+   Utils locales
+   ========================= */
+function normalizeSlugs(slugs: string[]) {
+  const aliases = getAliases();
+  return slugs.map((s) => (aliases[s] ?? s).replace(/-30$/, ''));
 }

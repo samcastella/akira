@@ -30,7 +30,27 @@ export type ProgramMeta = {
 };
 
 /* ===========================
-   Registro de programas
+   Tipos de ejecución (ProgramDef)
+   =========================== */
+export type ProgramTask = { id?: string; label: string; detail?: string; tags?: string[] };
+export type ProgramDay = { day: number; tasks: ProgramTask[] };
+export type ProgramDef = {
+  /** Slug canónico sin “-30” (coincide con slugRoute) */
+  slug: string;
+  title: string;
+  shortDescription?: string;
+  howItWorks?: string;
+  durationDays?: number;
+  accordions?: {
+    whatYouWillDo?: string[];
+    whatYouWillGet?: string[];
+    howToUse?: string[];
+  };
+  days: ProgramDay[];
+};
+
+/* ===========================
+   Registro de programas (metadatos)
    =========================== */
 export const PROGRAMS: ProgramMeta[] = [
   {
@@ -66,7 +86,125 @@ export const PROGRAMS: ProgramMeta[] = [
 ];
 
 /* ===========================
-   Utilidades
+   Imports JSON de programas (datos diarios)
+   =========================== */
+/**
+ * Requisitos de tsconfig:
+ *  - "resolveJsonModule": true
+ *  - "module": "esnext" (o compatible con imports ESM)
+ */
+import lecturaJson from "./programs/lectura-30.json";
+import detoxJson from "./programs/detox-tecnologico-30.json";
+
+/* ===========================
+   Normalización y construcción de índice
+   =========================== */
+
+/** Mapa de alias legacy -> canónico (sin “-30”). */
+export const PROGRAM_SLUG_ALIASES: Record<string, string> = {
+  "lectura-30": "lectura",
+  "detox-tecnologico-30": "detox-tecnologico",
+};
+
+function canonicalFromMeta(m: ProgramMeta) {
+  // canónico = slugRoute (sin sufijos “-30”)
+  return m.slugRoute;
+}
+
+function toProgramDef(meta: ProgramMeta, raw: any): ProgramDef {
+  const canonical = canonicalFromMeta(meta);
+
+  // Estructura base tolerante a JSONs antiguos
+  const title: string = (raw?.title ?? meta.titleShort ?? canonical) as string;
+  const shortDescription: string | undefined = raw?.shortDescription;
+  const howItWorks: string | undefined = raw?.howItWorks;
+  const durationDays: number | undefined = (raw?.durationDays ?? meta.days) as number | undefined;
+  const accordions = raw?.accordions;
+  const daysRaw: any[] = Array.isArray(raw?.days) ? raw.days : [];
+
+  // Normalizamos IDs de tareas y orden de días
+  const normalizedDays: ProgramDay[] = daysRaw
+    .map((d: any) => ({
+      day: Number(d?.day),
+      tasks: (Array.isArray(d?.tasks) ? d.tasks : []).map((t: any, i: number) => ({
+        id: t?.id ?? `${canonical}:${Number(d?.day)}:${i}`,
+        label: String(t?.label ?? "").trim(),
+        detail: t?.detail ? String(t.detail) : undefined,
+        tags: Array.isArray(t?.tags) ? (t.tags as string[]) : undefined,
+      })),
+    }))
+    .sort((a, b) => a.day - b.day);
+
+  // Comprobación ligera (no rompe, solo warn en dev)
+  if (process.env.NODE_ENV !== "production") {
+    const got = normalizedDays.map((d) => d.day);
+    const contiguous =
+      got.length === 0 || (got[0] === 1 && got.every((v, i) => v === i + 1));
+    if (!contiguous) {
+      // eslint-disable-next-line no-console
+      console.warn(`[PROGRAMS] Días no contiguos en '${canonical}':`, got);
+    }
+    normalizedDays.forEach((d) => {
+      d.tasks.forEach((t, i) => {
+        if (!t.label) {
+          // eslint-disable-next-line no-console
+          console.warn(`[PROGRAMS] Tarea vacía en ${canonical} día ${d.day} idx ${i}`);
+        }
+      });
+    });
+  }
+
+  return {
+    slug: canonical,
+    title,
+    shortDescription,
+    howItWorks,
+    durationDays,
+    accordions,
+    days: normalizedDays,
+  };
+}
+
+/** Índice canónico { slugRoute -> ProgramDef } con duplicado de claves legacy para compat. */
+export const PROGRAM_DEFS_BY_SLUG: Record<string, ProgramDef> = (() => {
+  // Vinculamos cada meta con su JSON de datos
+  const jsonByCanonical: Record<string, any> = {
+    lectura: lecturaJson,
+    "detox-tecnologico": detoxJson,
+  };
+
+  const out: Record<string, ProgramDef> = {};
+  for (const meta of PROGRAMS) {
+    if (!meta.available) continue; // solo exponemos programas operativos
+    const canonical = canonicalFromMeta(meta);
+    const raw = jsonByCanonical[canonical];
+    if (!raw) {
+      if (process.env.NODE_ENV !== "production") {
+        // eslint-disable-next-line no-console
+        console.warn(`[PROGRAMS] No hay JSON vinculado para '${canonical}'`);
+      }
+      continue;
+    }
+    out[canonical] = toProgramDef(meta, raw);
+  }
+
+  // Duplicamos claves legacy -> mismo objeto (compat con datos antiguos)
+  for (const [legacy, canonical] of Object.entries(PROGRAM_SLUG_ALIASES)) {
+    if (out[canonical]) out[legacy] = out[canonical];
+  }
+
+  return out;
+})();
+
+/** Resolver ProgramDef por slug canónico o legacy. */
+export function resolveProgramDef(slug: string): ProgramDef | undefined {
+  if (!slug) return undefined;
+  const canonical = PROGRAM_SLUG_ALIASES[slug] ?? slug;
+  return PROGRAM_DEFS_BY_SLUG[canonical] ?? PROGRAM_DEFS_BY_SLUG[slug];
+}
+
+/* ===========================
+   Utilidades (metadatos)
    =========================== */
 
 /** Conjunto de slugs de ruta disponibles (los que ya tienen page.tsx). */
@@ -119,4 +257,5 @@ export function searchPrograms(q: string) {
     return p.available && (inText || inCats);
   });
 }
+
 export { getProgramMeta as getBySlug };
