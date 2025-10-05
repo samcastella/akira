@@ -160,12 +160,57 @@ function normalizeSlug(slug: string) {
   // Prioriza alias explícito y, si no existe, quita sufijo legacy -30
   return (alias ?? s).replace(/-30$/, '');
 }
-
 function getProgramBySlug(slug: string): ProgramDef | null {
   if (typeof window === 'undefined') return null;
   const index = (window as any).__PROGRAMS as Record<string, ProgramDef> | undefined;
   if (!index) return null;
   return index[normalizeSlug(slug)] || null;
+}
+
+/* =========================
+   Modal simple para detalles de tarea
+   ========================= */
+function TaskDetailModal({
+  open,
+  onClose,
+  title,
+  detail,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  detail?: string;
+}) {
+  if (!open) return null;
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-[9999] grid place-items-center p-4"
+      style={{ background: 'rgba(0,0,0,.35)' }}
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-2xl bg-white p-4 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-2 text-sm font-semibold">{title}</div>
+        <div className="text-sm text-black/75 whitespace-pre-line">
+          {detail || 'Sin descripción.'}
+        </div>
+        <div className="mt-4 flex justify-end">
+          <button
+            onClick={onClose}
+            className="rounded-lg border px-3 py-1.5 text-sm"
+            style={{ borderColor: 'var(--line, rgba(0,0,0,.16))' }}
+            aria-label="Cerrar"
+          >
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /* =========================
@@ -185,6 +230,7 @@ function ProgramMiniBar({
   void programsTick; // sólo para volver a evaluar getProgramBySlug
 
   const program = getProgramBySlug(slug);
+  const [openTask, setOpenTask] = useState<{ title: string; detail?: string } | null>(null);
 
   if (!program) {
     return (
@@ -206,17 +252,18 @@ function ProgramMiniBar({
       {tasks.length === 0 ? (
         <span className="text-xs text-black/50">Hoy no hay tareas.</span>
       ) : (
-        <ul className="flex items-center gap-8">
+        <ul className="space-y-3">
           {tasks.map((t, i) => {
             const taskId = String(t.id ?? `${canonSlug}-d${dayIdx}-t${i}`);
             const checked = isChecked(canonSlug, dayIdx, taskId);
+            const label = t.label || `Tarea ${i + 1}`;
             return (
-              <li key={taskId}>
+              <li key={taskId} className="flex items-center gap-3">
                 <button
                   onClick={() => onToggle(canonSlug, dayIdx, taskId)}
-                  className="grid h-6 w-6 place-items-center rounded-full border"
+                  className="grid h-6 w-6 place-items-center rounded-full border shrink-0"
                   title={checked ? 'Desmarcar' : 'Marcar'}
-                  aria-label={checked ? `Desmarcar ${t.label}` : `Marcar ${t.label}`}
+                  aria-label={checked ? `Desmarcar ${label}` : `Marcar ${label}`}
                   style={
                     checked
                       ? { background: '#22c55e', color: 'white', borderColor: '#16a34a' }
@@ -225,11 +272,27 @@ function ProgramMiniBar({
                 >
                   {checked ? <Check size={14} /> : null}
                 </button>
+                <span className="text-sm grow min-w-0">{label}</span>
+                <button
+                  onClick={() => setOpenTask({ title: label, detail: t.detail })}
+                  className="grid h-6 w-6 place-items-center rounded-full border shrink-0"
+                  title="Ver detalles"
+                  aria-label={`Ver detalles de ${label}`}
+                  style={{ background: 'white' }}
+                >
+                  <Plus size={14} />
+                </button>
               </li>
             );
           })}
         </ul>
       )}
+      <TaskDetailModal
+        open={!!openTask}
+        onClose={() => setOpenTask(null)}
+        title={openTask?.title || ''}
+        detail={openTask?.detail}
+      />
     </div>
   );
 }
@@ -431,6 +494,7 @@ export default function HabitosClient() {
     !!checks?.[slug]?.[dayIdx]?.[taskId];
 
   const toggleTaskChecked = (slug: string, dayIdx: number, taskId: string) => {
+    let willBeChecked = false;
     setChecks((prev) => {
       const next: ChecksMap = { ...(prev || {}) };
       next[slug] = { ...(next[slug] || {}) };
@@ -439,11 +503,14 @@ export default function HabitosClient() {
         delete next[slug][dayIdx][taskId];
       } else {
         next[slug][dayIdx][taskId] = true;
+        willBeChecked = true;
       }
       saveProgramChecks(next);
       return next;
     });
     setChecksVersion((v) => v + 1);
+    // 🎉 confeti al marcar
+    if (willBeChecked) void confettiBurst(undefined, false);
   };
 
   /* ===== RENDER ===== */
