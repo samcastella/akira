@@ -126,6 +126,29 @@ function EmptyBar({ label, href }: { label: string; href: string }) {
 }
 
 /* =========================
+   Markdown inline (negrita **texto**)
+   ========================= */
+function renderInlineMarkdown(text: string) {
+  // Convierte **negrita** en <strong>…</strong> sin usar innerHTML
+  const parts: React.ReactNode[] = [];
+  const regex = /\*\*(.+?)\*\*/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(text)) !== null) {
+    const [full, bold] = match;
+    const start = match.index;
+    if (start > lastIndex) {
+      parts.push(text.slice(lastIndex, start));
+    }
+    parts.push(<strong key={`b-${start}`}>{bold}</strong>);
+    lastIndex = start + full.length;
+  }
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+  return parts;
+}
+
+/* =========================
    Confeti
    ========================= */
 async function confettiBurst(evt?: React.MouseEvent, big = false) {
@@ -135,6 +158,14 @@ async function confettiBurst(evt?: React.MouseEvent, big = false) {
     const y = evt?.clientY ?? window.innerHeight / 2;
     const ox = Math.min(Math.max(x / window.innerWidth, 0), 1);
     const oy = Math.min(Math.max(y / window.innerHeight, 0), 1);
+
+    // Respeta reduce-motion
+    const prefersReduced =
+      typeof window !== 'undefined' &&
+      window.matchMedia &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    if (prefersReduced) return;
 
     confetti({
       particleCount: big ? 180 : 80,
@@ -146,7 +177,9 @@ async function confettiBurst(evt?: React.MouseEvent, big = false) {
       scalar: big ? 1.05 : 0.9,
       zIndex: 9999,
     });
-  } catch {}
+  } catch {
+    // noop si no está instalada la lib
+  }
 }
 
 /* =========================
@@ -260,7 +293,7 @@ function TaskPill({
       {/* Centro: label (2 líneas máx) */}
       <div className="mx-3 min-w-0 flex-1">
         <div className="text-[15px] leading-snug font-semibold break-words">
-          {label}
+          {renderInlineMarkdown(label)}
         </div>
       </div>
 
