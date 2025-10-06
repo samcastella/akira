@@ -32,7 +32,7 @@ type ProgramTask = { id?: string; label: string; detail?: string; tags?: string[
 type ProgramDef = {
   slug: string;
   title: string;
-  themeColor?: string; // <- del meta
+  themeColor?: string;
   days?: { day: number; tasks: ProgramTask[] }[];
 };
 
@@ -150,7 +150,7 @@ async function confettiBurst(evt?: React.MouseEvent, big = false) {
 }
 
 /* =========================
-   Programas: lookup (usa __PROGRAMS + __PROGRAMS_ALIASES)
+   Programas: lookup (__PROGRAMS + aliases)
    ========================= */
 function getAliases(): Record<string, string> {
   if (typeof window === 'undefined') return {};
@@ -169,30 +169,7 @@ function getProgramBySlug(slug: string): ProgramDef | null {
 }
 
 /* =========================
-   Utils de formato (**negrita**) y multilínea
-   ========================= */
-function renderInlineBold(text: string) {
-  if (!text) return null;
-  const parts = String(text).split(/(\*\*[^*]+\*\*)/g);
-  return parts.map((chunk, i) => {
-    const m = chunk.match(/^\*\*([^*]+)\*\*$/);
-    if (m) return <strong key={i}>{m[1]}</strong>;
-    return <React.Fragment key={i}>{chunk}</React.Fragment>;
-  });
-}
-function renderMultilineWithBold(text?: string) {
-  if (!text) return 'Sin descripción.';
-  const lines = String(text).split(/\r?\n/);
-  return lines.map((ln, i) => (
-    <React.Fragment key={i}>
-      {renderInlineBold(ln)}
-      {i < lines.length - 1 ? <br /> : null}
-    </React.Fragment>
-  ));
-}
-
-/* =========================
-   Modal simple para detalles de tarea
+   Modal simple para detalles
    ========================= */
 function TaskDetailModal({
   open,
@@ -218,10 +195,8 @@ function TaskDetailModal({
         className="w-full max-w-md rounded-2xl bg-white p-4 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-2 text-sm font-semibold">{renderInlineBold(title)}</div>
-        <div className="text-sm text-black/75 whitespace-normal">
-          {renderMultilineWithBold(detail)}
-        </div>
+        <div className="mb-2 text-sm font-semibold">{title}</div>
+        <div className="text-sm text-black/75 whitespace-pre-line">{detail || 'Sin descripción.'}</div>
         <div className="mt-4 flex justify-end">
           <button
             onClick={onClose}
@@ -250,7 +225,7 @@ function TaskPill({
   label: string;
   checked: boolean;
   color: string;
-  onToggle: (evt: React.MouseEvent) => void;
+  onToggle: (e: React.MouseEvent) => void; // ← pasamos el evento
   onInfo?: () => void;
 }) {
   const bg = checked ? color : '#ffffff';
@@ -269,11 +244,10 @@ function TaskPill({
     >
       {/* Izquierda: botón check */}
       <button
-        onClick={onToggle}
+        onClick={(e) => onToggle(e)}
         className="grid h-9 w-9 place-items-center rounded-full border shrink-0"
         title={checked ? 'Desmarcar' : 'Marcar'}
         aria-label={checked ? `Desmarcar ${label}` : `Marcar ${label}`}
-        aria-pressed={checked}
         style={
           checked
             ? { background: '#22c55e', color: 'white', borderColor: '#16a34a' }
@@ -283,18 +257,11 @@ function TaskPill({
         {checked ? <Check size={16} /> : null}
       </button>
 
-      {/* Centro: label pequeño y hasta 2 líneas */}
-      <div
-        className="mx-3 min-w-0 flex-1 text-sm font-semibold leading-snug"
-        style={{
-          display: '-webkit-box',
-          WebkitLineClamp: 2,
-          WebkitBoxOrient: 'vertical',
-          overflow: 'hidden',
-          wordBreak: 'break-word',
-        }}
-      >
-        {renderInlineBold(label)}
+      {/* Centro: label (2 líneas máx) */}
+      <div className="mx-3 min-w-0 flex-1">
+        <div className="text-[15px] leading-snug font-semibold break-words">
+          {label}
+        </div>
       </div>
 
       {/* Derecha: info "+" */}
@@ -312,7 +279,7 @@ function TaskPill({
 }
 
 /* =========================
-   Componentes UI de Programas
+   Programas: bloque
    ========================= */
 function ProgramMiniBar({
   slug,
@@ -321,9 +288,9 @@ function ProgramMiniBar({
   programsTick,
 }: {
   slug: string;
-  onToggle: (slug: string, dayIdx: number, taskId: string, evt?: React.MouseEvent) => void;
+  onToggle: (slug: string, dayIdx: number, taskId: string, e?: React.MouseEvent) => void;
   isChecked: (slug: string, dayIdx: number, taskId: string) => boolean;
-  programsTick: number; // fuerza re-render
+  programsTick: number;
 }) {
   void programsTick;
 
@@ -343,12 +310,13 @@ function ProgramMiniBar({
   const canonSlug = program.slug;
   const dayIdx = getDayIndexFor(canonSlug) ?? 0;
   const tasks: ProgramTask[] = program?.days?.[dayIdx]?.tasks || [];
-  const theme = program.themeColor || '#F5F5F5';
+
+  const theme = program.themeColor || '#fff8dc'; // fallback suave
 
   return (
     <div className="px-1 py-1">
-      {/* Encabezado uniforme para todos */}
-      <div className="mb-2 text-xs font-semibold uppercase tracking-[.08em] text-black/45">
+      {/* Encabezado unificado */}
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-black/50">
         {program.title || canonSlug}
       </div>
 
@@ -366,7 +334,7 @@ function ProgramMiniBar({
                   label={label}
                   checked={checked}
                   color={theme}
-                  onToggle={(evt) => onToggle(canonSlug, dayIdx, taskId, evt)}
+                  onToggle={(e) => onToggle(canonSlug, dayIdx, taskId, e)}
                   onInfo={() => setOpenTask({ title: label, detail: t.detail })}
                 />
               </li>
@@ -400,6 +368,7 @@ export default function HabitosClient() {
   const [checksVersion, setChecksVersion] = useState<number>(0);
   const [programsTick, setProgramsTick] = useState<number>(0);
 
+  // Hidratar index de programas desde window.__PROGRAMS
   useEffect(() => {
     const bump = () => setProgramsTick((t) => t + 1);
     const id = requestAnimationFrame(bump);
@@ -445,7 +414,7 @@ export default function HabitosClient() {
     setMasters(loadMasterHabits());
     setDaily(loadDaily());
 
-    // Normalizar checks
+    // Normalizar checks a slugs canónicos
     const checks0 = loadProgramChecks();
     const checksNorm: ChecksMap = {};
     const aliases = getAliases();
@@ -471,6 +440,7 @@ export default function HabitosClient() {
       refreshActives();
     })();
 
+    // listeners
     const onProgramsUpdated = () => refreshActives();
     const onVisibility = () => { if (!document.hidden) refreshActives(); };
     const onFocus = () => refreshActives();
@@ -579,7 +549,7 @@ export default function HabitosClient() {
       return next;
     });
     setChecksVersion((v) => v + 1);
-    if (willBeChecked) void confettiBurst(evt, false);
+    if (willBeChecked) void confettiBurst(evt, false); // 🎉 ahora con coordenadas del click
   };
 
   /* ===== RENDER ===== */
