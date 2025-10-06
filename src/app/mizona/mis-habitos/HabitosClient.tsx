@@ -277,12 +277,14 @@ function TaskPill({
   color,
   onToggle,
   onInfo,
+  leftIcon,
 }: {
   label: string;
   checked: boolean;
   color: string;
   onToggle: (e: React.MouseEvent) => void;
   onInfo?: () => void;
+  leftIcon?: React.ReactNode; // icono/emoji opcional a la izquierda
 }) {
   const bg = checked ? color : '#ffffff';
   const border = checked ? '#00000080' : `${color}66`;
@@ -312,7 +314,8 @@ function TaskPill({
         {checked ? <Check size={16} /> : null}
       </button>
 
-      <div className="mx-3 min-w-0 flex-1">
+      <div className="mx-3 min-w-0 flex-1 flex items-center gap-3">
+        {leftIcon ? <span className="text-xl shrink-0 leading-none" aria-hidden>{leftIcon}</span> : null}
         <div className="text-[15px] leading-snug font-medium break-words">
           {renderInlineMarkdown(label)}
         </div>
@@ -591,6 +594,7 @@ export default function HabitosClient() {
     !!checks?.[slug]?.[dayIdx]?.[taskId];
 
   const toggleTaskChecked = (slug: string, dayIdx: number, taskId: string, evt?: React.MouseEvent) => {
+    // capturamos coordenadas antes del setState
     const cx = evt?.clientX;
     const cy = evt?.clientY;
 
@@ -610,7 +614,10 @@ export default function HabitosClient() {
     });
     setChecksVersion((v) => v + 1);
 
-    if (willBeChecked) void confettiBurstXY(cx, cy); // ✅ ahora también en programas
+    if (willBeChecked) {
+      void confettiBurstXY(cx, cy);
+      requestAnimationFrame(() => void confettiBurstXY(cx, cy)); // refuerzo tras re-render
+    }
   };
 
   /* ===== RENDER ===== */
@@ -630,7 +637,7 @@ export default function HabitosClient() {
         </span>
       </SectionTitle>
 
-      {/* 1) Creados por ti (AHORA con la misma barra) */}
+      {/* 1) Creados por ti */}
       <section className="mb-6">
         <SubTitle>Creados por ti</SubTitle>
         {todayHabits.length === 0 ? (
@@ -650,6 +657,7 @@ export default function HabitosClient() {
                     color={theme}
                     onToggle={(e) => toggleDone(h.id, undefined, e)}
                     onInfo={undefined}
+                    leftIcon={h.icon ?? '🏋️‍♀️'}
                   />
                 </li>
               );
