@@ -295,10 +295,14 @@ function TaskPill({
   const prevChecked = useRef<boolean>(checked);
   useEffect(() => {
     if (!prevChecked.current && checked) {
-      // subió a true → celebrar
-      void confettiBurstXY(lastXY.current.x, lastXY.current.y);
-      // refuerzo por si el frame llega tarde
-      requestAnimationFrame(() => void confettiBurstXY(lastXY.current.x, lastXY.current.y));
+      // coords locales o globales guardadas por CreateHabitBar/TaskPill
+      const gxy =
+        (typeof window !== 'undefined' && (window as any).__akiraLastXY) || {};
+      const x = lastXY.current.x ?? (gxy as any).x;
+      const y = lastXY.current.y ?? (gxy as any).y;
+
+      void confettiBurstXY(x, y);
+      requestAnimationFrame(() => void confettiBurstXY(x, y));
     }
     prevChecked.current = checked;
   }, [checked]);
@@ -316,6 +320,8 @@ function TaskPill({
       <button
         onMouseDown={(e) => {
           lastXY.current = { x: e.clientX, y: e.clientY };
+          // guarda también global para que el padre pueda leer si hiciera falta
+          (window as any).__akiraLastXY = { x: e.clientX, y: e.clientY };
         }}
         onClick={onToggle}
         className="grid h-9 w-9 place-items-center rounded-full border shrink-0"
@@ -606,6 +612,8 @@ export default function HabitosClient() {
     !!checks?.[slug]?.[dayIdx]?.[taskId];
 
   const toggleTaskChecked = (slug: string, dayIdx: number, taskId: string, evt?: React.MouseEvent) => {
+    let willBeChecked = false;
+
     setChecks((prev) => {
       const next: ChecksMap = { ...(prev || {}) };
       next[slug] = { ...(next[slug] || {}) };
@@ -614,12 +622,21 @@ export default function HabitosClient() {
         delete next[slug][dayIdx][taskId];
       } else {
         next[slug][dayIdx][taskId] = true;
+        willBeChecked = true;
       }
       saveProgramChecks(next);
       return next;
     });
     setChecksVersion((v) => v + 1);
-    // (el confeti pequeño ya lo dispara TaskPill al ver el cambio de checked)
+
+    // Refuerzo de confeti en Programas leyendo coords globales guardadas por la píldora
+    if (willBeChecked) {
+      const gxy =
+        (typeof window !== 'undefined' && (window as any).__akiraLastXY) || {};
+      void confettiBurstXY((gxy as any).x, (gxy as any).y);
+      requestAnimationFrame(() => void confettiBurstXY((gxy as any).x, (gxy as any).y));
+    }
+    // Nota: TaskPill ya lanza confeti al detectar checked=true; esto es un refuerzo extra.
   };
 
   /* ===== RENDER ===== */

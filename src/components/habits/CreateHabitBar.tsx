@@ -115,8 +115,14 @@ export default function CreateHabitBar(props: Props) {
     const prev = useRef<boolean>(checked);
     useEffect(() => {
       if (!prev.current && checked) {
-        void boomAt(lastXY.current.x, lastXY.current.y);
-        requestAnimationFrame(() => void boomAt(lastXY.current.x, lastXY.current.y));
+        // coords locales o globales (fallback)
+        const globalXY =
+          (typeof window !== 'undefined' && (window as any).__akiraLastXY) || {};
+        const x = lastXY.current.x ?? globalXY.x;
+        const y = lastXY.current.y ?? globalXY.y;
+
+        void boomAt(x, y);
+        requestAnimationFrame(() => void boomAt(x, y));
       }
       prev.current = checked;
     }, [checked]);
@@ -135,7 +141,11 @@ export default function CreateHabitBar(props: Props) {
       >
         {/* Izquierda: botón check */}
         <button
-          onMouseDown={(e) => { lastXY.current = { x: e.clientX, y: e.clientY }; }}
+          onMouseDown={(e) => {
+            lastXY.current = { x: e.clientX, y: e.clientY };
+            // guardamos coords globales para que las pueda leer el padre si hace falta
+            (window as any).__akiraLastXY = { x: e.clientX, y: e.clientY };
+          }}
           onClick={onToggle}
           className="grid h-9 w-9 place-items-center rounded-full border shrink-0"
           title={checked ? 'Desmarcar' : 'Marcar'}
