@@ -619,7 +619,16 @@ export default function HabitosClient() {
   const isTaskChecked = (slug: string, dayIdx: number, taskId: string) =>
     !!checks?.[slug]?.[dayIdx]?.[taskId];
 
-  const toggleTaskChecked = (slug: string, dayIdx: number, taskId: string, evt?: React.MouseEvent) => {
+  const toggleTaskChecked = (
+    slug: string,
+    dayIdx: number,
+    taskId: string,
+    evt?: React.MouseEvent
+  ) => {
+    // coords reales del click
+    const cx = evt?.clientX;
+    const cy = evt?.clientY;
+
     let willBeChecked = false;
 
     setChecks((prev) => {
@@ -637,13 +646,11 @@ export default function HabitosClient() {
     });
     setChecksVersion((v) => v + 1);
 
-    // Refuerzo de confeti leyendo coords globales (por si el componente visual no es TaskPill)
+    // 🎉 dispara confeti con coords del evento (robusto)
     if (willBeChecked) {
-      const gxy =
-        (typeof window !== 'undefined' && (window as any).__akiraLastXY) || {};
-      void confettiBurstXY((gxy as any).x, (gxy as any).y);
-      requestAnimationFrame(() => void confettiBurstXY((gxy as any).x, (gxy as any).y));
-      setTimeout(() => void confettiBurstXY((gxy as any).x, (gxy as any).y), 40);
+      void confettiBurstXY(cx, cy);
+      requestAnimationFrame(() => void confettiBurstXY(cx, cy));
+      setTimeout(() => void confettiBurstXY(cx, cy), 40);
     }
   };
 
