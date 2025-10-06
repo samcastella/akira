@@ -1,29 +1,35 @@
 // src/data/programs.ts
 
 export type ProgramType = "good" | "bad";
-export type ThematicCategory = "salud" | "bienestar" | "productividad" | "malos-habitos";
+export type ThematicCategory =
+  | "salud"
+  | "bienestar"
+  | "productividad"
+  | "malos-habitos";
 
 export type ProgramMeta = {
   /** Slug del JSON de datos que usa ProgramDetail */
-  slugData: string;              // ej: "lectura-30" | "detox-tecnologico-30"
-  /** Slug de la ruta pública */
-  slugRoute: string;             // ej: "lectura" | "detox-tecnologico"
+  slugData: string; // ej: "lectura-30" | "detox-tecnologico-30"
+  /** Slug de la ruta pública (canónico, sin “-30”) */
+  slugRoute: string; // ej: "lectura" | "detox-tecnologico"
   /** Ruta completa a la página del programa */
-  route: string;                 // ej: "/programas/lectura"
+  route: string; // ej: "/programas/lectura"
   /** Título corto para tarjetas/listas */
-  titleShort: string;            // ej: "Conviértete en lector"
+  titleShort: string; // ej: "Conviértete en lector"
   /** Micro-descripción para tarjetas/listas */
   cardSubtitle: string;
   /** Días de duración */
-  days: number;                  // ej: 30
+  days: number; // ej: 30
   /** Bloque principal al que pertenece */
-  type: ProgramType;             // "good" | "bad"
+  type: ProgramType; // "good" | "bad"
   /** Temáticas (pueden ser varias) */
   categories: ThematicCategory[];
   /** Imagen (hero / thumbnail) */
-  imageSrc: string;              // en /public/images/...
+  imageSrc: string; // en /public/images/...
   /** ¿Tiene page.tsx ya operativa? controla visibilidad en índices */
   available: boolean;
+  /** Color de tema para la UI (hex o css var) */
+  themeColor?: string;
   /** Opcional: keywords para buscador */
   keywords?: string[];
   meta?: { createdAt?: string; version?: string; language?: string };
@@ -32,7 +38,12 @@ export type ProgramMeta = {
 /* ===========================
    Tipos de ejecución (ProgramDef)
    =========================== */
-export type ProgramTask = { id?: string; label: string; detail?: string; tags?: string[] };
+export type ProgramTask = {
+  id?: string;
+  label: string;
+  detail?: string;
+  tags?: string[];
+};
 export type ProgramDay = { day: number; tasks: ProgramTask[] };
 export type ProgramDef = {
   /** Slug canónico sin “-30” (coincide con slugRoute) */
@@ -41,6 +52,8 @@ export type ProgramDef = {
   shortDescription?: string;
   howItWorks?: string;
   durationDays?: number;
+  /** Color de tema para pintar las barras de tareas */
+  themeColor?: string;
   accordions?: {
     whatYouWillDo?: string[];
     whatYouWillGet?: string[];
@@ -65,6 +78,7 @@ export const PROGRAMS: ProgramMeta[] = [
     categories: ["productividad", "bienestar"],
     imageSrc: "/images/programs/lectura-hero.jpg",
     available: true,
+    themeColor: "#E0E7FF", // indigo-100 suave (puedes cambiarlo)
     keywords: ["leer", "lectura", "libros"],
     meta: { language: "es", version: "1.0" },
   },
@@ -80,6 +94,7 @@ export const PROGRAMS: ProgramMeta[] = [
     categories: ["bienestar", "productividad", "malos-habitos"],
     imageSrc: "/images/programs/detox-hero.jpg",
     available: true,
+    themeColor: "#FCD34D", // amber-300 (amarillo)
     keywords: ["detox", "móvil", "pantallas", "atención", "foco", "scroll"],
     meta: { language: "es", version: "1.0" },
   },
@@ -106,9 +121,26 @@ export const PROGRAM_SLUG_ALIASES: Record<string, string> = {
   "detox-tecnologico-30": "detox-tecnologico",
 };
 
+/** Fallback de color por temática (si algún meta no trae themeColor). */
+const CATEGORY_THEME: Partial<Record<ThematicCategory, string>> = {
+  "malos-habitos": "#FDE68A", // amber-200
+  bienestar: "#D1FAE5", // emerald-100
+  productividad: "#DBEAFE", // blue-100
+  salud: "#FCE7F3", // pink-100
+};
+
 function canonicalFromMeta(m: ProgramMeta) {
   // canónico = slugRoute (sin sufijos “-30”)
   return m.slugRoute;
+}
+
+function pickThemeColor(meta: ProgramMeta): string | undefined {
+  if (meta.themeColor) return meta.themeColor;
+  for (const c of meta.categories) {
+    const color = CATEGORY_THEME[c];
+    if (color) return color;
+  }
+  return undefined;
 }
 
 function toProgramDef(meta: ProgramMeta, raw: any): ProgramDef {
@@ -118,7 +150,9 @@ function toProgramDef(meta: ProgramMeta, raw: any): ProgramDef {
   const title: string = (raw?.title ?? meta.titleShort ?? canonical) as string;
   const shortDescription: string | undefined = raw?.shortDescription;
   const howItWorks: string | undefined = raw?.howItWorks;
-  const durationDays: number | undefined = (raw?.durationDays ?? meta.days) as number | undefined;
+  const durationDays: number | undefined = (raw?.durationDays ?? meta.days) as
+    | number
+    | undefined;
   const accordions = raw?.accordions;
   const daysRaw: any[] = Array.isArray(raw?.days) ? raw.days : [];
 
@@ -148,7 +182,9 @@ function toProgramDef(meta: ProgramMeta, raw: any): ProgramDef {
       d.tasks.forEach((t, i) => {
         if (!t.label) {
           // eslint-disable-next-line no-console
-          console.warn(`[PROGRAMS] Tarea vacía en ${canonical} día ${d.day} idx ${i}`);
+          console.warn(
+            `[PROGRAMS] Tarea vacía en ${canonical} día ${d.day} idx ${i}`
+          );
         }
       });
     });
@@ -160,6 +196,7 @@ function toProgramDef(meta: ProgramMeta, raw: any): ProgramDef {
     shortDescription,
     howItWorks,
     durationDays,
+    themeColor: pickThemeColor(meta),
     accordions,
     days: normalizedDays,
   };
@@ -224,7 +261,7 @@ export function getProgramMeta(slug: string) {
 export function toIndexCard(p: ProgramMeta) {
   return {
     id: p.slugData,
-    slug: p.slugRoute,                // lo que usas en href /programas/{slug}
+    slug: p.slugRoute, // lo que usas en href /programas/{slug}
     title: p.titleShort,
     description: p.cardSubtitle,
     days: p.days,

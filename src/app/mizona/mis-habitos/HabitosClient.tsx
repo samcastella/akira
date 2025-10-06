@@ -32,6 +32,7 @@ type ProgramTask = { id?: string; label: string; detail?: string; tags?: string[
 type ProgramDef = {
   slug: string;
   title: string;
+  themeColor?: string; // <- del meta
   days?: { day: number; tasks: ProgramTask[] }[];
 };
 
@@ -101,6 +102,7 @@ const parseKeyToDate = (k: string) => new Date(`${k}T00:00:00`);
    UI helpers
    ========================= */
 const BORDER = '#E5E7EB';
+const PILL_RADIUS = 9999;
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <h3 className="text-lg font-extrabold tracking-tight mb-2">{children}</h3>;
@@ -214,6 +216,70 @@ function TaskDetailModal({
 }
 
 /* =========================
+   Barra de tarea (píldora)
+   ========================= */
+function TaskPill({
+  label,
+  checked,
+  color,
+  onToggle,
+  onInfo,
+}: {
+  label: string;
+  checked: boolean;
+  color: string;
+  onToggle: () => void;
+  onInfo?: () => void;
+}) {
+  const bg = checked ? color : '#ffffff';
+  const border = checked ? '#00000080' : `${color}66`; // 8-digit hex con alpha suave
+  const text = checked ? '#111111' : '#111111';
+
+  return (
+    <div
+      className="flex items-center justify-between px-4 py-3"
+      style={{
+        background: bg,
+        color: text,
+        border: `1px solid ${border}`,
+        borderRadius: PILL_RADIUS,
+      }}
+    >
+      {/* Izquierda: botón check */}
+      <button
+        onClick={onToggle}
+        className="grid h-9 w-9 place-items-center rounded-full border shrink-0"
+        title={checked ? 'Desmarcar' : 'Marcar'}
+        aria-label={checked ? `Desmarcar ${label}` : `Marcar ${label}`}
+        style={
+          checked
+            ? { background: '#22c55e', color: 'white', borderColor: '#16a34a' }
+            : { background: 'white', borderColor: '#11111140' }
+        }
+      >
+        {checked ? <Check size={16} /> : null}
+      </button>
+
+      {/* Centro: label */}
+      <div className="mx-3 min-w-0 flex-1">
+        <div className="truncate text-base font-semibold">{label}</div>
+      </div>
+
+      {/* Derecha: info "+" */}
+      <button
+        onClick={onInfo}
+        className="grid h-9 w-9 place-items-center rounded-full border shrink-0"
+        title="Ver detalles"
+        aria-label={`Ver detalles de ${label}`}
+        style={{ background: 'white', borderColor: '#11111140' }}
+      >
+        <Plus size={16} />
+      </button>
+    </div>
+  );
+}
+
+/* =========================
    Componentes UI de Programas
    ========================= */
 function ProgramMiniBar({
@@ -234,7 +300,7 @@ function ProgramMiniBar({
 
   if (!program) {
     return (
-      <div className="rounded-2xl border px-4 py-3" style={{ borderColor: 'var(--line, rgba(0,0,0,.16))' }}>
+      <div className="px-1 py-1">
         <div className="text-sm text-black/60">
           Programa no encontrado en datos: <b>{slug}</b>
         </div>
@@ -246,9 +312,16 @@ function ProgramMiniBar({
   const dayIdx = getDayIndexFor(canonSlug) ?? 0;
   const tasks: ProgramTask[] = program?.days?.[dayIdx]?.tasks || [];
 
+  // color del programa (fallback suave)
+  const theme = program.themeColor || '#F5F5F5';
+
   return (
-    <div className="rounded-2xl border px-4 py-3" style={{ borderColor: 'var(--line, rgba(0,0,0,.16))' }}>
-      <div className="text-sm font-medium mb-2 truncate">{program.title || canonSlug}</div>
+    <div className="px-1 py-1">
+      {/* Encabezado sutil por programa */}
+      <div className="mb-2 text-[11px] uppercase tracking-wide text-black/50">
+        {program.title || canonSlug}
+      </div>
+
       {tasks.length === 0 ? (
         <span className="text-xs text-black/50">Hoy no hay tareas.</span>
       ) : (
@@ -258,55 +331,26 @@ function ProgramMiniBar({
             const checked = isChecked(canonSlug, dayIdx, taskId);
             const label = t.label || `Tarea ${i + 1}`;
             return (
-              <li key={taskId} className="flex items-center gap-3">
-                <button
-                  onClick={() => onToggle(canonSlug, dayIdx, taskId)}
-                  className="grid h-6 w-6 place-items-center rounded-full border shrink-0"
-                  title={checked ? 'Desmarcar' : 'Marcar'}
-                  aria-label={checked ? `Desmarcar ${label}` : `Marcar ${label}`}
-                  style={
-                    checked
-                      ? { background: '#22c55e', color: 'white', borderColor: '#16a34a' }
-                      : { background: 'white' }
-                  }
-                >
-                  {checked ? <Check size={14} /> : null}
-                </button>
-                <span className="text-sm grow min-w-0">{label}</span>
-                <button
-                  onClick={() => setOpenTask({ title: label, detail: t.detail })}
-                  className="grid h-6 w-6 place-items-center rounded-full border shrink-0"
-                  title="Ver detalles"
-                  aria-label={`Ver detalles de ${label}`}
-                  style={{ background: 'white' }}
-                >
-                  <Plus size={14} />
-                </button>
+              <li key={taskId}>
+                <TaskPill
+                  label={label}
+                  checked={checked}
+                  color={theme}
+                  onToggle={() => onToggle(canonSlug, dayIdx, taskId)}
+                  onInfo={() => setOpenTask({ title: label, detail: t.detail })}
+                />
               </li>
             );
           })}
         </ul>
       )}
+
       <TaskDetailModal
         open={!!openTask}
         onClose={() => setOpenTask(null)}
         title={openTask?.title || ''}
         detail={openTask?.detail}
       />
-    </div>
-  );
-}
-
-/* Chips de depuración (slugs detectados) */
-function ActiveSlugsChips({ slugs }: { slugs: string[] }) {
-  if (!slugs?.length) return null;
-  return (
-    <div className="mb-2 flex flex-wrap gap-2">
-      {slugs.map((s) => (
-        <span key={s} className="text-xs rounded-full border px-2 py-1 text-black/70">
-          {s}
-        </span>
-      ))}
     </div>
   );
 }
@@ -320,6 +364,7 @@ export default function HabitosClient() {
   const [masters, setMasters] = useState<HabitMaster[]>([]);
   const [daily, setDaily] = useState<DailyMap>({});
   const [today, setToday] = useState<string>(dateKey());
+
 
   const [activePrograms, setActivePrograms] = useState<string[]>([]);
   const [checks, setChecks] = useState<ChecksMap>({});
@@ -509,7 +554,6 @@ export default function HabitosClient() {
       return next;
     });
     setChecksVersion((v) => v + 1);
-    // 🎉 confeti al marcar
     if (willBeChecked) void confettiBurst(undefined, false);
   };
 
@@ -572,10 +616,9 @@ export default function HabitosClient() {
       {/* 2) Programas activos */}
       <section className="mb-6">
         <SubTitle>Programas activos</SubTitle>
-        <ActiveSlugsChips slugs={activePrograms} />
 
         {activePrograms?.length ? (
-          <div className="space-y-3" key={`${checksVersion}-${programsTick}`}>
+          <div className="space-y-6" key={`${checksVersion}-${programsTick}`}>
             {activePrograms.map((slug) => (
               <ProgramMiniBar
                 key={slug}
