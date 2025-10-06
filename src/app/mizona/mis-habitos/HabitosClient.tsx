@@ -150,7 +150,7 @@ function renderInlineMarkdown(text: string) {
 }
 
 /* =========================
-   Confeti con coordenadas (canvas propio)
+   Confeti (canvas propio, precalentado)
    ========================= */
 let confettiInstance: any | null = null;
 let confettiCanvas: HTMLCanvasElement | null = null;
@@ -183,7 +183,10 @@ async function confettiBurstXY(x?: number, y?: number, big = false) {
       typeof window !== 'undefined' &&
       window.matchMedia &&
       window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (prefersReduced) return;
+    if (prefersReduced) {
+      console.debug('[confetti] disabled by prefers-reduced-motion');
+      return;
+    }
 
     const shoot = await getConfettiShooter();
     const ox = Math.min(Math.max((x ?? window.innerWidth / 2) / window.innerWidth, 0), 1);
@@ -198,8 +201,8 @@ async function confettiBurstXY(x?: number, y?: number, big = false) {
       origin: { x: ox, y: oy },
       scalar: big ? 1.05 : 0.9,
     });
-  } catch {
-    /* noop */
+  } catch (e) {
+    console.debug('[confetti] failed to shoot', e);
   }
 }
 
@@ -269,7 +272,7 @@ function TaskDetailModal({
 }
 
 /* =========================
-   Barra de tarea (píldora) — usada por ambos bloques
+   Barra de tarea (píldora)
    ========================= */
 function TaskPill({
   label,
@@ -284,23 +287,20 @@ function TaskPill({
   color: string;
   onToggle: (e: React.MouseEvent) => void;
   onInfo?: () => void;
-  leftIcon?: React.ReactNode; // icono/emoji opcional a la izquierda
+  leftIcon?: React.ReactNode;
 }) {
   const bg = checked ? color : '#ffffff';
   const border = checked ? '#00000080' : `${color}66`;
   const text = '#111111';
 
-  // --- confeti desde la propia píldora ---
   const lastXY = useRef<{ x?: number; y?: number }>({});
   const prevChecked = useRef<boolean>(checked);
   useEffect(() => {
     if (!prevChecked.current && checked) {
-      // coords locales o globales guardadas por CreateHabitBar/TaskPill
       const gxy =
         (typeof window !== 'undefined' && (window as any).__akiraLastXY) || {};
       const x = lastXY.current.x ?? (gxy as any).x;
       const y = lastXY.current.y ?? (gxy as any).y;
-
       void confettiBurstXY(x, y);
       requestAnimationFrame(() => void confettiBurstXY(x, y));
     }
@@ -320,7 +320,6 @@ function TaskPill({
       <button
         onMouseDown={(e) => {
           lastXY.current = { x: e.clientX, y: e.clientY };
-          // guarda también global para que el padre pueda leer si hiciera falta
           (window as any).__akiraLastXY = { x: e.clientX, y: e.clientY };
         }}
         onClick={onToggle}
@@ -444,6 +443,12 @@ export default function HabitosClient() {
   const [checks, setChecks] = useState<ChecksMap>({});
   const [checksVersion, setChecksVersion] = useState<number>(0);
   const [programsTick, setProgramsTick] = useState<number>(0);
+
+  // Precalentar confeti al montar (evita que el primer click se "pierda")
+  useEffect(() => {
+    void getConfettiShooter().catch(() => {});
+    (window as any).akiraConfettiTest = () => confettiBurstXY(); // util para probar desde consola
+  }, []);
 
   // Hidratar index de programas desde window.__PROGRAMS
   useEffect(() => {
@@ -629,14 +634,14 @@ export default function HabitosClient() {
     });
     setChecksVersion((v) => v + 1);
 
-    // Refuerzo de confeti en Programas leyendo coords globales guardadas por la píldora
+    // Refuerzo de confeti leyendo coords globales (por si el componente visual no es TaskPill)
     if (willBeChecked) {
       const gxy =
         (typeof window !== 'undefined' && (window as any).__akiraLastXY) || {};
       void confettiBurstXY((gxy as any).x, (gxy as any).y);
       requestAnimationFrame(() => void confettiBurstXY((gxy as any).x, (gxy as any).y));
+      setTimeout(() => void confettiBurstXY((gxy as any).x, (gxy as any).y), 40);
     }
-    // Nota: TaskPill ya lanza confeti al detectar checked=true; esto es un refuerzo extra.
   };
 
   /* ===== RENDER ===== */
