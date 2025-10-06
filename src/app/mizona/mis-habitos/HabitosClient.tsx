@@ -126,22 +126,23 @@ function EmptyBar({ label, href }: { label: string; href: string }) {
 }
 
 /* =========================
-   Markdown inline (negrita **texto**)
+   Markdown inline: **negrita**
    ========================= */
 function renderInlineMarkdown(text: string) {
-  // Convierte **negrita** en <strong>…</strong> sin usar innerHTML
   const parts: React.ReactNode[] = [];
   const regex = /\*\*(.+?)\*\*/g;
   let lastIndex = 0;
-  let match: RegExpExecArray | null;
+  let m: RegExpExecArray | null;
 
-  while ((match = regex.exec(text)) !== null) {
-    const [full, bold] = match;
-    const start = match.index;
-    if (start > lastIndex) {
-      parts.push(text.slice(lastIndex, start));
-    }
-    parts.push(<strong key={`b-${start}`}>{bold}</strong>);
+  while ((m = regex.exec(text)) !== null) {
+    const [full, bold] = m;
+    const start = m.index;
+    if (start > lastIndex) parts.push(text.slice(lastIndex, start));
+    parts.push(
+      <strong key={`b-${start}`} className="font-semibold">
+        {bold}
+      </strong>
+    );
     lastIndex = start + full.length;
   }
   if (lastIndex < text.length) parts.push(text.slice(lastIndex));
@@ -149,25 +150,50 @@ function renderInlineMarkdown(text: string) {
 }
 
 /* =========================
-   Confeti
+   Confeti (canvas propio)
    ========================= */
+let confettiInstance: any | null = null;
+let confettiCanvas: HTMLCanvasElement | null = null;
+
+async function getConfettiShooter() {
+  const { default: confetti } = await import('canvas-confetti');
+
+  if (!confettiCanvas) {
+    confettiCanvas = document.createElement('canvas');
+    confettiCanvas.id = 'akira-confetti';
+    Object.assign(confettiCanvas.style, {
+      position: 'fixed',
+      inset: '0',
+      width: '100vw',
+      height: '100vh',
+      pointerEvents: 'none',
+      zIndex: '9999',
+    });
+    document.body.appendChild(confettiCanvas);
+  }
+  if (!confettiInstance) {
+    confettiInstance = confetti.create(confettiCanvas, { resize: true, useWorker: true });
+  }
+  return confettiInstance;
+}
+
 async function confettiBurst(evt?: React.MouseEvent, big = false) {
   try {
-    const { default: confetti } = await import('canvas-confetti');
+    // reduce-motion
+    const prefersReduced =
+      typeof window !== 'undefined' &&
+      window.matchMedia &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (prefersReduced) return;
+
+    const shoot = await getConfettiShooter();
+
     const x = evt?.clientX ?? window.innerWidth / 2;
     const y = evt?.clientY ?? window.innerHeight / 2;
     const ox = Math.min(Math.max(x / window.innerWidth, 0), 1);
     const oy = Math.min(Math.max(y / window.innerHeight, 0), 1);
 
-    // Respeta reduce-motion
-    const prefersReduced =
-      typeof window !== 'undefined' &&
-      window.matchMedia &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-    if (prefersReduced) return;
-
-    confetti({
+    shoot({
       particleCount: big ? 180 : 80,
       spread: big ? 90 : 65,
       startVelocity: big ? 45 : 35,
@@ -175,10 +201,9 @@ async function confettiBurst(evt?: React.MouseEvent, big = false) {
       gravity: 0.9,
       origin: { x: ox, y: oy },
       scalar: big ? 1.05 : 0.9,
-      zIndex: 9999,
     });
   } catch {
-    // noop si no está instalada la lib
+    // noop si la lib no está instalada
   }
 }
 
@@ -220,7 +245,7 @@ function TaskDetailModal({
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-[9999] grid place-items-center p-4"
+      className="fixed inset-0 z-[9998] grid place-items-center p-4"
       style={{ background: 'rgba(0,0,0,.35)' }}
       onClick={onClose}
     >
@@ -228,8 +253,10 @@ function TaskDetailModal({
         className="w-full max-w-md rounded-2xl bg-white p-4 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-2 text-sm font-semibold">{title}</div>
-        <div className="text-sm text-black/75 whitespace-pre-line">{detail || 'Sin descripción.'}</div>
+        <div className="mb-2 text-sm font-medium">{renderInlineMarkdown(title)}</div>
+        <div className="text-sm text-black/75 whitespace-pre-line">
+          {detail ? renderInlineMarkdown(detail) : 'Sin descripción.'}
+        </div>
         <div className="mt-4 flex justify-end">
           <button
             onClick={onClose}
@@ -292,7 +319,8 @@ function TaskPill({
 
       {/* Centro: label (2 líneas máx) */}
       <div className="mx-3 min-w-0 flex-1">
-        <div className="text-[15px] leading-snug font-semibold break-words">
+        {/* Mantengo la familia tipográfica por defecto: peso base y negrita sólo en <strong> */}
+        <div className="text-[15px] leading-snug font-medium break-words">
           {renderInlineMarkdown(label)}
         </div>
       </div>
@@ -582,7 +610,7 @@ export default function HabitosClient() {
       return next;
     });
     setChecksVersion((v) => v + 1);
-    if (willBeChecked) void confettiBurst(evt, false); // 🎉 ahora con coordenadas del click
+    if (willBeChecked) void confettiBurst(evt, false);
   };
 
   /* ===== RENDER ===== */
