@@ -170,6 +170,29 @@ function getProgramBySlug(slug: string): ProgramDef | null {
 }
 
 /* =========================
+   Utils de formato inline (**negrita**) y multilínea
+   ========================= */
+function renderInlineBold(text: string) {
+  if (!text) return null;
+  const parts = String(text).split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((chunk, i) => {
+    const m = chunk.match(/^\*\*([^*]+)\*\*$/);
+    if (m) return <strong key={i}>{m[1]}</strong>;
+    return <React.Fragment key={i}>{chunk}</React.Fragment>;
+  });
+}
+function renderMultilineWithBold(text?: string) {
+  if (!text) return 'Sin descripción.';
+  const lines = String(text).split(/\r?\n/);
+  return lines.map((ln, i) => (
+    <React.Fragment key={i}>
+      {renderInlineBold(ln)}
+      {i < lines.length - 1 ? <br /> : null}
+    </React.Fragment>
+  ));
+}
+
+/* =========================
    Modal simple para detalles de tarea
    ========================= */
 function TaskDetailModal({
@@ -196,9 +219,9 @@ function TaskDetailModal({
         className="w-full max-w-md rounded-2xl bg-white p-4 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-2 text-sm font-semibold">{title}</div>
-        <div className="text-sm text-black/75 whitespace-pre-line">
-          {detail || 'Sin descripción.'}
+        <div className="mb-2 text-sm font-semibold">{renderInlineBold(title)}</div>
+        <div className="text-sm text-black/75 whitespace-normal">
+          {renderMultilineWithBold(detail)}
         </div>
         <div className="mt-4 flex justify-end">
           <button
@@ -233,7 +256,7 @@ function TaskPill({
 }) {
   const bg = checked ? color : '#ffffff';
   const border = checked ? '#00000080' : `${color}66`; // 8-digit hex con alpha suave
-  const text = checked ? '#111111' : '#111111';
+  const text = '#111111';
 
   return (
     <div
@@ -251,6 +274,7 @@ function TaskPill({
         className="grid h-9 w-9 place-items-center rounded-full border shrink-0"
         title={checked ? 'Desmarcar' : 'Marcar'}
         aria-label={checked ? `Desmarcar ${label}` : `Marcar ${label}`}
+        aria-pressed={checked}
         style={
           checked
             ? { background: '#22c55e', color: 'white', borderColor: '#16a34a' }
@@ -260,9 +284,18 @@ function TaskPill({
         {checked ? <Check size={16} /> : null}
       </button>
 
-      {/* Centro: label */}
-      <div className="mx-3 min-w-0 flex-1">
-        <div className="truncate text-base font-semibold">{label}</div>
+      {/* Centro: label (pequeño + hasta 2 líneas con negritas reales) */}
+      <div
+        className="mx-3 min-w-0 flex-1 text-sm font-semibold leading-snug"
+        style={{
+          display: '-webkit-box',
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: 'vertical',
+          overflow: 'hidden',
+          wordBreak: 'break-word',
+        }}
+      >
+        {renderInlineBold(label)}
       </div>
 
       {/* Derecha: info "+" */}
@@ -364,7 +397,6 @@ export default function HabitosClient() {
   const [masters, setMasters] = useState<HabitMaster[]>([]);
   const [daily, setDaily] = useState<DailyMap>({});
   const [today, setToday] = useState<string>(dateKey());
-
 
   const [activePrograms, setActivePrograms] = useState<string[]>([]);
   const [checks, setChecks] = useState<ChecksMap>({});
