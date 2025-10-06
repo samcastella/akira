@@ -150,7 +150,7 @@ function renderInlineMarkdown(text: string) {
 }
 
 /* =========================
-   Confeti (canvas propio)
+   Confeti con coordenadas (evita pooling del evento)
    ========================= */
 let confettiInstance: any | null = null;
 let confettiCanvas: HTMLCanvasElement | null = null;
@@ -177,9 +177,8 @@ async function getConfettiShooter() {
   return confettiInstance;
 }
 
-async function confettiBurst(evt?: React.MouseEvent, big = false) {
+async function confettiBurstXY(x?: number, y?: number, big = false) {
   try {
-    // reduce-motion
     const prefersReduced =
       typeof window !== 'undefined' &&
       window.matchMedia &&
@@ -187,11 +186,8 @@ async function confettiBurst(evt?: React.MouseEvent, big = false) {
     if (prefersReduced) return;
 
     const shoot = await getConfettiShooter();
-
-    const x = evt?.clientX ?? window.innerWidth / 2;
-    const y = evt?.clientY ?? window.innerHeight / 2;
-    const ox = Math.min(Math.max(x / window.innerWidth, 0), 1);
-    const oy = Math.min(Math.max(y / window.innerHeight, 0), 1);
+    const ox = Math.min(Math.max((x ?? window.innerWidth / 2) / window.innerWidth, 0), 1);
+    const oy = Math.min(Math.max((y ?? window.innerHeight / 2) / window.innerHeight, 0), 1);
 
     shoot({
       particleCount: big ? 180 : 80,
@@ -203,7 +199,7 @@ async function confettiBurst(evt?: React.MouseEvent, big = false) {
       scalar: big ? 1.05 : 0.9,
     });
   } catch {
-    // noop si la lib no está instalada
+    /* noop */
   }
 }
 
@@ -273,7 +269,7 @@ function TaskDetailModal({
 }
 
 /* =========================
-   Barra de tarea (píldora)
+   Barra de tarea (píldora) — usada por ambos bloques
    ========================= */
 function TaskPill({
   label,
@@ -285,7 +281,7 @@ function TaskPill({
   label: string;
   checked: boolean;
   color: string;
-  onToggle: (e: React.MouseEvent) => void; // ← pasamos el evento
+  onToggle: (e: React.MouseEvent) => void;
   onInfo?: () => void;
 }) {
   const bg = checked ? color : '#ffffff';
@@ -302,9 +298,8 @@ function TaskPill({
         borderRadius: PILL_RADIUS,
       }}
     >
-      {/* Izquierda: botón check */}
       <button
-        onClick={(e) => onToggle(e)}
+        onClick={onToggle}
         className="grid h-9 w-9 place-items-center rounded-full border shrink-0"
         title={checked ? 'Desmarcar' : 'Marcar'}
         aria-label={checked ? `Desmarcar ${label}` : `Marcar ${label}`}
@@ -317,15 +312,12 @@ function TaskPill({
         {checked ? <Check size={16} /> : null}
       </button>
 
-      {/* Centro: label (2 líneas máx) */}
       <div className="mx-3 min-w-0 flex-1">
-        {/* Mantengo la familia tipográfica por defecto: peso base y negrita sólo en <strong> */}
         <div className="text-[15px] leading-snug font-medium break-words">
           {renderInlineMarkdown(label)}
         </div>
       </div>
 
-      {/* Derecha: info "+" */}
       <button
         onClick={onInfo}
         className="grid h-9 w-9 place-items-center rounded-full border shrink-0"
@@ -372,11 +364,10 @@ function ProgramMiniBar({
   const dayIdx = getDayIndexFor(canonSlug) ?? 0;
   const tasks: ProgramTask[] = program?.days?.[dayIdx]?.tasks || [];
 
-  const theme = program.themeColor || '#fff8dc'; // fallback suave
+  const theme = program.themeColor || '#fff8dc';
 
   return (
     <div className="px-1 py-1">
-      {/* Encabezado unificado */}
       <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-black/50">
         {program.title || canonSlug}
       </div>
@@ -548,7 +539,7 @@ export default function HabitosClient() {
     });
   }
 
-  // helpers hábitos personales
+  // helpers hábitos personales (usados también para confeti “todo completado”)
   function applicableMasterIds(dKey: string) {
     const d = parseKeyToDate(dKey);
     return masters
@@ -556,7 +547,12 @@ export default function HabitosClient() {
       .filter((h) => !(h.weekend === false && isWeekendDay(d)))
       .map((h) => h.id);
   }
+
+  // toggle hábitos personales (con confeti por coordenadas)
   function toggleDone(habitId: string, dKey?: string, evt?: React.MouseEvent) {
+    const cx = evt?.clientX;
+    const cy = evt?.clientY;
+
     const key = dKey ?? today;
     const bucket = daily[key] ?? {};
     const wasDone = !!bucket[habitId]?.done;
@@ -577,8 +573,8 @@ export default function HabitosClient() {
       return map;
     });
 
-    if (!wasDone) void confettiBurst(evt);
-    if (!wasDone && completedAllAfter) void confettiBurst(undefined, true);
+    if (!wasDone) void confettiBurstXY(cx, cy);
+    if (!wasDone && completedAllAfter) void confettiBurstXY(undefined, undefined, true);
   }
 
   const todayHabits: HabitView[] = useMemo(() => {
@@ -595,6 +591,9 @@ export default function HabitosClient() {
     !!checks?.[slug]?.[dayIdx]?.[taskId];
 
   const toggleTaskChecked = (slug: string, dayIdx: number, taskId: string, evt?: React.MouseEvent) => {
+    const cx = evt?.clientX;
+    const cy = evt?.clientY;
+
     let willBeChecked = false;
     setChecks((prev) => {
       const next: ChecksMap = { ...(prev || {}) };
@@ -610,7 +609,8 @@ export default function HabitosClient() {
       return next;
     });
     setChecksVersion((v) => v + 1);
-    if (willBeChecked) void confettiBurst(evt, false);
+
+    if (willBeChecked) void confettiBurstXY(cx, cy); // ✅ ahora también en programas
   };
 
   /* ===== RENDER ===== */
@@ -630,7 +630,7 @@ export default function HabitosClient() {
         </span>
       </SectionTitle>
 
-      {/* 1) Creados por ti */}
+      {/* 1) Creados por ti (AHORA con la misma barra) */}
       <section className="mb-6">
         <SubTitle>Creados por ti</SubTitle>
         {todayHabits.length === 0 ? (
@@ -639,29 +639,18 @@ export default function HabitosClient() {
           <ul className="space-y-3">
             {todayHabits.map((h) => {
               const checked = h.done;
-              const bg = checked ? (h.color ?? '#E8EAF6') : '#fff';
-              const textColor = checked ? (h.textColor === 'white' ? '#fff' : '#111') : '#111';
+              const label = h.name;
+              const theme = h.color ?? '#e6f7ee'; // tono suave por defecto
 
               return (
-                <li
-                  key={h.id}
-                  className="flex items-center justify-between rounded-2xl border border-black/20 px-4 py-3 transition"
-                  style={{ background: bg, color: textColor }}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-xl">{h.icon ?? '🧩'}</span>
-                    <span className="text-sm">{h.name}</span>
-                  </div>
-
-                  <button
-                    onClick={(e) => toggleDone(h.id, undefined, e)}
-                    className="grid h-6 w-6 place-items-center rounded-full border border-black/60 bg-white text-black"
-                    title={checked ? 'Desmarcar' : 'Marcar como hecho'}
-                    aria-label={checked ? `Desmarcar ${h.name}` : `Marcar ${h.name} como hecho`}
-                    style={checked ? { background: '#22c55e', color: 'white', borderColor: '#16a34a' } : undefined}
-                  >
-                    {checked ? <Check size={14} /> : null}
-                  </button>
+                <li key={h.id}>
+                  <TaskPill
+                    label={label}
+                    checked={checked}
+                    color={theme}
+                    onToggle={(e) => toggleDone(h.id, undefined, e)}
+                    onInfo={undefined}
+                  />
                 </li>
               );
             })}
