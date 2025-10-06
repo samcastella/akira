@@ -159,7 +159,6 @@ function getAliases(): Record<string, string> {
 function normalizeSlug(slug: string) {
   const s = String(slug || '');
   const alias = getAliases()[s];
-  // Prioriza alias explícito y, si no existe, quita sufijo legacy -30
   return (alias ?? s).replace(/-30$/, '');
 }
 function getProgramBySlug(slug: string): ProgramDef | null {
@@ -170,7 +169,7 @@ function getProgramBySlug(slug: string): ProgramDef | null {
 }
 
 /* =========================
-   Utils de formato inline (**negrita**) y multilínea
+   Utils de formato (**negrita**) y multilínea
    ========================= */
 function renderInlineBold(text: string) {
   if (!text) return null;
@@ -251,11 +250,11 @@ function TaskPill({
   label: string;
   checked: boolean;
   color: string;
-  onToggle: () => void;
+  onToggle: (evt: React.MouseEvent) => void;
   onInfo?: () => void;
 }) {
   const bg = checked ? color : '#ffffff';
-  const border = checked ? '#00000080' : `${color}66`; // 8-digit hex con alpha suave
+  const border = checked ? '#00000080' : `${color}66`;
   const text = '#111111';
 
   return (
@@ -284,7 +283,7 @@ function TaskPill({
         {checked ? <Check size={16} /> : null}
       </button>
 
-      {/* Centro: label (pequeño + hasta 2 líneas con negritas reales) */}
+      {/* Centro: label pequeño y hasta 2 líneas */}
       <div
         className="mx-3 min-w-0 flex-1 text-sm font-semibold leading-snug"
         style={{
@@ -322,11 +321,11 @@ function ProgramMiniBar({
   programsTick,
 }: {
   slug: string;
-  onToggle: (slug: string, dayIdx: number, taskId: string) => void;
+  onToggle: (slug: string, dayIdx: number, taskId: string, evt?: React.MouseEvent) => void;
   isChecked: (slug: string, dayIdx: number, taskId: string) => boolean;
-  programsTick: number; // fuerza re-render cuando cambia
+  programsTick: number; // fuerza re-render
 }) {
-  void programsTick; // sólo para volver a evaluar getProgramBySlug
+  void programsTick;
 
   const program = getProgramBySlug(slug);
   const [openTask, setOpenTask] = useState<{ title: string; detail?: string } | null>(null);
@@ -344,14 +343,12 @@ function ProgramMiniBar({
   const canonSlug = program.slug;
   const dayIdx = getDayIndexFor(canonSlug) ?? 0;
   const tasks: ProgramTask[] = program?.days?.[dayIdx]?.tasks || [];
-
-  // color del programa (fallback suave)
   const theme = program.themeColor || '#F5F5F5';
 
   return (
     <div className="px-1 py-1">
-      {/* Encabezado sutil por programa */}
-      <div className="mb-2 text-[11px] uppercase tracking-wide text-black/50">
+      {/* Encabezado uniforme para todos */}
+      <div className="mb-2 text-xs font-semibold uppercase tracking-[.08em] text-black/45">
         {program.title || canonSlug}
       </div>
 
@@ -369,7 +366,7 @@ function ProgramMiniBar({
                   label={label}
                   checked={checked}
                   color={theme}
-                  onToggle={() => onToggle(canonSlug, dayIdx, taskId)}
+                  onToggle={(evt) => onToggle(canonSlug, dayIdx, taskId, evt)}
                   onInfo={() => setOpenTask({ title: label, detail: t.detail })}
                 />
               </li>
@@ -403,11 +400,10 @@ export default function HabitosClient() {
   const [checksVersion, setChecksVersion] = useState<number>(0);
   const [programsTick, setProgramsTick] = useState<number>(0);
 
-  // Hidratar index de programas desde window.__PROGRAMS (ya inyectado en layout)
   useEffect(() => {
     const bump = () => setProgramsTick((t) => t + 1);
-    const id = requestAnimationFrame(bump); // primer tick tras hidratar
-    const onUpdated = () => bump(); // por si alguien vuelve a inyectar/actualizar
+    const id = requestAnimationFrame(bump);
+    const onUpdated = () => bump();
     window.addEventListener('akira:programs-updated', onUpdated);
     return () => {
       cancelAnimationFrame(id);
@@ -449,7 +445,7 @@ export default function HabitosClient() {
     setMasters(loadMasterHabits());
     setDaily(loadDaily());
 
-    // Normalizar checks a slugs canónicos (aplica alias + fallback -30)
+    // Normalizar checks
     const checks0 = loadProgramChecks();
     const checksNorm: ChecksMap = {};
     const aliases = getAliases();
@@ -466,18 +462,15 @@ export default function HabitosClient() {
     const refreshActives = () => setActivePrograms(normalizeSlugs(getActiveSlugs()));
     refreshActives();
 
-    // pequeño doble-check por si hay latencia en otras pestañas
     const t0 = setTimeout(refreshActives, 250);
     const t1 = setTimeout(refreshActives, 750);
 
-    // Pull remoto → recarga
     (async () => {
       try { if (uid) await pullUserPrograms(); } catch {}
       initProgramsLocal();
       refreshActives();
     })();
 
-    // listeners MISMA pestaña + cross-tab
     const onProgramsUpdated = () => refreshActives();
     const onVisibility = () => { if (!document.hidden) refreshActives(); };
     const onFocus = () => refreshActives();
@@ -570,7 +563,7 @@ export default function HabitosClient() {
   const isTaskChecked = (slug: string, dayIdx: number, taskId: string) =>
     !!checks?.[slug]?.[dayIdx]?.[taskId];
 
-  const toggleTaskChecked = (slug: string, dayIdx: number, taskId: string) => {
+  const toggleTaskChecked = (slug: string, dayIdx: number, taskId: string, evt?: React.MouseEvent) => {
     let willBeChecked = false;
     setChecks((prev) => {
       const next: ChecksMap = { ...(prev || {}) };
@@ -586,7 +579,7 @@ export default function HabitosClient() {
       return next;
     });
     setChecksVersion((v) => v + 1);
-    if (willBeChecked) void confettiBurst(undefined, false);
+    if (willBeChecked) void confettiBurst(evt, false);
   };
 
   /* ===== RENDER ===== */
