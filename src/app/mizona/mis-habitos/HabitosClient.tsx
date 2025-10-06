@@ -108,7 +108,6 @@ const PILL_RADIUS = 9999;
 function DBG(...args: any[]) {
   try {
     if (typeof window !== 'undefined' && localStorage.getItem('akira_debug_confetti') === '1') {
-      // eslint-disable-next-line no-console
       console.debug('[confetti]', ...args);
     }
   } catch {}
@@ -506,7 +505,6 @@ export default function HabitosClient() {
         hasCanvas: !!document.getElementById('akira-confetti'),
         lastXY: (window as any).__akiraLastXY,
       };
-      // eslint-disable-next-line no-console
       console.debug('[confetti] info', info);
       return info;
     };
@@ -771,7 +769,7 @@ export default function HabitosClient() {
         <SubTitle>Programas activos</SubTitle>
 
         {activePrograms?.length ? (
-          <div className="space-y-6" key={`${checksVersion}-${programsTick}`}>
+          <div className="space-y-6">
             {activePrograms.map((slug) => (
               <ProgramMiniBar
                 key={slug}
