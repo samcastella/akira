@@ -150,7 +150,7 @@ function renderInlineMarkdown(text: string) {
 }
 
 /* =========================
-   Confeti con coordenadas (evita pooling del evento)
+   Confeti con coordenadas (canvas propio)
    ========================= */
 let confettiInstance: any | null = null;
 let confettiCanvas: HTMLCanvasElement | null = null;
@@ -290,6 +290,19 @@ function TaskPill({
   const border = checked ? '#00000080' : `${color}66`;
   const text = '#111111';
 
+  // --- confeti desde la propia píldora ---
+  const lastXY = useRef<{ x?: number; y?: number }>({});
+  const prevChecked = useRef<boolean>(checked);
+  useEffect(() => {
+    if (!prevChecked.current && checked) {
+      // subió a true → celebrar
+      void confettiBurstXY(lastXY.current.x, lastXY.current.y);
+      // refuerzo por si el frame llega tarde
+      requestAnimationFrame(() => void confettiBurstXY(lastXY.current.x, lastXY.current.y));
+    }
+    prevChecked.current = checked;
+  }, [checked]);
+
   return (
     <div
       className="flex items-center justify-between px-4 py-3"
@@ -301,6 +314,9 @@ function TaskPill({
       }}
     >
       <button
+        onMouseDown={(e) => {
+          lastXY.current = { x: e.clientX, y: e.clientY };
+        }}
         onClick={onToggle}
         className="grid h-9 w-9 place-items-center rounded-full border shrink-0"
         title={checked ? 'Desmarcar' : 'Marcar'}
@@ -542,7 +558,7 @@ export default function HabitosClient() {
     });
   }
 
-  // helpers hábitos personales (usados también para confeti “todo completado”)
+  // helpers hábitos personales
   function applicableMasterIds(dKey: string) {
     const d = parseKeyToDate(dKey);
     return masters
@@ -551,11 +567,8 @@ export default function HabitosClient() {
       .map((h) => h.id);
   }
 
-  // toggle hábitos personales (con confeti por coordenadas)
+  // toggle hábitos personales (celebración grande si completas todos)
   function toggleDone(habitId: string, dKey?: string, evt?: React.MouseEvent) {
-    const cx = evt?.clientX;
-    const cy = evt?.clientY;
-
     const key = dKey ?? today;
     const bucket = daily[key] ?? {};
     const wasDone = !!bucket[habitId]?.done;
@@ -576,7 +589,6 @@ export default function HabitosClient() {
       return map;
     });
 
-    if (!wasDone) void confettiBurstXY(cx, cy);
     if (!wasDone && completedAllAfter) void confettiBurstXY(undefined, undefined, true);
   }
 
@@ -594,11 +606,6 @@ export default function HabitosClient() {
     !!checks?.[slug]?.[dayIdx]?.[taskId];
 
   const toggleTaskChecked = (slug: string, dayIdx: number, taskId: string, evt?: React.MouseEvent) => {
-    // capturamos coordenadas antes del setState
-    const cx = evt?.clientX;
-    const cy = evt?.clientY;
-
-    let willBeChecked = false;
     setChecks((prev) => {
       const next: ChecksMap = { ...(prev || {}) };
       next[slug] = { ...(next[slug] || {}) };
@@ -607,17 +614,12 @@ export default function HabitosClient() {
         delete next[slug][dayIdx][taskId];
       } else {
         next[slug][dayIdx][taskId] = true;
-        willBeChecked = true;
       }
       saveProgramChecks(next);
       return next;
     });
     setChecksVersion((v) => v + 1);
-
-    if (willBeChecked) {
-      void confettiBurstXY(cx, cy);
-      requestAnimationFrame(() => void confettiBurstXY(cx, cy)); // refuerzo tras re-render
-    }
+    // (el confeti pequeño ya lo dispara TaskPill al ver el cambio de checked)
   };
 
   /* ===== RENDER ===== */
@@ -647,7 +649,7 @@ export default function HabitosClient() {
             {todayHabits.map((h) => {
               const checked = h.done;
               const label = h.name;
-              const theme = h.color ?? '#e6f7ee'; // tono suave por defecto
+              const theme = h.color ?? '#e6f7ee';
 
               return (
                 <li key={h.id}>
