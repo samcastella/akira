@@ -40,11 +40,14 @@ async function getShooter() {
     confettiCanvas = document.createElement('canvas');
     Object.assign(confettiCanvas.style, {
       position: 'fixed',
-      inset: '0',
+      top: '0',
+      left: '0',
       width: '100vw',
       height: '100vh',
       pointerEvents: 'none',
-      zIndex: '9999',
+      // 🔒 siempre por encima de navs / overlays
+      zIndex: '2147483647',
+      background: 'transparent',
     });
     document.body.appendChild(confettiCanvas);
   }
@@ -118,8 +121,8 @@ export default function CreateHabitBar(props: Props) {
         // coords locales o globales (fallback)
         const globalXY =
           (typeof window !== 'undefined' && (window as any).__akiraLastXY) || {};
-        const x = lastXY.current.x ?? globalXY.x;
-        const y = lastXY.current.y ?? globalXY.y;
+        const x = lastXY.current.x ?? (globalXY as any).x;
+        const y = lastXY.current.y ?? (globalXY as any).y;
 
         void boomAt(x, y);
         requestAnimationFrame(() => void boomAt(x, y));

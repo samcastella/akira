@@ -163,11 +163,14 @@ async function getConfettiShooter() {
     confettiCanvas.id = 'akira-confetti';
     Object.assign(confettiCanvas.style, {
       position: 'fixed',
-      inset: '0',
+      top: '0',
+      left: '0',
       width: '100vw',
       height: '100vh',
       pointerEvents: 'none',
-      zIndex: '9999',
+      // z-index gigantesco para quedar por encima de cualquier overlay/nav
+      zIndex: '2147483647',
+      background: 'transparent',
     });
     document.body.appendChild(confettiCanvas);
   }
@@ -444,10 +447,10 @@ export default function HabitosClient() {
   const [checksVersion, setChecksVersion] = useState<number>(0);
   const [programsTick, setProgramsTick] = useState<number>(0);
 
-  // Precalentar confeti al montar (evita que el primer click se "pierda")
+  // Precalentar confeti al montar
   useEffect(() => {
     void getConfettiShooter().catch(() => {});
-    (window as any).akiraConfettiTest = () => confettiBurstXY(); // util para probar desde consola
+    (window as any).akiraConfettiTest = () => confettiBurstXY();
   }, []);
 
   // Hidratar index de programas desde window.__PROGRAMS
