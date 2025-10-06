@@ -104,6 +104,38 @@ const parseKeyToDate = (k: string) => new Date(`${k}T00:00:00`);
 const BORDER = '#E5E7EB';
 const PILL_RADIUS = 9999;
 
+/* ===== DEBUG confetti ===== */
+function DBG(...args: any[]) {
+  try {
+    if (typeof window !== 'undefined' && localStorage.getItem('akira_debug_confetti') === '1') {
+      // eslint-disable-next-line no-console
+      console.debug('[confetti]', ...args);
+    }
+  } catch {}
+}
+function markPoint(x?: number, y?: number, label = '') {
+  if (typeof document === 'undefined') return;
+  if (localStorage.getItem('akira_debug_confetti') !== '1') return;
+  const dot = document.createElement('div');
+  Object.assign(dot.style, {
+    position: 'fixed',
+    left: `${(x ?? window.innerWidth / 2) - 4}px`,
+    top: `${(y ?? window.innerHeight / 2) - 4}px`,
+    width: '8px',
+    height: '8px',
+    borderRadius: '50%',
+    background: '#ef4444',
+    border: '1px solid #000',
+    zIndex: '2147483647',
+    pointerEvents: 'none',
+    boxShadow: '0 0 0 2px rgba(239,68,68,.3)',
+    transform: 'translateZ(0)',
+  } as CSSStyleDeclaration);
+  if (label) dot.title = label;
+  document.body.appendChild(dot);
+  setTimeout(() => dot.remove(), 1200);
+}
+
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <h3 className="text-lg font-extrabold tracking-tight mb-2">{children}</h3>;
 }
@@ -168,32 +200,44 @@ async function getConfettiShooter() {
       width: '100vw',
       height: '100vh',
       pointerEvents: 'none',
-      // z-index gigantesco para quedar por encima de cualquier overlay/nav
       zIndex: '2147483647',
       background: 'transparent',
     });
     document.body.appendChild(confettiCanvas);
+    DBG('canvas created & appended');
   }
   if (!confettiInstance) {
     confettiInstance = confetti.create(confettiCanvas, { resize: true, useWorker: true });
+    DBG('confetti instance created');
   }
   return confettiInstance;
 }
 
 async function confettiBurstXY(x?: number, y?: number, big = false) {
   try {
+    const hidden = typeof document !== 'undefined' ? document.hidden : false;
     const prefersReduced =
       typeof window !== 'undefined' &&
       window.matchMedia &&
       window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    DBG('burst request', { x, y, big, hidden, prefersReduced });
+
+    if (hidden) {
+      DBG('SKIP: document.hidden === true (página no visible)');
+      return;
+    }
     if (prefersReduced) {
-      console.debug('[confetti] disabled by prefers-reduced-motion');
+      DBG('SKIP: prefers-reduced-motion');
       return;
     }
 
     const shoot = await getConfettiShooter();
     const ox = Math.min(Math.max((x ?? window.innerWidth / 2) / window.innerWidth, 0), 1);
     const oy = Math.min(Math.max((y ?? window.innerHeight / 2) / window.innerHeight, 0), 1);
+
+    markPoint(x, y, 'burst');
+    DBG('shoot', { origin: { ox, oy }, big });
 
     shoot({
       particleCount: big ? 180 : 80,
@@ -205,7 +249,7 @@ async function confettiBurstXY(x?: number, y?: number, big = false) {
       scalar: big ? 1.05 : 0.9,
     });
   } catch (e) {
-    console.debug('[confetti] failed to shoot', e);
+    DBG('ERROR shoot', e);
   }
 }
 
@@ -304,6 +348,8 @@ function TaskPill({
         (typeof window !== 'undefined' && (window as any).__akiraLastXY) || {};
       const x = lastXY.current.x ?? (gxy as any).x;
       const y = lastXY.current.y ?? (gxy as any).y;
+      DBG('TaskPill effect -> rising edge', { x, y, label });
+      markPoint(x, y, 'TaskPill');
       void confettiBurstXY(x, y);
       requestAnimationFrame(() => void confettiBurstXY(x, y));
     }
@@ -324,6 +370,8 @@ function TaskPill({
         onMouseDown={(e) => {
           lastXY.current = { x: e.clientX, y: e.clientY };
           (window as any).__akiraLastXY = { x: e.clientX, y: e.clientY };
+          DBG('TaskPill mousedown', { x: e.clientX, y: e.clientY, label });
+          markPoint(e.clientX, e.clientY, 'md');
         }}
         onClick={onToggle}
         className="grid h-9 w-9 place-items-center rounded-full border shrink-0"
@@ -446,6 +494,23 @@ export default function HabitosClient() {
   const [checks, setChecks] = useState<ChecksMap>({});
   const [checksVersion, setChecksVersion] = useState<number>(0);
   const [programsTick, setProgramsTick] = useState<number>(0);
+
+  // Utilidades de depuración en consola
+  useEffect(() => {
+    (window as any).akiraConfettiOn = () => localStorage.setItem('akira_debug_confetti', '1');
+    (window as any).akiraConfettiOff = () => localStorage.removeItem('akira_debug_confetti');
+    (window as any).akiraConfettiInfo = () => {
+      const info = {
+        hidden: document.hidden,
+        reduced: window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches,
+        hasCanvas: !!document.getElementById('akira-confetti'),
+        lastXY: (window as any).__akiraLastXY,
+      };
+      // eslint-disable-next-line no-console
+      console.debug('[confetti] info', info);
+      return info;
+    };
+  }, []);
 
   // Precalentar confeti al montar
   useEffect(() => {
@@ -625,9 +690,10 @@ export default function HabitosClient() {
     taskId: string,
     evt?: React.MouseEvent
   ) => {
-    // coords reales del click
     const cx = evt?.clientX;
     const cy = evt?.clientY;
+    DBG('toggleTaskChecked called', { slug, dayIdx, taskId, cx, cy });
+    markPoint(cx, cy, 'toggle');
 
     let willBeChecked = false;
 
@@ -646,8 +712,8 @@ export default function HabitosClient() {
     });
     setChecksVersion((v) => v + 1);
 
-    // 🎉 dispara confeti con coords del evento (robusto)
     if (willBeChecked) {
+      DBG('CONFETTI from toggleTaskChecked', { cx, cy });
       void confettiBurstXY(cx, cy);
       requestAnimationFrame(() => void confettiBurstXY(cx, cy));
       setTimeout(() => void confettiBurstXY(cx, cy), 40);
