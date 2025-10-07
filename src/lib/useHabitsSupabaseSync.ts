@@ -1,114 +1,216 @@
+// src/lib/useHabitsSupabaseSync.ts
 import { useEffect, useRef } from 'react';
-import { pullHabits, pullTicks, upsertHabits, upsertTicks, softDeleteHabits } from './habitsClient';
+import { supabase, isSupabaseEnvReady } from '@/lib/supabaseClient';
 
-const LS_DIRTY = 'akira_habits_dirty_v1';
-const LS_LAST_PULL = 'akira_habits_last_pull_v1';
-const LS_MASTER = 'akira_habits_master_v1';
-const LS_DAILY  = 'akira_habits_daily_v1';
+const LS_HABITS_MASTER = 'akira_habits_master_v1';
+const LS_HABITS_DAILY  = 'akira_habits_daily_v1';
 
-type Dirty = {
-  mastersUpserts: any[];
-  mastersDeletes: string[];
-  ticksUpserts: any[];
+export type HabitMaster = {
+  id: string;         // id local (string)
+  rid?: string;       // id remoto (uuid) opcional
+  name: string;
+  icon?: string;
+  color?: string;
+  startDate?: string;
+  endDate?: string;
+  weekend?: boolean;  // false = no contar findes
+  updated_at?: string; // ISO (cliente/servidor)
+  deleted_at?: string | null;
 };
 
-const emptyDirty = (): Dirty => ({ mastersUpserts: [], mastersDeletes: [], ticksUpserts: [] });
+// ===== helpers LS =====
+function loadMasters(): HabitMaster[] {
+  try { return JSON.parse(localStorage.getItem(LS_HABITS_MASTER) || '[]') as HabitMaster[]; } catch { return []; }
+}
+function saveMasters(arr: HabitMaster[]) {
+  localStorage.setItem(LS_HABITS_MASTER, JSON.stringify(arr));
+}
+function nowIso() { return new Date().toISOString(); }
 
-function getDirty(): Dirty {
-  try { return JSON.parse(localStorage.getItem(LS_DIRTY) || 'null') || emptyDirty(); } catch { return emptyDirty(); }
-}
-function setDirty(d: Dirty) { localStorage.setItem(LS_DIRTY, JSON.stringify(d)); }
+// ===== cola in-memory =====
+type MasterUpsert = HabitMaster;
+const masterQueue: MasterUpsert[] = [];
+let flushing = false;
 
-export function queueHabitUpsert(row: any) {
-  const d = getDirty(); d.mastersUpserts.push({ ...row, updated_at: new Date().toISOString() }); setDirty(d);
-}
-export function queueHabitDelete(id: string) {
-  const d = getDirty(); d.mastersDeletes.push(id); setDirty(d);
-}
-export function queueTickUpsert(row: any) {
-  const d = getDirty(); d.ticksUpserts.push({ ...row, updated_at: new Date().toISOString() }); setDirty(d);
+// Exportado para que el UI encole al crear/editar
+export function queueMasterUpsert(master: HabitMaster) {
+  // garantizamos updated_at
+  const m: HabitMaster = { ...master, updated_at: master.updated_at ?? nowIso() };
+  masterQueue.push(m);
 }
 
-// Helpers LWW sobre tus LS
-function mergeMastersLWW(serverRows: any[]) {
-  const ls = JSON.parse(localStorage.getItem(LS_MASTER) || '[]');
-  const byId: Record<string, any> = Object.fromEntries(ls.map((h: any) => [h.id, h]));
-  serverRows.forEach((r) => {
-    const local = byId[r.id];
-    if (!local || (r.updated_at && (!local.updated_at || r.updated_at > local.updated_at))) {
-      byId[r.id] = {
-        ...local,
-        id: r.id, name: r.name, color: r.color ?? undefined, icon: r.icon ?? undefined,
-        startDate: r.start_date ?? undefined, endDate: r.end_date ?? undefined,
-        weekend: r.weekend ?? undefined,
-        updated_at: r.updated_at,
-        deleted_at: r.deleted_at ?? null,
-      };
+// ====== ticks (ya lo usabas) ======
+type TickUpsert = {
+  habit_id: string;     // local id
+  date_key: string;     // 'YYYY-MM-DD'
+  done: boolean;
+  done_at: string | null;
+  updated_at: string;
+};
+const tickQueue: TickUpsert[] = [];
+export function queueTickUpsert(t: TickUpsert) { tickQueue.push(t); }
+
+// ===== reconciliación masters local <-> remoto =====
+async function pullHabitMasters(uid: string) {
+  const { data, error } = await supabase
+    .from('habit_masters')
+    .select('id, user_id, local_id, title, icon, color, start_date, end_date, weekend, updated_at, deleted_at')
+    .eq('user_id', uid);
+  if (error) { console.warn('[pullHabitMasters] error', error); return; }
+
+  const remote = (data || []).map(r => ({
+    id: String(r.local_id || ''), // local key
+    rid: r.id,
+    name: r.title,
+    icon: r.icon || undefined,
+    color: r.color || undefined,
+    startDate: r.start_date || undefined,
+    endDate: r.end_date || undefined,
+    weekend: typeof r.weekend === 'boolean' ? r.weekend : undefined,
+    updated_at: r.updated_at || undefined,
+    deleted_at: r.deleted_at || null,
+  })) as HabitMaster[];
+
+  const local = loadMasters();
+  const byLocalId = new Map(local.map(m => [m.id, m]));
+  let changed = false;
+
+  for (const r of remote) {
+    const l = byLocalId.get(r.id);
+    // Si no existe local → añadir
+    if (!l) {
+      byLocalId.set(r.id, r);
+      changed = true;
+      continue;
     }
-  });
-  const merged = Object.values(byId).filter((h: any) => !h.deleted_at);
-  localStorage.setItem(LS_MASTER, JSON.stringify(merged));
-}
-
-function mergeDailyTicksLWW(serverTicks: any[]) {
-  const daily = JSON.parse(localStorage.getItem(LS_DAILY) || '{}');
-  serverTicks.forEach((t) => {
-    const day = daily[t.date_key] || {};
-    const cur = day[t.habit_id] || {};
-    const curAt = cur.updated_at || '';
-    if (!curAt || (t.updated_at && t.updated_at > curAt)) {
-      day[t.habit_id] = {
-        done: !!t.done,
-        doneAt: t.done_at ? new Date(t.done_at).getTime() : undefined,
-        updated_at: t.updated_at,
-      };
-      daily[t.date_key] = day;
-    }
-  });
-  localStorage.setItem(LS_DAILY, JSON.stringify(daily));
-}
-
-export function useHabitsSupabaseSync(userId?: string) {
-  const syncing = useRef(false);
-
-  async function pull() {
-    const since = localStorage.getItem(LS_LAST_PULL) || undefined;
-    const from = new Date(Date.now() - 1000 * 60 * 60 * 24 * 120).toISOString().slice(0,10);
-    const to   = new Date().toISOString().slice(0,10);
-    const [masters, ticks] = await Promise.all([ pullHabits(since), pullTicks(from, to, since) ]);
-    mergeMastersLWW(masters);
-    mergeDailyTicksLWW(ticks);
-    localStorage.setItem(LS_LAST_PULL, new Date().toISOString());
-  }
-
-  async function flush() {
-    if (syncing.current) return;
-    syncing.current = true;
-    try {
-      const d = getDirty();
-      if (d.mastersUpserts.length) await upsertHabits(d.mastersUpserts.map((h) => ({ ...h, user_id: userId })));
-      if (d.mastersDeletes.length) await softDeleteHabits(d.mastersDeletes);
-      if (d.ticksUpserts.length) await upsertTicks(d.ticksUpserts);
-      setDirty(emptyDirty());
-    } finally {
-      syncing.current = false;
+    // si remoto es más nuevo → reemplazar/merge
+    const lt = l.updated_at ? new Date(l.updated_at).getTime() : 0;
+    const rt = r.updated_at ? new Date(r.updated_at).getTime() : 0;
+    if (rt > lt) {
+      byLocalId.set(r.id, { ...l, ...r });
+      changed = true;
+    } else {
+      // si local es más nuevo, lo encolamos para subir
+      if (lt > rt) masterQueue.push({ ...l });
     }
   }
+
+  // locales que no están en remoto → encolar subida (migración)
+  for (const l of local) {
+    if (!remote.find(r => r.id === l.id)) {
+      // solo si no está borrado
+      masterQueue.push({ ...l, updated_at: l.updated_at ?? nowIso() });
+    }
+  }
+
+  if (changed) saveMasters(Array.from(byLocalId.values()));
+}
+
+async function flushMasters(uid: string) {
+  if (flushing || masterQueue.length === 0) return;
+  flushing = true;
+  try {
+    const batch = masterQueue.splice(0, masterQueue.length);
+
+    const rows = batch.map(m => ({
+      user_id: uid,
+      local_id: m.id,
+      title: m.name,
+      icon: m.icon ?? null,
+      color: m.color ?? null,
+      start_date: m.startDate ?? null,
+      end_date: m.endDate ?? null,
+      weekend: typeof m.weekend === 'boolean' ? m.weekend : null,
+      updated_at: m.updated_at ?? nowIso(),
+      deleted_at: m.deleted_at ?? null,
+    }));
+
+    const { error } = await supabase.from('habit_masters').upsert(rows, {
+      onConflict: 'user_id,local_id',
+    });
+    if (error) {
+      console.warn('[flushMasters] upsert error', error);
+      // re-encolar para intentar más tarde
+      masterQueue.unshift(...batch);
+      return;
+    }
+
+    // refrescamos local: asignar rid si vino del server
+    const { data: refreshed, error: selErr } = await supabase
+      .from('habit_masters')
+      .select('id, user_id, local_id, title, icon, color, start_date, end_date, weekend, updated_at, deleted_at')
+      .eq('user_id', uid);
+
+    if (!selErr && refreshed) {
+      const map = new Map(loadMasters().map(m => [m.id, m]));
+      for (const r of refreshed) {
+        const id = String(r.local_id || '');
+        const prev = map.get(id);
+        const merged: HabitMaster = {
+          ...(prev ?? { id }),
+          rid: r.id,
+          name: r.title,
+          icon: r.icon || undefined,
+          color: r.color || undefined,
+          startDate: r.start_date || undefined,
+          endDate: r.end_date || undefined,
+          weekend: typeof r.weekend === 'boolean' ? r.weekend : undefined,
+          updated_at: r.updated_at || prev?.updated_at,
+          deleted_at: r.deleted_at || null,
+        };
+        map.set(id, merged);
+      }
+      saveMasters(Array.from(map.values()));
+    }
+  } finally {
+    flushing = false;
+  }
+}
+
+async function flushTicks(uid: string) {
+  if (tickQueue.length === 0) return;
+  const batch = tickQueue.splice(0, tickQueue.length);
+  const rows = batch.map(t => ({
+    user_id: uid,
+    local_id: t.habit_id,
+    date_key: t.date_key,
+    done: t.done,
+    done_at: t.done_at,
+    updated_at: t.updated_at,
+  }));
+  const { error } = await supabase.from('habit_ticks').upsert(rows, {
+    onConflict: 'user_id,local_id,date_key',
+  });
+  if (error) {
+    console.warn('[flushTicks] upsert error', error);
+    tickQueue.unshift(...batch); // re-encolar
+  }
+}
+
+export function useHabitsSupabaseSync(uid?: string) {
+  const timerRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!userId) return;
-    pull().then(flush).catch(() => {});
-    const onFocus = () => pull().then(flush).catch(() => {});
-    const onOnline = () => flush().catch(() => {});
-    const iv = setInterval(() => flush().catch(() => {}), 15000);
-    window.addEventListener('focus', onFocus);
-    window.addEventListener('online', onOnline);
-    return () => {
-      window.removeEventListener('focus', onFocus);
-      window.removeEventListener('online', onOnline);
-      clearInterval(iv);
-    };
-  }, [userId]);
+    if (!isSupabaseEnvReady()) return;
+    if (!uid) return;
 
-  return { pull, flush, queueHabitUpsert, queueHabitDelete, queueTickUpsert };
+    // pull inicial (masters) y flush inicial (masters + ticks)
+    void pullHabitMasters(uid);
+    void flushMasters(uid);
+    void flushTicks(uid);
+
+    const tick = async () => {
+      await flushMasters(uid);
+      await flushTicks(uid);
+    };
+
+    timerRef.current = window.setInterval(tick, 15000);
+    const vis = () => { if (document.visibilityState === 'hidden') void tick(); };
+    document.addEventListener('visibilitychange', vis);
+
+    return () => {
+      if (timerRef.current) window.clearInterval(timerRef.current);
+      document.removeEventListener('visibilitychange', vis);
+    };
+  }, [uid]);
 }

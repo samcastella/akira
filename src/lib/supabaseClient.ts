@@ -50,8 +50,6 @@ function makeBrowserClient(): SupabaseClient {
 
   const options: SupabaseClientOptions<'public'> = {
     auth: {
-      // Mantiene sesión y refresh en el cliente; con @supabase/ssr los
-      // cambios de sesión se reflejan en cookies (vía helpers/middleware).
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true, // útil para /auth/recovery (hash)
@@ -73,6 +71,14 @@ export function getSupabase(): SupabaseClient {
   if (!g.__akira_supabase__) {
     g.__akira_supabase__ = makeBrowserClient();
   }
+
+  // 🔎 Exponer para depuración en consola (solo DEV y navegador)
+  try {
+    if (process.env.NODE_ENV === 'development') {
+      (window as any).supabase = g.__akira_supabase__;
+    }
+  } catch {}
+
   return g.__akira_supabase__ as SupabaseClient;
 }
 

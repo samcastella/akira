@@ -1,3 +1,4 @@
+// src/app/mizona/crear-habitos/page.tsx  (o el path donde tengas esta página)
 'use client';
 
 import React, { useEffect, useState } from 'react';
@@ -5,6 +6,7 @@ import Link from 'next/link';
 import CreateHabitBar from '@/components/habits/CreateHabitBar';
 import HabitForm, { HabitMaster } from '@/components/habits/HabitForm';
 import HabitsCreatedList from '@/components/habits/HabitsCreatedList';
+import { queueMasterUpsert } from '@/lib/useHabitsSupabaseSync'; // ⬅️ NUEVO
 
 /* ===========================
    Claves de almacenamiento
@@ -27,6 +29,7 @@ function saveMasterHabits(list: HabitMaster[]) {
   if (typeof window === 'undefined') return;
   localStorage.setItem(LS_HABITS_MASTER, JSON.stringify(list));
 }
+const nowIso = () => new Date().toISOString();
 
 /* ===========================
    Modal base (con scroll interno)
@@ -105,7 +108,10 @@ export default function CrearHabitosPage() {
   const [habits, setHabits] = useState<HabitMaster[]>([]);
 
   useEffect(() => {
-    setHabits(loadMasterHabits());
+    // Cargamos TODO para mantener storage consistente,
+    // pero en UI filtramos los que no estén “tombstoned”.
+    const all = loadMasterHabits();
+    setHabits(all.filter((h: any) => !h?.deleted_at));
   }, []);
 
   function handleSelectPreset(key: PresetKey) {
@@ -116,35 +122,50 @@ export default function CrearHabitosPage() {
   }
 
   function handleCreateOrUpdate(h: HabitMaster) {
+    // sellamos updated_at y encolamos sync
+    const enriched = { ...(h as any), updated_at: nowIso() } as HabitMaster;
+
     setHabits((prev) => {
-      const idx = prev.findIndex(x => x.id === h.id);
+      const prevAll = loadMasterHabits(); // importante: trabajamos sobre el source of truth
+      const idx = prevAll.findIndex((x) => x.id === enriched.id);
+      let nextAll: HabitMaster[];
       if (idx >= 0) {
-        const updated = [...prev];
-        updated[idx] = h;
-        saveMasterHabits(updated);
-        return updated;
+        nextAll = [...prevAll];
+        nextAll[idx] = enriched;
       } else {
-        const next = [h, ...prev];
-        saveMasterHabits(next);
-        return next;
+        nextAll = [enriched, ...prevAll];
       }
+      saveMasterHabits(nextAll);
+      // UI: solo los no borrados
+      return nextAll.filter((x: any) => !x?.deleted_at);
     });
+
+    // ➕ sincronización con Supabase
+    try { queueMasterUpsert(enriched as any); } catch {}
+
     setOpenForm(false);
     setEditTarget(null);
   }
 
   function openEdit(h: HabitMaster) {
     setEditTarget(h);
-    setFormPreset((h.presetKey as PresetKey) ?? 'custom');
+    setFormPreset((h as any).presetKey as PresetKey ?? 'custom');
     setOpenForm(true);
   }
 
   function handleDelete(id: string) {
-    setHabits(prev => {
-      const next = prev.filter(h => h.id !== id);
-      saveMasterHabits(next);
-      return next;
-    });
+    const ts = nowIso();
+    // Tombstone en storage (para que se sincronice la baja)
+    const all = loadMasterHabits();
+    const idx = all.findIndex((h) => h.id === id);
+    if (idx >= 0) {
+      const tomb = { ...(all[idx] as any), deleted_at: ts, updated_at: ts };
+      all[idx] = tomb as HabitMaster;
+      saveMasterHabits(all);
+      try { queueMasterUpsert(tomb as any); } catch {}
+    }
+    // UI: lo ocultamos
+    setHabits(all.filter((h: any) => !h?.deleted_at));
   }
 
   return (
@@ -181,7 +202,7 @@ export default function CrearHabitosPage() {
             <button
               key={opt.key}
               onClick={() => handleSelectPreset(opt.key)}
-              className="flex items-center justify-between rounded-xl border border-black/10 px-4 py-3 text-left hover:bg-black/5"
+              className="flex items-center justify-between rounded-xl border border-black/10 px-4 py-3 text-left hover:bg_black/5"
             >
               <span className="flex items-center gap-3">
                 <span className="text-xl">{opt.icon}</span>
@@ -204,19 +225,18 @@ export default function CrearHabitosPage() {
           presetKey={formPreset}
           initial={editTarget ?? undefined}
           onCancel={() => { setOpenForm(false); setEditTarget(null); }}
-          onSave={handleCreateOrUpdate}
+          onSave={handleCreateOrUpdate} // ⬅️ ya encola y sella updated_at
         />
       </Modal>
 
       {/* Hábitos creados */}
       <section className="mt-8">
         <h3 className="mb-3 text-base font-semibold">Hábitos creados</h3>
-
-       <HabitsCreatedList
-  habits={habits}
-  onEdit={openEdit}
-  onDelete={handleDelete}
-/>
+        <HabitsCreatedList
+          habits={habits}
+          onEdit={openEdit}
+          onDelete={handleDelete}
+        />
       </section>
     </main>
   );
