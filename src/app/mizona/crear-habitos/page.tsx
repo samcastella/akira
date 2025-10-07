@@ -1,4 +1,4 @@
-// src/app/mizona/crear-habitos/page.tsx  (o el path donde tengas esta página)
+// src/app/mizona/crear-habitos/page.tsx
 'use client';
 
 import React, { useEffect, useState } from 'react';
@@ -149,7 +149,7 @@ export default function CrearHabitosPage() {
 
   function openEdit(h: HabitMaster) {
     setEditTarget(h);
-    setFormPreset((h as any).presetKey as PresetKey ?? 'custom');
+    setFormPreset(((h as any).presetKey as PresetKey) ?? 'custom');
     setOpenForm(true);
   }
 
@@ -202,7 +202,7 @@ export default function CrearHabitosPage() {
             <button
               key={opt.key}
               onClick={() => handleSelectPreset(opt.key)}
-              className="flex items-center justify-between rounded-xl border border-black/10 px-4 py-3 text-left hover:bg_black/5"
+              className="flex items-center justify-between rounded-xl border border-black/10 px-4 py-3 text-left hover:bg-black/5"
             >
               <span className="flex items-center gap-3">
                 <span className="text-xl">{opt.icon}</span>

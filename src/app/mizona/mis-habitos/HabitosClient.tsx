@@ -275,6 +275,11 @@ function getProgramBySlug(slug: string): ProgramDef | null {
 }
 
 /* =========================
+   Helper “soft-delete”
+   ========================= */
+const isDeleted = (h: any): boolean => !!h?.deleted_at;
+
+/* =========================
    Modal simple para detalles
    ========================= */
 function TaskDetailModal({
@@ -602,6 +607,8 @@ export default function HabitosClient() {
     const onStorage = (e: StorageEvent) => {
       if (e.key === LS_PROGRAMS_ACTIVE || e.key === LS_PROGRAMS_ACTIVE_LEGACY) refreshActives();
       if (e.key === LS_PROGRAM_CHECKS) setChecks(loadProgramChecks());
+      // ⬅️ rehidratar masters al cambiar la lista local (p.ej. soft-delete desde CrearHabitosPage)
+      if (e.key === LS_HABITS_MASTER) setMasters(loadMasterHabits());
     };
 
     window.addEventListener('akira:programs-updated', onProgramsUpdated as EventListener);
@@ -631,6 +638,8 @@ export default function HabitosClient() {
       const d = parseKeyToDate(dKey);
 
       masters.forEach((h) => {
+        // ⬅️ ignora soft-deleted
+        if (isDeleted(h)) return;
         if (!isInRange(dKey, h.startDate, h.endDate)) return;
         if (h.weekend === false && isWeekendDay(d)) return;
         if (!bucket[h.id]) bucket[h.id] = { done: false };
@@ -646,6 +655,7 @@ export default function HabitosClient() {
   function applicableMasterIds(dKey: string) {
     const d = parseKeyToDate(dKey);
     return masters
+      .filter((h) => !isDeleted(h))
       .filter((h) => isInRange(dKey, h.startDate, h.endDate))
       .filter((h) => !(h.weekend === false && isWeekendDay(d)))
       .map((h) => h.id);
@@ -693,6 +703,7 @@ export default function HabitosClient() {
     const d = parseKeyToDate(today);
     const bucket = daily[today] ?? {};
     return masters
+      .filter((h) => !isDeleted(h)) // ignora soft-deleted en la UI
       .filter((h) => isInRange(today, h.startDate, h.endDate))
       .filter((h) => !(h.weekend === false && isWeekendDay(d)))
       .map((h) => ({ ...h, done: !!bucket[h.id]?.done }));
