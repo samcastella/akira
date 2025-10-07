@@ -16,6 +16,9 @@ import {
 } from '@/lib/programsLocal';
 import { pullUserPrograms } from '@/lib/programSync';
 
+/* 🔗 SYNC Supabase */
+import { useHabitsSupabaseSync, queueTickUpsert } from '@/lib/useHabitsSupabaseSync';
+
 /* =========================
    Constantes / Tipos
    ========================= */
@@ -24,7 +27,7 @@ const LS_HABITS_DAILY = 'akira_habits_daily_v1';
 const LS_PROGRAM_CHECKS = 'akira_programs_daily_checks_v1';
 const LS_PROGRAMS_ACTIVE_LEGACY = 'akira_program_active'; // legacy
 
-type DailyEntry = { done: boolean; doneAt?: number };
+type DailyEntry = { done: boolean; doneAt?: number; updated_at?: string };
 type DailyMap = Record<string, Record<string, DailyEntry>>;
 type HabitView = HabitMaster & { done: boolean };
 
@@ -558,6 +561,10 @@ export default function HabitosClient() {
 
   // cargar estado inicial + sync de programas
   const uid = useAuthUserId();
+
+  /* 🔗 activa sincronización (pull + flush periódicos) */
+  useHabitsSupabaseSync(uid ?? undefined);
+
   useEffect(() => {
     setMasters(loadMasterHabits());
     setDaily(loadDaily());
@@ -644,18 +651,22 @@ export default function HabitosClient() {
       .map((h) => h.id);
   }
 
-  // toggle hábitos personales (celebración grande si completas todos)
+  // toggle hábitos personales (celebración grande si completas todos) + ⬆️ sync tick
   function toggleDone(habitId: string, dKey?: string, evt?: React.MouseEvent) {
     const key = dKey ?? today;
     const bucket = daily[key] ?? {};
     const wasDone = !!bucket[habitId]?.done;
     let completedAllAfter = false;
 
+    const nowIso = new Date().toISOString();
+
     setDaily((prev) => {
       const map: DailyMap = { ...prev };
       const b: Record<string, DailyEntry> = { ...(map[key] ?? {}) };
       const current = b[habitId] ?? { done: false };
-      const next: DailyEntry = current.done ? { done: false } : { done: true, doneAt: Date.now() };
+      const next: DailyEntry = current.done
+        ? { done: false, updated_at: nowIso }
+        : { done: true, doneAt: Date.now(), updated_at: nowIso };
       b[habitId] = next;
       map[key] = b;
 
@@ -664,6 +675,15 @@ export default function HabitosClient() {
 
       saveDaily(map);
       return map;
+    });
+
+    // ⬆️ encolar para Supabase
+    queueTickUpsert({
+      habit_id: habitId,
+      date_key: key,
+      done: !wasDone,
+      done_at: !wasDone ? nowIso : null,
+      updated_at: nowIso,
     });
 
     if (!wasDone && completedAllAfter) void confettiBurstXY(undefined, undefined, true);
