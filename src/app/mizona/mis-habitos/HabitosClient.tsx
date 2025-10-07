@@ -18,6 +18,7 @@ import { pullUserPrograms } from '@/lib/programSync';
 
 /* 🔗 SYNC Supabase */
 import { useHabitsSupabaseSync, queueTickUpsert } from '@/lib/useHabitsSupabaseSync';
+import { supabase } from '@/lib/supabaseClient';
 
 /* =========================
    Constantes / Tipos
@@ -84,10 +85,18 @@ function saveProgramChecks(map: ChecksMap) {
 /* =========================
    Fechas
    ========================= */
-const dateKey = (d = new Date()) => {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
+// Clave YYYY-MM-DD consistente en Europe/Madrid
+const dateKeyTZ = (d = new Date(), tz = 'Europe/Madrid') => {
+  const parts = new Intl.DateTimeFormat('es-ES', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value!;
+  const y = get('year');
+  const m = get('month');
+  const day = get('day');
   return `${y}-${m}-${day}`;
 };
 const isInRange = (dKey: string, start?: string, end?: string) => {
@@ -495,7 +504,7 @@ export default function HabitosClient() {
 
   const [masters, setMasters] = useState<HabitMaster[]>([]);
   const [daily, setDaily] = useState<DailyMap>({});
-  const [today, setToday] = useState<string>(dateKey());
+  const [today, setToday] = useState<string>(dateKeyTZ());
 
   const [activePrograms, setActivePrograms] = useState<string[]>([]);
   const [checks, setChecks] = useState<ChecksMap>({});
@@ -536,7 +545,7 @@ export default function HabitosClient() {
     };
   }, []);
 
-  // rollover a medianoche
+  // rollover a medianoche (Europe/Madrid)
   const midnightTimer = useRef<number | null>(null);
   useEffect(() => {
     const schedule = () => {
@@ -545,7 +554,7 @@ export default function HabitosClient() {
       next.setHours(24, 0, 0, 0);
       const ms = next.getTime() - now.getTime();
       midnightTimer.current = window.setTimeout(() => {
-        setToday(dateKey());
+        setToday(dateKeyTZ());
         setActivePrograms(normalizeSlugs(getActiveSlugs()));
         schedule();
       }, ms + 1000);
@@ -625,6 +634,109 @@ export default function HabitosClient() {
     };
   }, [uid, pathname]);
 
+  // 🔄 Pull inicial de ticks remotos (últimos 3 días + hoy) y merge con local por updated_at
+  useEffect(() => {
+    if (!uid) return;
+
+    const mergeTick = (row: {
+      habit_id: string;
+      date_key: string;
+      done: boolean;
+      done_at: string | null;
+      updated_at: string | null;
+    }) => {
+      setDaily((prev) => {
+        const map = { ...prev };
+        const dKey = row.date_key;
+        const bucket = { ...(map[dKey] ?? {}) };
+        const current = bucket[row.habit_id] ?? { done: false, updated_at: null as string | null };
+        const curTs = current.updated_at ? Date.parse(current.updated_at) : -1;
+        const newTs = row.updated_at ? Date.parse(row.updated_at) : Date.now();
+        if (newTs >= curTs) {
+          bucket[row.habit_id] = {
+            done: !!row.done,
+            doneAt: row.done && row.done_at ? Date.parse(row.done_at) : current.doneAt,
+            updated_at: row.updated_at ?? new Date().toISOString(),
+          };
+          map[dKey] = bucket;
+          saveDaily(map);
+          return map;
+        }
+        return prev;
+      });
+    };
+
+    (async () => {
+      try {
+        const to = dateKeyTZ(new Date());
+        const fromDate = new Date();
+        fromDate.setDate(fromDate.getDate() - 3);
+        const from = dateKeyTZ(fromDate);
+        const { data, error } = await supabase
+          .from('habit_ticks')
+          .select('habit_id,date_key,done,done_at,updated_at')
+          .eq('user_id', uid)
+          .gte('date_key', from)
+          .lte('date_key', to);
+        if (error) throw error;
+        (data ?? []).forEach(mergeTick);
+      } catch {
+        // silenciar
+      }
+    })();
+  }, [uid]);
+
+  // 📡 Suscripción realtime a habit_ticks del usuario (merge por updated_at)
+  useEffect(() => {
+    if (!uid) return;
+    const channel = supabase
+      .channel(`habit_ticks:${uid}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'habit_ticks', filter: `user_id=eq.${uid}` },
+        (payload: any) => {
+          const row = (payload.new ?? payload.old) as any;
+          if (!row) return;
+          const normalized = {
+            habit_id: row.habit_id,
+            date_key: row.date_key,
+            done: !!row.done,
+            done_at: row.done_at ?? null,
+            updated_at: row.updated_at ?? new Date().toISOString(),
+          };
+          // mergea solo si la clave es reciente (defensivo)
+          const d0 = normalized.date_key;
+          const dMinDate = new Date();
+          dMinDate.setDate(dMinDate.getDate() - 7);
+          const dMin = dateKeyTZ(dMinDate);
+          if (d0 >= dMin) {
+            setDaily((prev) => {
+              const map = { ...prev };
+              const bucket = { ...(map[d0] ?? {}) };
+              const current = bucket[normalized.habit_id] ?? { done: false, updated_at: null as string | null };
+              const curTs = current.updated_at ? Date.parse(current.updated_at) : -1;
+              const newTs = normalized.updated_at ? Date.parse(normalized.updated_at) : Date.now();
+              if (newTs >= curTs) {
+                bucket[normalized.habit_id] = {
+                  done: normalized.done,
+                  doneAt: normalized.done && normalized.done_at ? Date.parse(normalized.done_at) : current.doneAt,
+                  updated_at: normalized.updated_at,
+                };
+                map[d0] = bucket;
+                saveDaily(map);
+                return map;
+              }
+              return prev;
+            });
+          }
+        }
+      )
+      .subscribe();
+    return () => {
+      try { supabase.removeChannel(channel); } catch {}
+    };
+  }, [uid]);
+
   // asegurar bucket de hoy (hábitos personales)
   useEffect(() => {
     if (masters.length === 0) return;
@@ -663,7 +775,7 @@ export default function HabitosClient() {
 
   // toggle hábitos personales (celebración grande si completas todos) + ⬆️ sync tick
   function toggleDone(habitId: string, dKey?: string, evt?: React.MouseEvent) {
-    const key = dKey ?? today;
+    const key = dKey ?? dateKeyTZ(new Date());
     const bucket = daily[key] ?? {};
     const wasDone = !!bucket[habitId]?.done;
     let completedAllAfter = false;
@@ -747,6 +859,15 @@ export default function HabitosClient() {
       requestAnimationFrame(() => void confettiBurstXY(cx, cy));
       setTimeout(() => void confettiBurstXY(cx, cy), 40);
     }
+
+    // 🔔 Notificar a otras vistas del Programa (detalle, sliders, etc.)
+    try {
+      window.dispatchEvent(
+        new CustomEvent('akira:program-check-updated', {
+          detail: { slug, dayIdx, taskId, done: willBeChecked, updatedAt: new Date().toISOString() },
+        })
+      );
+    } catch {}
   };
 
   /* ===== RENDER ===== */

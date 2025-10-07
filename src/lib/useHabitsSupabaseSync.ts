@@ -13,7 +13,7 @@ export type HabitMaster = {
   color?: string;
   startDate?: string;
   endDate?: string;
-  weekend?: boolean;  // false = no contar findes
+  weekend?: boolean;   // false = no contar findes
   updated_at?: string; // ISO (cliente/servidor)
   deleted_at?: string | null;
 };
@@ -25,7 +25,28 @@ function loadMasters(): HabitMaster[] {
 function saveMasters(arr: HabitMaster[]) {
   localStorage.setItem(LS_HABITS_MASTER, JSON.stringify(arr));
 }
+type DailyEntry = { done: boolean; doneAt?: number; updated_at?: string };
+type DailyMap = Record<string, Record<string, DailyEntry>>;
+function loadDaily(): DailyMap {
+  try { return JSON.parse(localStorage.getItem(LS_HABITS_DAILY) || '{}') as DailyMap; } catch { return {}; }
+}
+function saveDaily(map: DailyMap) {
+  localStorage.setItem(LS_HABITS_DAILY, JSON.stringify(map));
+}
 function nowIso() { return new Date().toISOString(); }
+
+// Clave YYYY-MM-DD en Europe/Madrid
+function dateKeyTZ(d = new Date(), tz = 'Europe/Madrid') {
+  const parts = new Intl.DateTimeFormat('es-ES', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value!;
+  const y = get('year'); const m = get('month'); const day = get('day');
+  return `${y}-${m}-${day}`;
+}
 
 // ===== cola in-memory =====
 type MasterUpsert = HabitMaster;
@@ -167,19 +188,60 @@ async function flushMasters(uid: string) {
   }
 }
 
+// ====== Ticks: pull/merge + flush ======
+function mergeTickIntoLocal(row: {
+  habit_id: string;
+  date_key: string;
+  done: boolean;
+  done_at: string | null;
+  updated_at: string | null;
+}) {
+  const map = loadDaily();
+  const dKey = row.date_key;
+  const bucket = { ...(map[dKey] ?? {}) };
+  const current = bucket[row.habit_id] ?? { done: false, updated_at: null as string | null };
+  const curTs = current.updated_at ? Date.parse(current.updated_at) : -1;
+  const newTs = row.updated_at ? Date.parse(row.updated_at) : Date.now();
+  if (newTs >= curTs) {
+    bucket[row.habit_id] = {
+      done: !!row.done,
+      doneAt: row.done && row.done_at ? Date.parse(row.done_at) : current.doneAt,
+      updated_at: row.updated_at ?? nowIso(),
+    };
+    map[dKey] = bucket;
+    saveDaily(map);
+    return true;
+  }
+  return false;
+}
+
+async function pullHabitTicksRange(uid: string, fromKey: string, toKey: string) {
+  const { data, error } = await supabase
+    .from('habit_ticks')
+    .select('habit_id,date_key,done,done_at,updated_at')
+    .eq('user_id', uid)
+    .gte('date_key', fromKey)
+    .lte('date_key', toKey);
+  if (error) {
+    console.warn('[pullHabitTicksRange] error', error);
+    return;
+  }
+  for (const r of data ?? []) mergeTickIntoLocal(r as any);
+}
+
 async function flushTicks(uid: string) {
   if (tickQueue.length === 0) return;
   const batch = tickQueue.splice(0, tickQueue.length);
   const rows = batch.map(t => ({
     user_id: uid,
-    local_id: t.habit_id,
+    habit_id: t.habit_id,  // 🔄 schema correcto
     date_key: t.date_key,
     done: t.done,
     done_at: t.done_at,
     updated_at: t.updated_at,
   }));
   const { error } = await supabase.from('habit_ticks').upsert(rows, {
-    onConflict: 'user_id,local_id,date_key',
+    onConflict: 'user_id,habit_id,date_key', // 🔄 conflicto correcto
   });
   if (error) {
     console.warn('[flushTicks] upsert error', error);
@@ -194,12 +256,26 @@ export function useHabitsSupabaseSync(uid?: string) {
     if (!isSupabaseEnvReady()) return;
     if (!uid) return;
 
-    // pull inicial (masters) y flush inicial (masters + ticks)
+    // pull inicial (masters)
     void pullHabitMasters(uid);
+
+    // pull inicial de ticks: últimos 3 días + hoy
+    const to = dateKeyTZ(new Date());
+    const fromDate = new Date(); fromDate.setDate(fromDate.getDate() - 3);
+    const from = dateKeyTZ(fromDate);
+    void pullHabitTicksRange(uid, from, to);
+
+    // flush inicial (masters + ticks)
     void flushMasters(uid);
     void flushTicks(uid);
 
     const tick = async () => {
+      // Pull corto para mantener fresca la vista del día
+      const to2 = dateKeyTZ(new Date());
+      const fromDate2 = new Date(); fromDate2.setDate(fromDate2.getDate() - 3);
+      const from2 = dateKeyTZ(fromDate2);
+      await pullHabitTicksRange(uid, from2, to2);
+
       await flushMasters(uid);
       await flushTicks(uid);
     };
