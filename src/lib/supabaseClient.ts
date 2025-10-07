@@ -6,14 +6,19 @@ import type { SupabaseClient, SupabaseClientOptions } from '@supabase/supabase-j
 
 /** ¿Existen las env públicas de Supabase en esta build/preview? */
 export function isSupabaseEnvReady(): boolean {
-  return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+  return Boolean(
+    process.env.NEXT_PUBLIC_SUPABASE_URL &&
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  );
 }
 
 function getEnvOrThrow() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !anon) {
-    throw new Error('Supabase no configurado (faltan env NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY)');
+    throw new Error(
+      'Supabase no configurado (faltan env NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY)'
+    );
   }
   return { url, anon };
 }
@@ -72,12 +77,19 @@ export function getSupabase(): SupabaseClient {
     g.__akira_supabase__ = makeBrowserClient();
   }
 
-  // 🔎 Exponer para depuración en consola (solo DEV y navegador)
+  // 🔎 Exponer para depuración en consola:
+  // - siempre en development
+  // - o si el usuario activa la flag: localStorage.setItem('akira_expose_supabase','1')
   try {
-    if (process.env.NODE_ENV === 'development') {
+    const exposeByFlag =
+      typeof window !== 'undefined' &&
+      window.localStorage?.getItem('akira_expose_supabase') === '1';
+    if (process.env.NODE_ENV === 'development' || exposeByFlag) {
       (window as any).supabase = g.__akira_supabase__;
     }
-  } catch {}
+  } catch {
+    // ignoramos cualquier error de acceso a localStorage
+  }
 
   return g.__akira_supabase__ as SupabaseClient;
 }
