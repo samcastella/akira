@@ -34,7 +34,6 @@ function saveDaily(map: DailyMap) {
   localStorage.setItem(LS_HABITS_DAILY, JSON.stringify(map));
 }
 function nowIso() { return new Date().toISOString(); }
-function uuid() { try { return crypto.randomUUID(); } catch { return `cli-${Date.now()}-${Math.random().toString(16).slice(2)}`; } }
 
 // YYYY-MM-DD Europe/Madrid
 function dateKeyTZ(d = new Date(), tz = 'Europe/Madrid') {
@@ -54,7 +53,7 @@ export function queueMasterUpsert(master: HabitMaster) {
 
 // ===== cola ticks =====
 type TickUpsert = {
-  habit_id: string;     // local id
+  habit_id: string;     // == local_id en DB
   date_key: string;     // YYYY-MM-DD
   done: boolean;
   done_at: string | null;
@@ -152,16 +151,16 @@ async function flushMasters(uid: string) {
   } finally { flushing = false; }
 }
 
-// ===== Ticks: pull/merge + flush =====
+// ===== Ticks: pull/merge + flush (solo local_id) =====
 function mergeTickIntoLocal(row: {
-  habit_id?: string;
-  local_id?: string | number;
+  local_id?: string | number;  // ← usamos solo local_id
+  habit_id?: string;           // compat futura (ignorado si no viene)
   date_key: string;
   done: boolean;
   done_at: string | null;
   updated_at: string | null;
 }) {
-  const hid = row.habit_id ?? (row.local_id != null ? String(row.local_id) : undefined);
+  const hid = row.local_id != null ? String(row.local_id) : (row.habit_id ?? undefined);
   if (!hid) return false;
 
   const map = loadDaily();
@@ -187,7 +186,7 @@ function mergeTickIntoLocal(row: {
 async function pullHabitTicksRange(uid: string, fromKey: string, toKey: string) {
   const { data, error } = await supabase
     .from('habit_ticks')
-    .select('id,habit_id,local_id,date_key,done,done_at,updated_at') // traemos id por si hace falta
+    .select('local_id,date_key,done,done_at,updated_at') // 👈 solo columnas existentes
     .eq('user_id', uid)
     .gte('date_key', fromKey)
     .lte('date_key', toKey);
@@ -197,32 +196,24 @@ async function pullHabitTicksRange(uid: string, fromKey: string, toKey: string) 
 
 async function flushTicks(uid: string) {
   if (tickQueue.length === 0) return;
-
   const batch = tickQueue.splice(0, tickQueue.length);
-
-  // 👇 Si la tabla exige id NOT NULL sin default, lo enviamos.
   const rows = batch.map(t => ({
-    id: uuid(),                // seguro para NOT NULL en tablas sin default
     user_id: uid,
-    local_id: t.habit_id,      // compat
+    local_id: t.habit_id,      // 👈 mapeamos habit_id(local) -> local_id(DB)
     date_key: t.date_key,
     done: t.done,
     done_at: t.done_at,
     updated_at: t.updated_at,
   }));
-
   const { error } = await supabase.from('habit_ticks').upsert(rows, {
     onConflict: 'user_id,local_id,date_key',
   });
-
   if (error) {
     console.warn('[flushTicks] upsert error', {
       code: (error as any)?.code, message: (error as any)?.message,
       details: (error as any)?.details, hint: (error as any)?.hint
     });
-    // re-encolar para reintentar
-    const back = batch.map(b => ({ ...b }));
-    tickQueue.unshift(...back);
+    tickQueue.unshift(...batch);
   }
 }
 
@@ -233,7 +224,7 @@ export function useHabitsSupabaseSync(uid?: string) {
     if (!isSupabaseEnvReady()) return;
     if (!uid) return;
 
-    // ===== expone helpers en ventana (debug)
+    // Helpers debug en window
     try {
       (window as any).__akiraSync = {
         async pull(n = 3) {
