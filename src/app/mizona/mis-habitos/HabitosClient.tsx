@@ -674,7 +674,7 @@ export default function HabitosClient() {
         const from = dateKeyTZ(fromDate);
         const { data, error } = await supabase
           .from('habit_ticks')
-          .select('habit_id,date_key,done,done_at,updated_at')
+          .select('habit_id,local_id,date_key,done,done_at,updated_at')
           .eq('user_id', uid)
           .gte('date_key', from)
           .lte('date_key', to);
@@ -698,7 +698,7 @@ export default function HabitosClient() {
           const row = (payload.new ?? payload.old) as any;
           if (!row) return;
           const normalized = {
-            habit_id: row.habit_id,
+            habit_id: row.habit_id ?? String(row.local_id ?? ''),
             date_key: row.date_key,
             done: !!row.done,
             done_at: row.done_at ?? null,

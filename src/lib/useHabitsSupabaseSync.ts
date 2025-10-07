@@ -119,7 +119,6 @@ async function pullHabitMasters(uid: string) {
   // locales que no están en remoto → encolar subida (migración)
   for (const l of local) {
     if (!remote.find(r => r.id === l.id)) {
-      // solo si no está borrado
       masterQueue.push({ ...l, updated_at: l.updated_at ?? nowIso() });
     }
   }
@@ -151,7 +150,6 @@ async function flushMasters(uid: string) {
     });
     if (error) {
       console.warn('[flushMasters] upsert error', error);
-      // re-encolar para intentar más tarde
       masterQueue.unshift(...batch);
       return;
     }
@@ -190,20 +188,24 @@ async function flushMasters(uid: string) {
 
 // ====== Ticks: pull/merge + flush ======
 function mergeTickIntoLocal(row: {
-  habit_id: string;
+  habit_id?: string;         // compat
+  local_id?: string | number;// compat
   date_key: string;
   done: boolean;
   done_at: string | null;
   updated_at: string | null;
 }) {
+  const hid = row.habit_id ?? (row.local_id != null ? String(row.local_id) : undefined);
+  if (!hid) return false;
+
   const map = loadDaily();
   const dKey = row.date_key;
   const bucket = { ...(map[dKey] ?? {}) };
-  const current = bucket[row.habit_id] ?? { done: false, updated_at: null as string | null };
+  const current = bucket[hid] ?? { done: false, updated_at: null as string | null };
   const curTs = current.updated_at ? Date.parse(current.updated_at) : -1;
   const newTs = row.updated_at ? Date.parse(row.updated_at) : Date.now();
   if (newTs >= curTs) {
-    bucket[row.habit_id] = {
+    bucket[hid] = {
       done: !!row.done,
       doneAt: row.done && row.done_at ? Date.parse(row.done_at) : current.doneAt,
       updated_at: row.updated_at ?? nowIso(),
@@ -218,7 +220,7 @@ function mergeTickIntoLocal(row: {
 async function pullHabitTicksRange(uid: string, fromKey: string, toKey: string) {
   const { data, error } = await supabase
     .from('habit_ticks')
-    .select('habit_id,date_key,done,done_at,updated_at')
+    .select('habit_id,local_id,date_key,done,done_at,updated_at') // 👈 ambos por compat
     .eq('user_id', uid)
     .gte('date_key', fromKey)
     .lte('date_key', toKey);
@@ -234,14 +236,14 @@ async function flushTicks(uid: string) {
   const batch = tickQueue.splice(0, tickQueue.length);
   const rows = batch.map(t => ({
     user_id: uid,
-    habit_id: t.habit_id,  // 🔄 schema correcto
+    local_id: t.habit_id,  // 👈 compat con tu tabla actual
     date_key: t.date_key,
     done: t.done,
     done_at: t.done_at,
     updated_at: t.updated_at,
   }));
   const { error } = await supabase.from('habit_ticks').upsert(rows, {
-    onConflict: 'user_id,habit_id,date_key', // 🔄 conflicto correcto
+    onConflict: 'user_id,local_id,date_key', // 👈 índice actual
   });
   if (error) {
     console.warn('[flushTicks] upsert error', error);
