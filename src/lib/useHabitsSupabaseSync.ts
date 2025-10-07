@@ -6,15 +6,15 @@ const LS_HABITS_MASTER = 'akira_habits_master_v1';
 const LS_HABITS_DAILY  = 'akira_habits_daily_v1';
 
 export type HabitMaster = {
-  id: string;         // id local (string)
-  rid?: string;       // id remoto (uuid) opcional
+  id: string;
+  rid?: string;
   name: string;
   icon?: string;
   color?: string;
   startDate?: string;
   endDate?: string;
-  weekend?: boolean;   // false = no contar findes
-  updated_at?: string; // ISO (cliente/servidor)
+  weekend?: boolean;
+  updated_at?: string;
   deleted_at?: string | null;
 };
 
@@ -34,36 +34,28 @@ function saveDaily(map: DailyMap) {
   localStorage.setItem(LS_HABITS_DAILY, JSON.stringify(map));
 }
 function nowIso() { return new Date().toISOString(); }
+function uuid() { try { return crypto.randomUUID(); } catch { return `cli-${Date.now()}-${Math.random().toString(16).slice(2)}`; } }
 
-// Clave YYYY-MM-DD en Europe/Madrid
+// YYYY-MM-DD Europe/Madrid
 function dateKeyTZ(d = new Date(), tz = 'Europe/Madrid') {
-  const parts = new Intl.DateTimeFormat('es-ES', {
-    timeZone: tz,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(d);
-  const get = (t: string) => parts.find((p) => p.type === t)?.value!;
-  const y = get('year'); const m = get('month'); const day = get('day');
-  return `${y}-${m}-${day}`;
+  const parts = new Intl.DateTimeFormat('es-ES', { timeZone: tz, year:'numeric', month:'2-digit', day:'2-digit' }).formatToParts(d);
+  const g = (t:string) => parts.find(p=>p.type===t)?.value!;
+  return `${g('year')}-${g('month')}-${g('day')}`;
 }
 
-// ===== cola in-memory =====
+// ===== cola masters =====
 type MasterUpsert = HabitMaster;
 const masterQueue: MasterUpsert[] = [];
 let flushing = false;
 
-// Exportado para que el UI encole al crear/editar
 export function queueMasterUpsert(master: HabitMaster) {
-  // garantizamos updated_at
-  const m: HabitMaster = { ...master, updated_at: master.updated_at ?? nowIso() };
-  masterQueue.push(m);
+  masterQueue.push({ ...master, updated_at: master.updated_at ?? nowIso() });
 }
 
-// ====== ticks (ya lo usabas) ======
+// ===== cola ticks =====
 type TickUpsert = {
   habit_id: string;     // local id
-  date_key: string;     // 'YYYY-MM-DD'
+  date_key: string;     // YYYY-MM-DD
   done: boolean;
   done_at: string | null;
   updated_at: string;
@@ -71,7 +63,7 @@ type TickUpsert = {
 const tickQueue: TickUpsert[] = [];
 export function queueTickUpsert(t: TickUpsert) { tickQueue.push(t); }
 
-// ===== reconciliación masters local <-> remoto =====
+// ===== masters pull/flush =====
 async function pullHabitMasters(uid: string) {
   const { data, error } = await supabase
     .from('habit_masters')
@@ -80,7 +72,7 @@ async function pullHabitMasters(uid: string) {
   if (error) { console.warn('[pullHabitMasters] error', error); return; }
 
   const remote = (data || []).map(r => ({
-    id: String(r.local_id || ''), // local key
+    id: String(r.local_id || ''),
     rid: r.id,
     name: r.title,
     icon: r.icon || undefined,
@@ -98,29 +90,15 @@ async function pullHabitMasters(uid: string) {
 
   for (const r of remote) {
     const l = byLocalId.get(r.id);
-    // Si no existe local → añadir
-    if (!l) {
-      byLocalId.set(r.id, r);
-      changed = true;
-      continue;
-    }
-    // si remoto es más nuevo → reemplazar/merge
-    const lt = l.updated_at ? new Date(l.updated_at).getTime() : 0;
-    const rt = r.updated_at ? new Date(r.updated_at).getTime() : 0;
-    if (rt > lt) {
-      byLocalId.set(r.id, { ...l, ...r });
-      changed = true;
-    } else {
-      // si local es más nuevo, lo encolamos para subir
-      if (lt > rt) masterQueue.push({ ...l });
-    }
+    if (!l) { byLocalId.set(r.id, r); changed = true; continue; }
+    const lt = l.updated_at ? Date.parse(l.updated_at) : 0;
+    const rt = r.updated_at ? Date.parse(r.updated_at) : 0;
+    if (rt > lt) { byLocalId.set(r.id, { ...l, ...r }); changed = true; }
+    else if (lt > rt) masterQueue.push({ ...l });
   }
 
-  // locales que no están en remoto → encolar subida (migración)
   for (const l of local) {
-    if (!remote.find(r => r.id === l.id)) {
-      masterQueue.push({ ...l, updated_at: l.updated_at ?? nowIso() });
-    }
+    if (!remote.find(r => r.id === l.id)) masterQueue.push({ ...l, updated_at: l.updated_at ?? nowIso() });
   }
 
   if (changed) saveMasters(Array.from(byLocalId.values()));
@@ -131,7 +109,6 @@ async function flushMasters(uid: string) {
   flushing = true;
   try {
     const batch = masterQueue.splice(0, masterQueue.length);
-
     const rows = batch.map(m => ({
       user_id: uid,
       local_id: m.id,
@@ -144,28 +121,20 @@ async function flushMasters(uid: string) {
       updated_at: m.updated_at ?? nowIso(),
       deleted_at: m.deleted_at ?? null,
     }));
+    const { error } = await supabase.from('habit_masters').upsert(rows, { onConflict: 'user_id,local_id' });
+    if (error) { console.warn('[flushMasters] upsert error', error); masterQueue.unshift(...batch); return; }
 
-    const { error } = await supabase.from('habit_masters').upsert(rows, {
-      onConflict: 'user_id,local_id',
-    });
-    if (error) {
-      console.warn('[flushMasters] upsert error', error);
-      masterQueue.unshift(...batch);
-      return;
-    }
-
-    // refrescamos local: asignar rid si vino del server
-    const { data: refreshed, error: selErr } = await supabase
+    const { data: refreshed } = await supabase
       .from('habit_masters')
       .select('id, user_id, local_id, title, icon, color, start_date, end_date, weekend, updated_at, deleted_at')
       .eq('user_id', uid);
 
-    if (!selErr && refreshed) {
+    if (refreshed) {
       const map = new Map(loadMasters().map(m => [m.id, m]));
       for (const r of refreshed) {
         const id = String(r.local_id || '');
         const prev = map.get(id);
-        const merged: HabitMaster = {
+        map.set(id, {
           ...(prev ?? { id }),
           rid: r.id,
           name: r.title,
@@ -176,20 +145,17 @@ async function flushMasters(uid: string) {
           weekend: typeof r.weekend === 'boolean' ? r.weekend : undefined,
           updated_at: r.updated_at || prev?.updated_at,
           deleted_at: r.deleted_at || null,
-        };
-        map.set(id, merged);
+        });
       }
       saveMasters(Array.from(map.values()));
     }
-  } finally {
-    flushing = false;
-  }
+  } finally { flushing = false; }
 }
 
-// ====== Ticks: pull/merge + flush ======
+// ===== Ticks: pull/merge + flush =====
 function mergeTickIntoLocal(row: {
-  habit_id?: string;         // compat
-  local_id?: string | number;// compat
+  habit_id?: string;
+  local_id?: string | number;
   date_key: string;
   done: boolean;
   done_at: string | null;
@@ -204,6 +170,7 @@ function mergeTickIntoLocal(row: {
   const current = bucket[hid] ?? { done: false, updated_at: null as string | null };
   const curTs = current.updated_at ? Date.parse(current.updated_at) : -1;
   const newTs = row.updated_at ? Date.parse(row.updated_at) : Date.now();
+
   if (newTs >= curTs) {
     bucket[hid] = {
       done: !!row.done,
@@ -220,59 +187,44 @@ function mergeTickIntoLocal(row: {
 async function pullHabitTicksRange(uid: string, fromKey: string, toKey: string) {
   const { data, error } = await supabase
     .from('habit_ticks')
-    .select('habit_id,local_id,date_key,done,done_at,updated_at') // 👈 ambos por compat
+    .select('id,habit_id,local_id,date_key,done,done_at,updated_at') // traemos id por si hace falta
     .eq('user_id', uid)
     .gte('date_key', fromKey)
     .lte('date_key', toKey);
-  if (error) {
-    console.warn('[pullHabitTicksRange] error', error);
-    return;
-  }
+  if (error) { console.warn('[pullHabitTicksRange] error', error); return; }
   for (const r of data ?? []) mergeTickIntoLocal(r as any);
 }
 
 async function flushTicks(uid: string) {
   if (tickQueue.length === 0) return;
+
   const batch = tickQueue.splice(0, tickQueue.length);
+
+  // 👇 Si la tabla exige id NOT NULL sin default, lo enviamos.
   const rows = batch.map(t => ({
+    id: uuid(),                // seguro para NOT NULL en tablas sin default
     user_id: uid,
-    local_id: t.habit_id,  // 👈 compat con tu tabla actual
+    local_id: t.habit_id,      // compat
     date_key: t.date_key,
     done: t.done,
     done_at: t.done_at,
     updated_at: t.updated_at,
   }));
+
   const { error } = await supabase.from('habit_ticks').upsert(rows, {
-    onConflict: 'user_id,local_id,date_key', // 👈 índice actual
+    onConflict: 'user_id,local_id,date_key',
   });
+
   if (error) {
-    console.warn('[flushTicks] upsert error', error);
-    tickQueue.unshift(...batch); // re-encolar
+    console.warn('[flushTicks] upsert error', {
+      code: (error as any)?.code, message: (error as any)?.message,
+      details: (error as any)?.details, hint: (error as any)?.hint
+    });
+    // re-encolar para reintentar
+    const back = batch.map(b => ({ ...b }));
+    tickQueue.unshift(...back);
   }
 }
-// ===== Debug helpers (se rellenan cuando hay uid)
-let __uid: string | undefined;
-async function __pullLastNDays(n = 3) {
-  if (!__uid) return { ok:false, reason:'no-uid' };
-  const to = dateKeyTZ(new Date());
-  const d = new Date(); d.setDate(d.getDate() - n);
-  const from = dateKeyTZ(d);
-  await pullHabitTicksRange(__uid, from, to);
-  return { ok:true, from, to };
-}
-async function __flushNow() {
-  if (!__uid) return { ok:false, reason:'no-uid' };
-  await flushMasters(__uid);
-  await flushTicks(__uid);
-  return { ok:true };
-}
-function __dumpDaily(day?: string) {
-  const map = loadDaily();
-  const key = day || dateKeyTZ(new Date());
-  return { key, bucket: map[key] || {}, raw: map };
-}
-// @ts-ignore
-if (typeof window !== 'undefined') window.__akiraSync = { pull: __pullLastNDays, flush: __flushNow, daily: __dumpDaily };
 
 export function useHabitsSupabaseSync(uid?: string) {
   const timerRef = useRef<number | null>(null);
@@ -280,28 +232,42 @@ export function useHabitsSupabaseSync(uid?: string) {
   useEffect(() => {
     if (!isSupabaseEnvReady()) return;
     if (!uid) return;
-    __uid = uid;
 
-    // pull inicial (masters)
+    // ===== expone helpers en ventana (debug)
+    try {
+      (window as any).__akiraSync = {
+        async pull(n = 3) {
+          const to = dateKeyTZ(new Date());
+          const d = new Date(); d.setDate(d.getDate() - n);
+          const from = dateKeyTZ(d);
+          await pullHabitTicksRange(uid, from, to);
+          return { ok: true, from, to };
+        },
+        async flush() { await flushMasters(uid); await flushTicks(uid); return { ok: true }; },
+        daily(day?: string) {
+          const map = loadDaily();
+          const key = day || dateKeyTZ(new Date());
+          return { key, bucket: map[key] || {}, raw: map };
+        }
+      };
+    } catch {}
+
+    // pull inicial
     void pullHabitMasters(uid);
-
-    // pull inicial de ticks: últimos 3 días + hoy
     const to = dateKeyTZ(new Date());
     const fromDate = new Date(); fromDate.setDate(fromDate.getDate() - 3);
     const from = dateKeyTZ(fromDate);
     void pullHabitTicksRange(uid, from, to);
 
-    // flush inicial (masters + ticks)
+    // flush inicial
     void flushMasters(uid);
     void flushTicks(uid);
 
     const tick = async () => {
-      // Pull corto para mantener fresca la vista del día
-      const to2 = dateKeyTZ(new Date());
-      const fromDate2 = new Date(); fromDate2.setDate(fromDate2.getDate() - 3);
-      const from2 = dateKeyTZ(fromDate2);
-      await pullHabitTicksRange(uid, from2, to2);
-
+      const _to = dateKeyTZ(new Date());
+      const _d = new Date(); _d.setDate(_d.getDate() - 3);
+      const _from = dateKeyTZ(_d);
+      await pullHabitTicksRange(uid, _from, _to);
       await flushMasters(uid);
       await flushTicks(uid);
     };
