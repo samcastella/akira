@@ -250,6 +250,29 @@ async function flushTicks(uid: string) {
     tickQueue.unshift(...batch); // re-encolar
   }
 }
+// ===== Debug helpers (se rellenan cuando hay uid)
+let __uid: string | undefined;
+async function __pullLastNDays(n = 3) {
+  if (!__uid) return { ok:false, reason:'no-uid' };
+  const to = dateKeyTZ(new Date());
+  const d = new Date(); d.setDate(d.getDate() - n);
+  const from = dateKeyTZ(d);
+  await pullHabitTicksRange(__uid, from, to);
+  return { ok:true, from, to };
+}
+async function __flushNow() {
+  if (!__uid) return { ok:false, reason:'no-uid' };
+  await flushMasters(__uid);
+  await flushTicks(__uid);
+  return { ok:true };
+}
+function __dumpDaily(day?: string) {
+  const map = loadDaily();
+  const key = day || dateKeyTZ(new Date());
+  return { key, bucket: map[key] || {}, raw: map };
+}
+// @ts-ignore
+if (typeof window !== 'undefined') window.__akiraSync = { pull: __pullLastNDays, flush: __flushNow, daily: __dumpDaily };
 
 export function useHabitsSupabaseSync(uid?: string) {
   const timerRef = useRef<number | null>(null);
@@ -257,6 +280,7 @@ export function useHabitsSupabaseSync(uid?: string) {
   useEffect(() => {
     if (!isSupabaseEnvReady()) return;
     if (!uid) return;
+    __uid = uid;
 
     // pull inicial (masters)
     void pullHabitMasters(uid);

@@ -105,3 +105,8 @@ export const supabase = new Proxy({} as SupabaseClient, {
     return c[prop];
   },
 });
+if (typeof window !== 'undefined') {
+  // ⚠️ solo para depurar en local
+  // @ts-ignore
+  window.supabase = supabase;
+}
