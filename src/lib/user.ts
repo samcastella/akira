@@ -40,6 +40,7 @@ function newer(a?: string | null, b?: string | null) {
 export const LS_USER_KEY = 'akira_user_profile_v2';
 export const LS_USER = 'akira_user_v1';
 export const LS_FIRST_RUN = 'akira_first_run_done';
+const LS_LAST_UID = 'akira_last_uid';
 
 // ===== Normalizadores / utilidades =====
 export function normalizeEmail(email: string | undefined | null): string {
@@ -226,16 +227,22 @@ async function ensureClientSessionFromServer(): Promise<boolean> {
 export async function getAuthUserId(): Promise<string | null> {
   if (!isSupabaseEnvReady()) return null;
 
-  // 1) Intento directo con getUser (suele ser lo más rápido)
+  // 1) Intento directo con getUser (rápido)
   try {
     const { data } = await supabase.auth.getUser();
-    if (data.user?.id) return data.user.id;
+    if (data.user?.id) {
+      try { localStorage.setItem(LS_LAST_UID, data.user.id); } catch {}
+      return data.user.id;
+    }
   } catch {}
 
   // 2) Intento con getSession
   try {
     const { data } = await supabase.auth.getSession();
-    if (data.session?.user?.id) return data.session.user.id;
+    if (data.session?.user?.id) {
+      try { localStorage.setItem(LS_LAST_UID, data.session.user.id); } catch {}
+      return data.session.user.id;
+    }
   } catch {}
 
   // 3) Plan B: hidratar desde cookie del servidor y reintentar
@@ -243,7 +250,12 @@ export async function getAuthUserId(): Promise<string | null> {
   if (hydrated) {
     try {
       const { data } = await supabase.auth.getUser();
-      return data.user?.id ?? null;
+      const id = data.user?.id ?? null;
+      try {
+        if (id) localStorage.setItem(LS_LAST_UID, id);
+        else localStorage.removeItem(LS_LAST_UID);
+      } catch {}
+      return id;
     } catch {
       return null;
     }
@@ -445,6 +457,7 @@ export function useAuthUserId(): string | null {
   useEffect(() => {
     if (!isSupabaseEnvReady()) {
       setUid(null);
+      try { localStorage.removeItem(LS_LAST_UID); } catch {}
       return;
     }
     let mounted = true;
@@ -452,15 +465,26 @@ export function useAuthUserId(): string | null {
     (async () => {
       try {
         const { data } = await supabase.auth.getUser();
-        if (mounted) setUid(data.user?.id ?? null);
+        const id = data.user?.id ?? null;
+        if (mounted) setUid(id);
+        try {
+          if (id) localStorage.setItem(LS_LAST_UID, id);
+          else localStorage.removeItem(LS_LAST_UID);
+        } catch {}
       } catch {
         if (mounted) setUid(null);
+        try { localStorage.removeItem(LS_LAST_UID); } catch {}
       }
     })();
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!mounted) return;
-      setUid(session?.user?.id ?? null);
+      const id = session?.user?.id ?? null;
+      setUid(id);
+      try {
+        if (id) localStorage.setItem(LS_LAST_UID, id);
+        else localStorage.removeItem(LS_LAST_UID);
+      } catch {}
     });
 
     return () => {
@@ -514,13 +538,23 @@ export function startUserLibRealtime() {
   __userRealtimeStarted = true;
 
   // Primer “ping” con usuario actual (para que otros escuchadores reaccionen)
-  supabase.auth.getUser().then(() => {
+  supabase.auth.getUser().then(({ data }) => {
+    try {
+      const id = data.user?.id ?? null;
+      if (id) localStorage.setItem(LS_LAST_UID, id);
+      else localStorage.removeItem(LS_LAST_UID);
+    } catch {}
     try { window.dispatchEvent(new CustomEvent('akira:user-updated')); } catch {}
     try { window.dispatchEvent(new CustomEvent('akira:auth-changed', { detail: { initial: true } })); } catch {}
   });
 
   // Suscripción a cambios de auth
-  const { data: sub } = supabase.auth.onAuthStateChange((_event, _session) => {
+  const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+    try {
+      const id = session?.user?.id ?? null;
+      if (id) localStorage.setItem(LS_LAST_UID, id);
+      else localStorage.removeItem(LS_LAST_UID);
+    } catch {}
     try { window.dispatchEvent(new CustomEvent('akira:user-updated')); } catch {}
     try { window.dispatchEvent(new CustomEvent('akira:auth-changed', { detail: { evt: _event } })); } catch {}
   });

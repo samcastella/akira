@@ -20,6 +20,8 @@ import RegistrationModal from '@/components/RegistrationModal';
 import { pullUserPrograms } from '@/lib/programSync';
 
 const LS_SEEN_AUTH = 'akira_seen_auth_v1';
+const LS_LAST_UID = 'akira_last_uid';
+const PROFILE_TIMEOUT_MS = 15000; // antes 5000
 
 /** ✅ Permite entrar si perfil completo O si marcó onboardingDone */
 function canEnter(): boolean {
@@ -89,7 +91,7 @@ export default function LayoutClient({
     return new Promise((resolve, reject) => {
       const to = setTimeout(() => {
         console.warn(`[syncAll] ${label} timed out after ${ms}ms`);
-        reject(new Error(`${label} timeout`));
+        reject(new Error(`${label} timeout`)); // lo manejamos como no-fatal más abajo
       }, ms);
       p.then(
         (v) => {
@@ -119,7 +121,7 @@ export default function LayoutClient({
             console.warn('[syncAll] pullProfile/syncLocalToRemoteIfMissing error:', e);
           }
         })(),
-        5000,
+        PROFILE_TIMEOUT_MS,
         'profile'
       );
 
@@ -132,12 +134,12 @@ export default function LayoutClient({
             console.warn('[syncAll] pullUserPrograms error:', e);
           }
         })(),
-        5000,
+        PROFILE_TIMEOUT_MS,
         'programs'
       );
     } catch (e) {
-      // Si alguno de los dos falla/expira, no bloqueamos la app
-      console.warn('[LayoutClient] syncAll wrapper error:', e);
+      // ✅ No bloqueamos la app si perfil/programas fallan o expiran
+      console.warn('[LayoutClient] syncAll wrapper warn (non-fatal):', e);
     } finally {
       if (canEnter()) setUserOk(true);
       setBootSynced(true); // ✅ siempre dejamos de “pensar”
@@ -160,6 +162,12 @@ export default function LayoutClient({
       const { data } = await supabase.auth.getSession();
       if (cancelled) return;
       const has = !!data.session;
+      // 🔐 persistimos/eliminamos UID desde la sesión inicial
+      try {
+        const uid = data.session?.user?.id ?? null;
+        if (uid) localStorage.setItem(LS_LAST_UID, uid);
+        else localStorage.removeItem(LS_LAST_UID);
+      } catch {}
       setHasSession(has);
       setAuthReady(true);
       try {
@@ -181,6 +189,13 @@ export default function LayoutClient({
         setHasSession(!!session);
         try {
           window.dispatchEvent(new CustomEvent('akira:auth-changed', { detail: { evt } }));
+        } catch {}
+
+        // 🔐 persistimos/eliminamos UID en cada cambio de auth
+        try {
+          const uid = session?.user?.id ?? null;
+          if (uid) localStorage.setItem(LS_LAST_UID, uid);
+          else localStorage.removeItem(LS_LAST_UID);
         } catch {}
 
         if (evt === 'SIGNED_IN') {
@@ -210,6 +225,7 @@ export default function LayoutClient({
           setBootSynced(true);
           try {
             localStorage.removeItem(LS_SEEN_AUTH);
+            localStorage.removeItem(LS_LAST_UID);
           } catch {}
         } else {
           if (canEnter()) setUserOk(true);
@@ -322,6 +338,7 @@ export default function LayoutClient({
       localStorage.removeItem(LS_USER);
       localStorage.removeItem(LS_USER_KEY);
       localStorage.removeItem(LS_SEEN_AUTH);
+      localStorage.removeItem(LS_LAST_UID);
     } catch {}
     location.reload();
   }
