@@ -168,7 +168,8 @@ function mergeTickIntoLocal(row: {
 async function pullHabitTicksRange(uid: string, fromKey: string, toKey: string) {
   const { data, error } = await supabase
     .from('habit_ticks')
-    .select('local_id,date_key,done,done_at,updated_at')
+    // ⬇️ incluimos habit_id además de local_id
+    .select('habit_id,local_id,date_key,done,done_at,updated_at')
     .eq('user_id', uid)
     .gte('date_key', fromKey)
     .lte('date_key', toKey);
@@ -182,7 +183,9 @@ async function flushTicks(uid: string) {
   const batch = tickQueue.splice(0, tickQueue.length);
   const rows = batch.map(t => ({
     user_id: uid,
-    local_id: t.habit_id,      // mapeo directo a la BD
+    // ⬇️ la BD exige habit_id NOT NULL; mantenemos local_id para compat
+    habit_id: t.habit_id,
+    local_id: t.habit_id,
     date_key: t.date_key,
     done: t.done,
     done_at: t.done_at,
@@ -190,7 +193,8 @@ async function flushTicks(uid: string) {
   }));
 
   const { error } = await supabase.from('habit_ticks').upsert(rows, {
-    onConflict: 'user_id,local_id,date_key',
+    // ⬇️ alineado con el índice único real
+    onConflict: 'user_id,habit_id,date_key',
   });
 
   if (error) {
@@ -223,10 +227,10 @@ function subscribeRealtime(uid: string) {
       { event: '*', schema: 'public', table: 'habit_ticks', filter: `user_id=eq.${uid}` },
       (payload) => {
         const row = (payload.new ?? payload.old) as any;
-        if (!row) return;
-        if (!row.date_key) return;
-        // merge sólo si tenemos columnas clave
+        if (!row?.date_key) return;
         mergeTickIntoLocal({
+          // ⬇️ pasamos ambos por compat
+          habit_id: row.habit_id,
           local_id: row.local_id,
           date_key: row.date_key,
           done: !!row.done,
@@ -241,10 +245,7 @@ function subscribeRealtime(uid: string) {
   const chMasters = supabase.channel('rt-habit-masters')
     .on('postgres_changes',
       { event: '*', schema: 'public', table: 'habit_masters', filter: `user_id=eq.${uid}` },
-      async () => {
-        // repull ligero: es rápido y evita estados raros
-        await pullHabitMasters(uid);
-      }
+      async () => { await pullHabitMasters(uid); }
     )
     .subscribe();
 
