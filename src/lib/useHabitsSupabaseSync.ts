@@ -1,3 +1,4 @@
+// src/lib/useHabitsSupabaseSync.ts
 import { useEffect, useRef } from 'react';
 import { supabase, isSupabaseEnvReady } from '@/lib/supabaseClient';
 
@@ -208,29 +209,32 @@ async function flushTicks(uid: string) {
   const idCol = await detectTicksSchema();
   const batch = tickQueue.splice(0, tickQueue.length);
 
-  const rows = batch.map(t => ({
-    user_id: uid,
-    [idCol]: t.habit_id,       // mapea a local_id o habit_id según schema
-    date_key: t.date_key,
-    done: t.done,
-    done_at: t.done_at,
-    updated_at: t.updated_at,
-  }));
+  // Enviamos SIEMPRE local_id y, si existe en el esquema, también habit_id.
+  const rows = batch.map(t => {
+    const base: Record<string, any> = {
+      user_id: uid,
+      date_key: t.date_key,
+      done: t.done,
+      done_at: t.done_at,
+      updated_at: t.updated_at,
+    };
+    base['local_id'] = t.habit_id;
+    if (idCol === 'habit_id') base['habit_id'] = t.habit_id; // parche defensivo
+    return base;
+  });
 
-  const conflict = `user_id,${idCol},date_key`;
-  const { error } = await supabase.from('habit_ticks').upsert(rows, { onConflict: conflict });
-
+  // Usamos la PK (user_id,local_id,date_key); si el server tiene unique extra, también funcionará.
+  const { error } = await supabase.from('habit_ticks').upsert(rows);
   if (error) {
     console.warn('[flushTicks] upsert error', {
       code: (error as any)?.code, message: (error as any)?.message,
-      details: (error as any)?.details, hint: (error as any)?.hint, idCol, conflict
+      details: (error as any)?.details, hint: (error as any)?.hint, idCol
     });
-    // re-encolar
     tickQueue.unshift(...batch);
     return;
   }
 
-  // Pull inmediato corto
+  // Pull inmediato corto para refrescar UI sin esperar al intervalo
   try {
     const to = dateKeyTZ(new Date());
     const d = new Date(); d.setDate(d.getDate() - 1);
