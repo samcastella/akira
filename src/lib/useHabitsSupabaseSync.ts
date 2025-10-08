@@ -63,7 +63,10 @@ type TickUpsert = {
   updated_at: string;
 };
 const tickQueue: TickUpsert[] = [];
-export function queueTickUpsert(t: TickUpsert) { tickQueue.push(t); }
+export function queueTickUpsert(t: TickUpsert) {
+  console.log('[queueTickUpsert]', t); // 🔍 depuración
+  tickQueue.push(t);
+}
 
 /* =========================
    Masters: pull / flush
@@ -189,7 +192,6 @@ async function flushTicks(uid: string) {
     done: t.done,
     done_at: t.done_at,
     updated_at: t.updated_at,
-    // habit_id: (no se envía)
   }));
 
   const { error } = await supabase
@@ -278,6 +280,25 @@ export function useHabitsSupabaseSync(uid?: string) {
           const map = loadDaily();
           const key = day || dateKeyTZ(new Date());
           return { key, bucket: map[key] || {}, raw: map };
+        },
+        /** INFO rápida sobre el estado interno */
+        info() { return { idCol: 'local_id' as const }; },
+        /** Encola un tick de prueba y lo sube */
+        async enqueueTick(localHabitId: string, done = true) {
+          const key = dateKeyTZ(new Date());
+          queueTickUpsert({
+            habit_id: localHabitId,
+            date_key: key,
+            done,
+            done_at: done ? nowIso() : null,
+            updated_at: nowIso(),
+          });
+          await flushTicks(uid);
+          return { ok: true, key };
+        },
+        /** Inspecciona el LS crudo */
+        ls() {
+          return { key: dateKeyTZ(new Date()), map: loadDaily() };
         }
       };
     } catch {}
