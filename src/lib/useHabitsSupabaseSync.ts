@@ -18,14 +18,14 @@ export type HabitMaster = {
   deleted_at?: string | null;
 };
 
-/* =========================
-   LocalStorage helpers
-   ========================= */
+/* ===== LocalStorage ===== */
 function loadMasters(): HabitMaster[] {
   try { return JSON.parse(localStorage.getItem(LS_HABITS_MASTER) || '[]') as HabitMaster[]; } catch { return []; }
 }
 function saveMasters(arr: HabitMaster[]) {
   localStorage.setItem(LS_HABITS_MASTER, JSON.stringify(arr));
+  // señal suave para la UI (mis-habitos escucha algunos eventos propios)
+  try { window.dispatchEvent(new Event('akira:masters-updated')); } catch {}
 }
 type DailyEntry = { done: boolean; doneAt?: number; updated_at?: string };
 type DailyMap = Record<string, Record<string, DailyEntry>>;
@@ -37,17 +37,13 @@ function saveDaily(map: DailyMap) {
 }
 
 const nowIso = () => new Date().toISOString();
-
-// YYYY-MM-DD en Europe/Madrid (evita “derrapes” de TZ)
-function dateKeyTZ(d = new Date(), tz = 'Europe/Madrid') {
+const dateKeyTZ = (d = new Date(), tz = 'Europe/Madrid') => {
   const parts = new Intl.DateTimeFormat('es-ES', { timeZone: tz, year:'numeric', month:'2-digit', day:'2-digit' }).formatToParts(d);
   const g = (t:string) => parts.find(p=>p.type===t)?.value!;
   return `${g('year')}-${g('month')}-${g('day')}`;
-}
+};
 
-/* =========================
-   Colas in-memory
-   ========================= */
+/* ===== Colas ===== */
 type MasterUpsert = HabitMaster;
 const masterQueue: MasterUpsert[] = [];
 let flushingMasters = false;
@@ -57,8 +53,8 @@ export function queueMasterUpsert(master: HabitMaster) {
 }
 
 type TickUpsert = {
-  habit_id: string;           // == local_id en DB
-  date_key: string;           // YYYY-MM-DD
+  habit_id: string;     // id local del hábito
+  date_key: string;     // YYYY-MM-DD
   done: boolean;
   done_at: string | null;
   updated_at: string;
@@ -66,14 +62,13 @@ type TickUpsert = {
 const tickQueue: TickUpsert[] = [];
 export function queueTickUpsert(t: TickUpsert) { tickQueue.push(t); }
 
-/* =========================
-   Masters: pull / flush
-   ========================= */
+/* ===== Masters: pull / flush ===== */
 async function pullHabitMasters(uid: string) {
   const { data, error } = await supabase
     .from('habit_masters')
     .select('id, user_id, local_id, title, icon, color, start_date, end_date, weekend, updated_at, deleted_at')
     .eq('user_id', uid);
+
   if (error) { console.warn('[pullHabitMasters] error', error); return; }
 
   const remote = (data || []).map(r => ({
@@ -131,12 +126,10 @@ async function flushMasters(uid: string) {
   } finally { flushingMasters = false; }
 }
 
-/* =========================
-   Ticks: pull / merge / flush
-   ========================= */
+/* ===== Ticks: merge local ===== */
 function mergeTickIntoLocal(row: {
   local_id?: string | number;
-  habit_id?: string; // compat futura
+  habit_id?: string; // compat
   date_key: string;
   done: boolean;
   done_at: string | null;
@@ -168,23 +161,23 @@ function mergeTickIntoLocal(row: {
 async function pullHabitTicksRange(uid: string, fromKey: string, toKey: string) {
   const { data, error } = await supabase
     .from('habit_ticks')
-    // ⬇️ incluimos habit_id además de local_id
-    .select('habit_id,local_id,date_key,done,done_at,updated_at')
+    .select('local_id,date_key,done,done_at,updated_at')
     .eq('user_id', uid)
     .gte('date_key', fromKey)
     .lte('date_key', toKey);
+
   if (error) { console.warn('[pullHabitTicksRange] error', error); return; }
   for (const r of data ?? []) mergeTickIntoLocal(r as any);
 }
 
+/* ===== Ticks: flush con fallback ===== */
 async function flushTicks(uid: string) {
   if (tickQueue.length === 0) return;
 
+  // 1) Intento UPsert por (user_id, local_id, date_key)
   const batch = tickQueue.splice(0, tickQueue.length);
-  const rows = batch.map(t => ({
+  const rowsLocalId = batch.map(t => ({
     user_id: uid,
-    // ⬇️ la BD exige habit_id NOT NULL; mantenemos local_id para compat
-    habit_id: t.habit_id,
     local_id: t.habit_id,
     date_key: t.date_key,
     done: t.done,
@@ -192,21 +185,57 @@ async function flushTicks(uid: string) {
     updated_at: t.updated_at,
   }));
 
-  const { error } = await supabase.from('habit_ticks').upsert(rows, {
-    // ⬇️ alineado con el índice único real
-    onConflict: 'user_id,habit_id,date_key',
-  });
+  const tryUpsert = async () =>
+    supabase.from('habit_ticks').upsert(rowsLocalId, { onConflict: 'user_id,local_id,date_key' });
 
-  if (error) {
-    console.warn('[flushTicks] upsert error', {
-      code: (error as any)?.code, message: (error as any)?.message,
-      details: (error as any)?.details, hint: (error as any)?.hint
-    });
+  let up = await tryUpsert();
+
+  // 2) Si falla por 42P10 (no hay índice único), hacemos delete+insert (idempotente)
+  if (up.error && (up.error as any)?.code === '42P10') {
+    console.warn('[flushTicks] upsert 42P10 → fallback delete+insert');
+
+    // delete en lote por filtro IN
+    const dels = await Promise.all(batch.map(t =>
+      supabase.from('habit_ticks')
+        .delete()
+        .eq('user_id', uid)
+        .eq('local_id', t.habit_id)
+        .eq('date_key', t.date_key)
+    ));
+    const delErr = dels.find(r => r.error)?.error;
+    if (delErr) console.warn('[flushTicks] delete error (fallback)', delErr);
+
+    const ins = await supabase.from('habit_ticks').insert(rowsLocalId);
+    if (ins.error && (ins.error as any)?.code === '42703') {
+      // 3) La columna puede llamarse `habit_id` en tu esquema: reintento
+      console.warn('[flushTicks] insert con local_id → 42703. Reintento con habit_id.');
+      const rowsHabitId = batch.map(t => ({
+        user_id: uid,
+        habit_id: t.habit_id,
+        date_key: t.date_key,
+        done: t.done,
+        done_at: t.done_at,
+        updated_at: t.updated_at,
+      }));
+      const ins2 = await supabase.from('habit_ticks').insert(rowsHabitId);
+      if (ins2.error) {
+        console.warn('[flushTicks] insert con habit_id también falló', ins2.error);
+        tickQueue.unshift(...batch); // re-encolar
+        return;
+      }
+    } else if (ins.error) {
+      console.warn('[flushTicks] insert (fallback) falló', ins.error);
+      tickQueue.unshift(...batch);
+      return;
+    }
+  } else if (up.error) {
+    // Otro error → re-encolar
+    console.warn('[flushTicks] upsert error', up.error);
     tickQueue.unshift(...batch);
     return;
   }
 
-  // Pull corto inmediato para rehidratar local sin esperar 15s
+  // 4) Refresco corto inmediato (re-hidratar local sin esperar 15s)
   try {
     const to = dateKeyTZ(new Date());
     const d = new Date(); d.setDate(d.getDate() - 1);
@@ -217,11 +246,8 @@ async function flushTicks(uid: string) {
   }
 }
 
-/* =========================
-   Realtime (ticks + masters)
-   ========================= */
+/* ===== Realtime ===== */
 function subscribeRealtime(uid: string) {
-  // Ticks
   const chTicks = supabase.channel('rt-habit-ticks')
     .on('postgres_changes',
       { event: '*', schema: 'public', table: 'habit_ticks', filter: `user_id=eq.${uid}` },
@@ -229,24 +255,20 @@ function subscribeRealtime(uid: string) {
         const row = (payload.new ?? payload.old) as any;
         if (!row?.date_key) return;
         mergeTickIntoLocal({
-          // ⬇️ pasamos ambos por compat
-          habit_id: row.habit_id,
           local_id: row.local_id,
+          habit_id: row.habit_id,
           date_key: row.date_key,
           done: !!row.done,
           done_at: row.done_at ?? null,
           updated_at: row.updated_at ?? nowIso(),
         });
-      }
-    )
+      })
     .subscribe();
 
-  // Masters (para que “Creados por ti” no tarde)
   const chMasters = supabase.channel('rt-habit-masters')
     .on('postgres_changes',
       { event: '*', schema: 'public', table: 'habit_masters', filter: `user_id=eq.${uid}` },
-      async () => { await pullHabitMasters(uid); }
-    )
+      async () => { await pullHabitMasters(uid); })
     .subscribe();
 
   return () => {
@@ -255,9 +277,7 @@ function subscribeRealtime(uid: string) {
   };
 }
 
-/* =========================
-   Hook principal
-   ========================= */
+/* ===== Hook ===== */
 export function useHabitsSupabaseSync(uid?: string) {
   const timerRef = useRef<number | null>(null);
   const unsubRef = useRef<(() => void) | null>(null);
@@ -266,7 +286,7 @@ export function useHabitsSupabaseSync(uid?: string) {
     if (!isSupabaseEnvReady()) return;
     if (!uid) return;
 
-    // Exponer helpers debug
+    // Debug helpers
     try {
       (window as any).__akiraSync = {
         async pull(n = 3) {
