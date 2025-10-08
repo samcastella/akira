@@ -45,29 +45,6 @@ function dateKeyTZ(d = new Date(), tz = 'Europe/Madrid') {
 }
 
 /* =========================
-   Detección de esquema (habit_ticks)
-   ========================= */
-/** En algunos entornos la columna es `local_id`, en otros `habit_id`. */
-type TickIdCol = 'local_id' | 'habit_id';
-let TICKS_ID_COL: TickIdCol = 'local_id'; // por defecto
-let SCHEMA_DETECTED = false;
-
-async function detectTicksSchema() {
-  if (SCHEMA_DETECTED) return TICKS_ID_COL;
-  // 1) ¿existe local_id?
-  const r1 = await supabase.from('habit_ticks').select('local_id').limit(1);
-  if (!r1.error) { TICKS_ID_COL = 'local_id'; SCHEMA_DETECTED = true; return TICKS_ID_COL; }
-
-  // 2) ¿existe habit_id?
-  const r2 = await supabase.from('habit_ticks').select('habit_id').limit(1);
-  if (!r2.error) { TICKS_ID_COL = 'habit_id'; SCHEMA_DETECTED = true; return TICKS_ID_COL; }
-
-  console.warn('[detectTicksSchema] ninguna columna id reconocida en habit_ticks', { errLocal: r1.error, errHabit: r2.error });
-  SCHEMA_DETECTED = true;
-  return TICKS_ID_COL;
-}
-
-/* =========================
    Colas in-memory
    ========================= */
 type MasterUpsert = HabitMaster;
@@ -79,7 +56,7 @@ export function queueMasterUpsert(master: HabitMaster) {
 }
 
 type TickUpsert = {
-  habit_id: string;           // siempre es el *id local* del hábito
+  habit_id: string;           // SIEMPRE el id local del hábito
   date_key: string;           // YYYY-MM-DD
   done: boolean;
   done_at: string | null;
@@ -156,7 +133,7 @@ async function flushMasters(uid: string) {
    ========================= */
 function mergeTickIntoLocal(row: {
   local_id?: string | number;
-  habit_id?: string | number;
+  habit_id?: string | number;   // compat (si alguna vista/trigger lo rellena)
   date_key: string;
   done: boolean;
   done_at: string | null;
@@ -187,14 +164,10 @@ function mergeTickIntoLocal(row: {
 }
 
 async function pullHabitTicksRange(uid: string, fromKey: string, toKey: string) {
-  const idCol = await detectTicksSchema();
-  const sel = idCol === 'local_id'
-    ? 'local_id,date_key,done,done_at,updated_at'
-    : 'habit_id,date_key,done,done_at,updated_at';
-
+  // Leemos ambas columnas cuando existan; supabase ignora las que no están.
   const { data, error } = await supabase
     .from('habit_ticks')
-    .select(sel)
+    .select('local_id,habit_id,date_key,done,done_at,updated_at')
     .eq('user_id', uid)
     .gte('date_key', fromKey)
     .lte('date_key', toKey);
@@ -206,29 +179,27 @@ async function pullHabitTicksRange(uid: string, fromKey: string, toKey: string) 
 async function flushTicks(uid: string) {
   if (tickQueue.length === 0) return;
 
-  const idCol = await detectTicksSchema();
   const batch = tickQueue.splice(0, tickQueue.length);
 
-  // Enviamos SIEMPRE local_id y, si existe en el esquema, también habit_id.
-  const rows = batch.map(t => {
-    const base: Record<string, any> = {
-      user_id: uid,
-      date_key: t.date_key,
-      done: t.done,
-      done_at: t.done_at,
-      updated_at: t.updated_at,
-    };
-    base['local_id'] = t.habit_id;
-    if (idCol === 'habit_id') base['habit_id'] = t.habit_id; // parche defensivo
-    return base;
-  });
+  // ✅ Siempre persistimos con local_id. NO enviamos habit_id para evitar la FK.
+  const rows = batch.map(t => ({
+    user_id: uid,
+    local_id: t.habit_id,      // nuestro id local del hábito
+    date_key: t.date_key,
+    done: t.done,
+    done_at: t.done_at,
+    updated_at: t.updated_at,
+    // habit_id: (no se envía)
+  }));
 
-  // Usamos la PK (user_id,local_id,date_key); si el server tiene unique extra, también funcionará.
-  const { error } = await supabase.from('habit_ticks').upsert(rows);
+  const { error } = await supabase
+    .from('habit_ticks')
+    .upsert(rows, { onConflict: 'user_id,local_id,date_key' });
+
   if (error) {
     console.warn('[flushTicks] upsert error', {
       code: (error as any)?.code, message: (error as any)?.message,
-      details: (error as any)?.details, hint: (error as any)?.hint, idCol
+      details: (error as any)?.details, hint: (error as any)?.hint
     });
     tickQueue.unshift(...batch);
     return;
@@ -254,11 +225,10 @@ function subscribeRealtime(uid: string) {
       { event: '*', schema: 'public', table: 'habit_ticks', filter: `user_id=eq.${uid}` },
       (payload) => {
         const row = (payload.new ?? payload.old) as any;
-        if (!row) return;
-        if (!row.date_key) return;
+        if (!row || !row.date_key) return;
         mergeTickIntoLocal({
           local_id: row.local_id,
-          habit_id: row.habit_id,
+          habit_id: row.habit_id,      // si el backend lo rellena, también nos vale
           date_key: row.date_key,
           done: !!row.done,
           done_at: row.done_at ?? null,
@@ -301,19 +271,18 @@ export function useHabitsSupabaseSync(uid?: string) {
           const from = dateKeyTZ(d);
           await pullHabitTicksRange(uid, from, to);
           await pullHabitMasters(uid);
-          return { ok: true, from, to, idCol: TICKS_ID_COL };
+          return { ok: true, from, to };
         },
-        async flush() { await flushMasters(uid); await flushTicks(uid); return { ok: true, idCol: TICKS_ID_COL }; },
+        async flush() { await flushMasters(uid); await flushTicks(uid); return { ok: true }; },
         daily(day?: string) {
           const map = loadDaily();
           const key = day || dateKeyTZ(new Date());
-          return { key, bucket: map[key] || {}, raw: map, idCol: TICKS_ID_COL };
+          return { key, bucket: map[key] || {}, raw: map };
         }
       };
     } catch {}
 
     // Pull inicial
-    void detectTicksSchema().catch(()=>{});
     void pullHabitMasters(uid);
     const to = dateKeyTZ(new Date());
     const d = new Date(); d.setDate(d.getDate() - 3);
