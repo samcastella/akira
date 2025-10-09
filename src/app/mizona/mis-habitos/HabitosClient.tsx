@@ -2,8 +2,8 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { Check, Plus } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
+import { Check, Plus, Flame, ChevronRight } from 'lucide-react';
 import type { HabitMaster } from '@/components/habits/HabitForm';
 import { useUserProfile, useAuthUserId } from '@/lib/user';
 
@@ -35,6 +35,8 @@ type ProgramDef = {
   slug: string;
   title: string;
   themeColor?: string;
+  image?: string; // opcional: /programs/<slug>.png
+  totalDays?: number; // opcional para mostrar 10/30
   days?: { day: number; tasks: ProgramTask[] }[];
 };
 
@@ -97,6 +99,19 @@ const dateKeyTZ = (d = new Date(), tz = 'Europe/Madrid') => {
   const day = get('day');
   return `${y}-${m}-${day}`;
 };
+const startOfWeek = (d = new Date()) => {
+  const dt = new Date(d);
+  const wd = dt.getDay(); // 0=Dom
+  const diff = (wd + 6) % 7; // Lunes como inicio
+  dt.setDate(dt.getDate() - diff);
+  dt.setHours(0, 0, 0, 0);
+  return dt;
+};
+const addDays = (d: Date, n: number) => {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+};
 const isInRange = (dKey: string, start?: string, end?: string) => {
   if (start && dKey < start) return false;
   if (end && dKey > end) return false;
@@ -145,53 +160,8 @@ function markPoint(x?: number, y?: number, label = '') {
   setTimeout(() => dot.remove(), 1200);
 }
 
-function SectionTitle({ children }: { children: React.ReactNode }) {
-  return <h3 className="text-lg font-extrabold tracking-tight mb-2">{children}</h3>;
-}
-function SubTitle({ children }: { children: React.ReactNode }) {
-  return <h4 className="text-sm font-semibold tracking-tight mb-2">{children}</h4>;
-}
-function EmptyBar({ label, href }: { label: string; href: string }) {
-  return (
-    <Link
-      href={href}
-      className="group flex items-center justify-between rounded-2xl border border-dashed px-4 py-3 text-sm"
-      style={{ borderColor: 'var(--line, rgba(0,0,0,.16))' }}
-    >
-      <span className="text-black/60">{label}</span>
-      <span className="grid h-7 w-7 place-items-center rounded-full border">
-        <Plus size={16} />
-      </span>
-    </Link>
-  );
-}
-
 /* =========================
-Markdown inline: **negrita**
-========================= */
-function renderInlineMarkdown(text: string) {
-  const parts: React.ReactNode[] = [];
-  const regex = /\*\*(.+?)\*\*/g;
-  let lastIndex = 0;
-  let m: RegExpExecArray | null;
-
-  while ((m = regex.exec(text)) !== null) {
-    const [full, bold] = m;
-    const start = m.index;
-    if (start > lastIndex) parts.push(text.slice(lastIndex, start));
-    parts.push(
-      <strong key={`b-${start}`} className="font-semibold">
-        {bold}
-      </strong>
-    );
-    lastIndex = start + full.length;
-  }
-  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
-  return parts;
-}
-
-/* =========================
-Confeti (canvas propio, precalentado)
+Confeti (canvas propio)
 ========================= */
 let confettiInstance: any | null = null;
 let confettiCanvas: HTMLCanvasElement | null = null;
@@ -280,217 +250,244 @@ Helper “soft-delete”
 const isDeleted = (h: any): boolean => !!h?.deleted_at;
 
 /* =========================
-Modal simple para detalles
+Componentes visuales
 ========================= */
-function TaskDetailModal({
-  open,
-  onClose,
-  title,
-  detail,
-}: {
-  open: boolean;
-  onClose: () => void;
-  title: string;
-  detail?: string;
-}) {
-  if (!open) return null;
+
+// ——— Título de sección
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return <h3 className="text-lg font-extrabold tracking-tight mb-2">{children}</h3>;
+}
+// ——— Subtítulo pequeño
+function SubTitle({ children }: { children: React.ReactNode }) {
+  return <h4 className="text-sm font-semibold tracking-tight mb-2">{children}</h4>;
+}
+// ——— CTA vacío
+function EmptyBar({ label, href }: { label: string; href: string }) {
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      className="fixed inset-0 z-[9998] grid place-items-center p-4"
-      style={{ background: 'rgba(0,0,0,.35)' }}
-      onClick={onClose}
+    <Link
+      href={href}
+      className="group flex items-center justify-between rounded-2xl border border-dashed px-4 py-3 text-sm"
+      style={{ borderColor: 'var(--line, rgba(0,0,0,.16))' }}
+    >
+      <span className="text-black/60">{label}</span>
+      <span className="grid h-7 w-7 place-items-center rounded-full border">
+        <Plus size={16} />
+      </span>
+    </Link>
+  );
+}
+
+/* =========================
+Rueda de progreso semanal
+========================= */
+function CircularWeekWheel({
+  done,
+  total,
+}: {
+  done: number;
+  total: number;
+}) {
+  const size = 200;
+  const strokeW = 14;
+  const r = (size - strokeW) / 2;
+  const cx = size / 2;
+  const cy = size / 2;
+  const C = 2 * Math.PI * r;
+
+  const pct = total > 0 ? Math.min(1, Math.max(0, done / total)) : 0;
+  const dash = C * pct;
+  const gap = C - dash;
+
+  // posición del marcador 🔥
+  const angle = -Math.PI / 2 + 2 * Math.PI * pct;
+  const px = cx + r * Math.cos(angle);
+  const py = cy + r * Math.sin(angle);
+
+  return (
+    <div className="grid place-items-center my-4">
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="block">
+        <defs>
+          <linearGradient id="akiraWheel" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#ffe044" />     {/* amarillo */}
+            <stop offset="50%" stopColor="#ff8a00" />    {/* naranja */}
+            <stop offset="100%" stopColor="#ff3b30" />   {/* rojo */}
+          </linearGradient>
+          <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="0" dy="1" stdDeviation="2" floodOpacity="0.25" />
+          </filter>
+        </defs>
+
+        {/* base gris clara */}
+        <circle
+          cx={cx}
+          cy={cy}
+          r={r}
+          stroke="#eee"
+          strokeWidth={strokeW}
+          fill="none"
+        />
+
+        {/* progreso degradado */}
+        <circle
+          cx={cx}
+          cy={cy}
+          r={r}
+          stroke="url(#akiraWheel)"
+          strokeWidth={strokeW}
+          strokeLinecap="round"
+          fill="none"
+          strokeDasharray={`${dash} ${gap}`}
+          transform={`rotate(-90 ${cx} ${cy})`}
+          filter="url(#softShadow)"
+        />
+
+        {/* marcador 🔥 */}
+        <g transform={`translate(${px}, ${py})`}>
+          <circle r={strokeW / 2} fill="#fff" stroke="#00000020" />
+          <text x="0" y="4" fontSize="14" textAnchor="middle">🔥</text>
+        </g>
+      </svg>
+
+      <div className="mt-3 text-center">
+        <div className="text-xs uppercase tracking-wide text-black/60">Actividades de esta semana</div>
+        <div className="mt-1 text-lg font-bold">
+          {total > 0 ? Math.round((done / total) * 100) : 0}% completado
+        </div>
+        <div className="text-sm text-black/60">{done}/{total} checks</div>
+      </div>
+    </div>
+  );
+}
+
+/* =========================
+Tarjeta de Programa activo
+========================= */
+function ProgramActiveCard({
+  program,
+  dayIdx,
+  progressDays,
+  onClick,
+}: {
+  program: ProgramDef;
+  dayIdx: number;
+  progressDays: { current: number; total?: number };
+  onClick: () => void;
+}) {
+  const color = program.themeColor || '#fff8dc';
+  const totalDays = program.totalDays ?? program.days?.length ?? undefined;
+  const cur = Math.max(1, progressDays.current);
+  const tot = progressDays.total ?? totalDays ?? 30;
+  const pct = Math.max(0, Math.min(100, Math.round((cur / tot) * 100)));
+
+  return (
+    <button
+      onClick={onClick}
+      className="w-full text-left rounded-2xl border p-3 md:p-4 flex items-center gap-3 md:gap-4 hover:shadow-sm transition"
+      style={{ borderColor: 'var(--line, rgba(0,0,0,.12))', background: '#fff' }}
+      aria-label={`Abrir ${program.title}`}
     >
       <div
-        className="w-full max-w-md rounded-2xl bg-white p-4 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
+        className="shrink-0 grid place-items-center rounded-full overflow-hidden"
+        style={{ width: 56, height: 56, background: color, border: '1px solid #00000014' }}
       >
-        <div className="mb-2 text-sm font-medium">{renderInlineMarkdown(title)}</div>
-        <div className="text-sm text-black/75 whitespace-pre-line">
-          {detail ? renderInlineMarkdown(detail) : 'Sin descripción.'}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        {program.image ? (
+          <img src={program.image} alt={program.title} className="w-full h-full object-cover" />
+        ) : (
+          <span className="text-xl">🏁</span>
+        )}
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-semibold leading-tight truncate">{program.title}</div>
+        <div className="mt-1 h-2 rounded-full overflow-hidden" style={{ background: '#f1f5f9' }}>
+          <div
+            className="h-full"
+            style={{ width: `${pct}%`, background: color, border: '1px solid #00000020' }}
+          />
         </div>
-        <div className="mt-4 flex justify-end">
-          <button
-            onClick={onClose}
-            className="rounded-lg border px-3 py-1.5 text-sm"
-            style={{ borderColor: 'var(--line, rgba(0,0,0,.16))' }}
-            aria-label="Cerrar"
-          >
-            Cerrar
-          </button>
+        <div className="mt-1 text-xs text-black/60">
+          Día {cur}/{tot} — índice actual: {dayIdx}
         </div>
       </div>
-    </div>
+
+      <ChevronRight className="shrink-0 text-black/40" />
+    </button>
   );
 }
 
 /* =========================
-Barra de tarea (píldora)
+Mini gráficos (SVG simple)
 ========================= */
-function TaskPill({
-  label,
-  checked,
-  color,
-  onToggle,
-  onInfo,
-  leftIcon,
+function MiniLineChart({
+  valuesA,
+  valuesB,
+  labels,
+  labelA = 'Objetivo',
+  labelB = 'Realizado',
 }: {
-  label: string;
-  checked: boolean;
-  color: string;
-  onToggle: (e: React.MouseEvent) => void;
-  onInfo?: () => void;
-  leftIcon?: React.ReactNode;
+  valuesA: number[];
+  valuesB: number[];
+  labels: string[];
+  labelA?: string;
+  labelB?: string;
 }) {
-  const bg = checked ? color : '#ffffff';
-  const border = checked ? '#00000080' : `${color}66`;
-  const text = '#111111';
+  const w = 320;
+  const h = 120;
+  const pad = 16;
+  const innerW = w - pad * 2;
+  const innerH = h - pad * 2;
 
-  const lastXY = useRef<{ x?: number; y?: number }>({});
-  const prevChecked = useRef<boolean>(checked);
-  useEffect(() => {
-    if (!prevChecked.current && checked) {
-      const gxy =
-        (typeof window !== 'undefined' && (window as any).__akiraLastXY) || {};
-      const x = lastXY.current.x ?? (gxy as any).x;
-      const y = lastXY.current.y ?? (gxy as any).y;
-      DBG('TaskPill effect -> rising edge', { x, y, label });
-      markPoint(x, y, 'TaskPill');
-      void confettiBurstXY(x, y);
-      requestAnimationFrame(() => void confettiBurstXY(x, y));
-    }
-    prevChecked.current = checked;
-  }, [checked]);
+  const maxV = Math.max(1, ...valuesA, ...valuesB);
+  const pts = (vals: number[]) =>
+    vals.map((v, i) => {
+      const x = pad + (i * innerW) / (vals.length - 1 || 1);
+      const y = pad + innerH - (v / maxV) * innerH;
+      return `${x},${y}`;
+    }).join(' ');
 
   return (
-    <div
-      className="flex items-center justify-between px-4 py-3"
-      style={{
-        background: bg,
-        color: text,
-        border: `1px solid ${border}`,
-        borderRadius: PILL_RADIUS,
-      }}
-    >
-      <button
-        onMouseDown={(e) => {
-          lastXY.current = { x: e.clientX, y: e.clientY };
-          (window as any).__akiraLastXY = { x: e.clientX, y: e.clientY };
-          DBG('TaskPill mousedown', { x: e.clientX, y: e.clientY, label });
-          markPoint(e.clientX, e.clientY, 'md');
-        }}
-        onClick={onToggle}
-        className="grid h-9 w-9 place-items-center rounded-full border shrink-0"
-        title={checked ? 'Desmarcar' : 'Marcar'}
-        aria-label={checked ? `Desmarcar ${label}` : `Marcar ${label}`}
-        style={
-          checked
-            ? { background: '#22c55e', color: 'white', borderColor: '#16a34a' }
-            : { background: 'white', borderColor: '#11111140' }
-        }
-      >
-        {checked ? <Check size={16} /> : null}
-      </button>
-
-      <div className="mx-3 min-w-0 flex-1 flex items-center gap-3">
-        {leftIcon ? <span className="text-xl shrink-0 leading-none" aria-hidden>{leftIcon}</span> : null}
-        <div className="text-[15px] leading-snug font-medium break-words">
-          {renderInlineMarkdown(label)}
-        </div>
+    <div className="overflow-hidden rounded-xl border" style={{ borderColor: 'var(--line, rgba(0,0,0,.12))' }}>
+      <div className="px-3 py-2 text-xs text-black/60 flex items-center gap-3">
+        <span className="inline-block w-3 h-3 rounded-full bg-gray-300 border" />
+        {labelA}
+        <span className="inline-block w-3 h-3 rounded-full bg-emerald-500 border ml-4" />
+        {labelB}
       </div>
-
-      <button
-        onClick={onInfo}
-        className="grid h-9 w-9 place-items-center rounded-full border shrink-0"
-        title="Ver detalles"
-        aria-label={`Ver detalles de ${label}`}
-        style={{ background: 'white', borderColor: '#11111140' }}
-      >
-        <Plus size={16} />
-      </button>
+      <svg width={w} height={h} role="img" aria-label={`${labelA} vs ${labelB}`}>
+        {/* grid horizontal */}
+        {[0, 0.25, 0.5, 0.75, 1].map((t) => (
+          <line
+            key={t}
+            x1={pad}
+            y1={pad + t * innerH}
+            x2={w - pad}
+            y2={pad + t * innerH}
+            stroke="#f1f5f9"
+          />
+        ))}
+        {/* líneas */}
+        <polyline fill="none" stroke="#d1d5db" strokeWidth={2} points={pts(valuesA)} />
+        <polyline fill="none" stroke="#10b981" strokeWidth={2.5} points={pts(valuesB)} />
+        {/* labels de días abajo */}
+        {labels.map((lb, i) => {
+          const x = pad + (i * innerW) / (labels.length - 1 || 1);
+          return (
+            <text key={lb + i} x={x} y={h - 2} fontSize="10" textAnchor="middle" fill="#94a3b8">
+              {lb}
+            </text>
+          );
+        })}
+      </svg>
     </div>
   );
 }
 
 /* =========================
-Programas: bloque
+Página principal
 ========================= */
-function ProgramMiniBar({
-  slug,
-  onToggle,
-  isChecked,
-  programsTick,
-}: {
-  slug: string;
-  onToggle: (slug: string, dayIdx: number, taskId: string, e?: React.MouseEvent) => void;
-  isChecked: (slug: string, dayIdx: number, taskId: string) => boolean;
-  programsTick: number;
-}) {
-  void programsTick;
-
-  const program = getProgramBySlug(slug);
-  const [openTask, setOpenTask] = useState<{ title: string; detail?: string } | null>(null);
-
-  if (!program) {
-    return (
-      <div className="px-1 py-1">
-        <div className="text-sm text-black/60">
-          Programa no encontrado en datos: <b>{slug}</b>
-        </div>
-      </div>
-    );
-  }
-
-  const canonSlug = program.slug;
-  const dayIdx = getDayIndexFor(canonSlug) ?? 0;
-  const tasks: ProgramTask[] = program?.days?.[dayIdx]?.tasks || [];
-
-  const theme = program.themeColor || '#fff8dc';
-
-  return (
-    <div className="px-1 py-1">
-      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-black/50">
-        {program.title || canonSlug}
-      </div>
-
-      {tasks.length === 0 ? (
-        <span className="text-xs text-black/50">Hoy no hay tareas.</span>
-      ) : (
-        <ul className="space-y-3">
-          {tasks.map((t, i) => {
-            const taskId = String(t.id ?? `${canonSlug}-d${dayIdx}-t${i}`);
-            const checked = isChecked(canonSlug, dayIdx, taskId);
-            const label = t.label || `Tarea ${i + 1}`;
-            return (
-              <li key={taskId}>
-                <TaskPill
-                  label={label}
-                  checked={checked}
-                  color={theme}
-                  onToggle={(e) => onToggle(canonSlug, dayIdx, taskId, e)}
-                  onInfo={() => setOpenTask({ title: label, detail: t.detail })}
-                />
-              </li>
-            );
-          })}
-        </ul>
-      )}
-
-      <TaskDetailModal
-        open={!!openTask}
-        onClose={() => setOpenTask(null)}
-        title={openTask?.title || ''}
-        detail={openTask?.detail}
-      />
-    </div>
-  );
-}
-
-/* =========================
-Componente principal
-========================= */
-export default function HabitosClient() {
+export default function MiActividadPage() {
+  const router = useRouter();
   const pathname = usePathname();
 
   const [masters, setMasters] = useState<HabitMaster[]>([]);
@@ -502,27 +499,8 @@ export default function HabitosClient() {
   const [checksVersion, setChecksVersion] = useState<number>(0);
   const [programsTick, setProgramsTick] = useState<number>(0);
 
-  // Utilidades de depuración en consola
-  useEffect(() => {
-    (window as any).akiraConfettiOn = () => localStorage.setItem('akira_debug_confetti', '1');
-    (window as any).akiraConfettiOff = () => localStorage.removeItem('akira_debug_confetti');
-    (window as any).akiraConfettiInfo = () => {
-      const info = {
-        hidden: document.hidden,
-        reduced: window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches,
-        hasCanvas: !!document.getElementById('akira-confetti'),
-        lastXY: (window as any).__akiraLastXY,
-      };
-      console.debug('[confetti] info', info);
-      return info;
-    };
-  }, []);
-
-  // Precalentar confeti al montar
-  useEffect(() => {
-    void getConfettiShooter().catch(() => {});
-    (window as any).akiraConfettiTest = () => confettiBurstXY();
-  }, []);
+  // Precalentar confeti
+  useEffect(() => { void getConfettiShooter().catch(() => {}); }, []);
 
   // Hidratar index de programas desde window.__PROGRAMS
   useEffect(() => {
@@ -558,13 +536,12 @@ export default function HabitosClient() {
 
   // usuario
   const user = (useUserProfile?.() as any) || {};
-  const username = String(user?.username ?? '').trim();
   const fullName = String(user?.nombre ?? '').trim();
   const firstName = fullName.split(/\s+/).filter(Boolean)[0] || '';
-  const greetingName = firstName || username || 'usuario/a';
+  const greetingName = firstName || (user?.username ?? 'usuario/a');
   const avatar = (user?.foto as string | undefined) || undefined;
 
-  // cargar estado inicial + sync de programas
+  // auth
   const uid = useAuthUserId();
 
   // === helpers ===
@@ -572,6 +549,7 @@ export default function HabitosClient() {
     setActivePrograms(normalizeSlugs(getActiveSlugs()));
   }
 
+  // reconstruir checks desde programsLocal (día actual)
   function rebuildChecksFromProgramsLocal(slugs: string[]) {
     const store: LocalStore = loadProgramsLocalStore() || {};
     const rebuilt: ChecksMap = {};
@@ -592,7 +570,7 @@ export default function HabitosClient() {
     setChecks(rebuilt);
   }
 
-  // Hidratar locales + programas activos + primeros pulls de programas
+  // Carga inicial + sync
   useEffect(() => {
     setMasters(loadMasterHabits());
     setDaily(loadDaily());
@@ -609,7 +587,6 @@ export default function HabitosClient() {
     if (JSON.stringify(checks0) !== JSON.stringify(checksNorm)) saveProgramChecks(checksNorm);
     setChecks(checksNorm);
 
-    // Init + primer refresco
     initProgramsLocal();
     refreshActivesFromLocal();
 
@@ -619,7 +596,7 @@ export default function HabitosClient() {
     (async () => {
       try {
         if (uid) {
-          await pullUserPrograms();                 // trae DB → escribe programsLocal
+          await pullUserPrograms();                 // DB → local
           initProgramsLocal();
           const act = normalizeSlugs(getActiveSlugs());
           setActivePrograms(act);
@@ -653,7 +630,6 @@ export default function HabitosClient() {
         rebuildChecksFromProgramsLocal(act);
       }
       if (e.key === LS_PROGRAM_CHECKS) setChecks(loadProgramChecks());
-      // ⬅️ rehidratar masters al cambiar la lista local (p.ej. soft-delete desde CrearHabitosPage)
       if (e.key === LS_HABITS_MASTER) setMasters(loadMasterHabits());
       if (e.key === LS_HABITS_DAILY) setDaily(loadDaily());
     };
@@ -685,7 +661,6 @@ export default function HabitosClient() {
       const d = parseKeyToDate(dKey);
 
       masters.forEach((h) => {
-        // ⬅️ ignora soft-deleted
         if (isDeleted(h)) return;
         if (!isInRange(dKey, h.startDate, h.endDate)) return;
         if (h.weekend === false && isWeekendDay(d)) return;
@@ -708,7 +683,7 @@ export default function HabitosClient() {
       .map((h) => h.id);
   }
 
-  // toggle hábitos personales (solo local; celebración grande si completas todos)
+  // toggle hábitos personales
   function toggleDone(habitId: string, dKey?: string, evt?: React.MouseEvent) {
     const key = dKey ?? dateKeyTZ(new Date());
     const bucket = daily[key] ?? {};
@@ -741,13 +716,13 @@ export default function HabitosClient() {
     const d = parseKeyToDate(today);
     const bucket = daily[today] ?? {};
     return masters
-      .filter((h) => !isDeleted(h)) // ignora soft-deleted en la UI
+      .filter((h) => !isDeleted(h))
       .filter((h) => isInRange(today, h.startDate, h.endDate))
       .filter((h) => !(h.weekend === false && isWeekendDay(d)))
       .map((h) => ({ ...h, done: !!bucket[h.id]?.done }));
   }, [masters, daily, today]);
 
-  // checks de programas (local cache que reflejamos desde DB y toggles)
+  // checks de programas (local cache)
   const isTaskChecked = (slug: string, dayIdx: number, taskId: string) =>
     !!checks?.[slug]?.[dayIdx]?.[taskId];
 
@@ -759,7 +734,6 @@ export default function HabitosClient() {
   ) => {
     const cx = evt?.clientX;
     const cy = evt?.clientY;
-    DBG('toggleTaskChecked called', { slug, dayIdx, taskId, cx, cy });
     markPoint(cx, cy, 'toggle');
 
     const prevChecked = !!checks?.[slug]?.[dayIdx]?.[taskId];
@@ -777,20 +751,15 @@ export default function HabitosClient() {
     });
     setChecksVersion((v) => v + 1);
 
-    // confetti si marcamos
     if (nextChecked) {
-      DBG('CONFETTI from toggleTaskChecked', { cx, cy });
       void confettiBurstXY(cx, cy);
       requestAnimationFrame(() => void confettiBurstXY(cx, cy));
-      setTimeout(() => void confettiBurstXY(cx, cy), 40);
     }
 
-    // write-through a DB (revert si falla)
     try {
       await pushToggleTask({ slug, day: dayIdx, taskId, completed: nextChecked });
     } catch (e) {
-      console.warn('[toggleTaskChecked] pushToggleTask error -> revert', e);
-      // revertir a estado previo
+      // revert
       setChecks((prev) => {
         const next: ChecksMap = { ...(prev || {}) };
         next[slug] = { ...(next[slug] || {}) };
@@ -801,10 +770,8 @@ export default function HabitosClient() {
         return next;
       });
       setChecksVersion((v) => v + 1);
-      // opcional: toast('No se pudo guardar. Intenta de nuevo.')
     }
 
-    // 🔔 Notificar a otras vistas del Programa (detalle, sliders, etc.)
     try {
       window.dispatchEvent(
         new CustomEvent('akira:program-check-updated', {
@@ -814,39 +781,162 @@ export default function HabitosClient() {
     } catch {}
   };
 
+  /* =========================
+  Agregados para la RUEDA y STATS
+  ========================== */
+
+  // 1) PROGRAMAS: tareas del día actual (hasta que guardemos histórico real)
+  const programsTodayTotals = useMemo(() => {
+    let total = 0;
+    let done = 0;
+
+    for (const slug of activePrograms) {
+      const prog = getProgramBySlug(slug);
+      if (!prog) continue;
+      const dayIdx = getDayIndexFor(slug) ?? 0;
+      const tasks = prog.days?.[dayIdx]?.tasks ?? [];
+      total += tasks.length;
+
+      const taskMap = checks?.[slug]?.[dayIdx] ?? {};
+      done += tasks.reduce((acc, t, i) => {
+        const tid = String(t.id ?? `${slug}-d${dayIdx}-t${i}`);
+        return acc + (taskMap[tid] ? 1 : 0);
+      }, 0);
+    }
+    return { total, done };
+  }, [activePrograms, checks, programsTick]);
+
+  // 2) HÁBITOS PERSONALES: sumatorio semanal real desde LS_HABITS_DAILY
+  const weekKeys = useMemo(() => {
+    const start = startOfWeek(parseKeyToDate(today));
+    return Array.from({ length: 7 }, (_, i) => dateKeyTZ(addDays(start, i)));
+  }, [today]);
+
+  const personalWeekAgg = useMemo(() => {
+    let total = 0;
+    let done = 0;
+
+    weekKeys.forEach((k) => {
+      const ids = applicableMasterIds(k);
+      total += ids.length;
+      const bucket = daily[k] ?? {};
+      done += ids.reduce((acc, id) => acc + (bucket[id]?.done ? 1 : 0), 0);
+    });
+
+    return { total, done };
+  }, [weekKeys, masters, daily]);
+
+  // 3) RUEDA: mezcla actual → programas (día) + personales (semana)
+  //    TODO: cuando guardemos histórico de programas, cambiaremos 'programasTodayTotals' por 'programasWeekAgg'
+  const wheelTotals = {
+    total: programsTodayTotals.total + personalWeekAgg.total,
+    done: programsTodayTotals.done + personalWeekAgg.done,
+  };
+
+  // 4) STATS: arrays L..D
+  const labelsWeek = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+  // objetivo = número de actividades objetivo por día (programas hoy + personales de ese día)
+  const statsGoalPerDay = weekKeys.map((k) => {
+    // personales
+    const perIds = applicableMasterIds(k).length;
+    // programas (aprox: usamos tareas del "día actual" como proxy mientras no hay histórico)
+    return perIds + programsTodayTotals.total;
+  });
+  // realizado
+  const statsDonePerDay = weekKeys.map((k) => {
+    const perIds = applicableMasterIds(k);
+    const bucket = daily[k] ?? {};
+    const perDone = perIds.reduce((acc, id) => acc + (bucket[id]?.done ? 1 : 0), 0);
+    return perDone + programsTodayTotals.done; // aprox hasta histórico real
+  });
+
+  // 5) Estadística del DÍA (línea doble)
+  const labelsDay = ['Objetivo', 'Realizado'];
+  const todayGoal = statsGoalPerDay[ (new Date(parseKeyToDate(today)).getDay() + 6) % 7 ];
+  const todayDone = statsDonePerDay[ (new Date(parseKeyToDate(today)).getDay() + 6) % 7 ];
+
   /* ===== RENDER ===== */
   return (
     <main className="mx-auto w-full max-w-3xl px-5 sm:px-6 md:px-8 py-6" style={{ background: 'white' }}>
       <HeaderMinimal avatar={avatar} greetingName={greetingName} />
-      <TopMenu />
 
-      <SectionTitle>
-        Retos para hoy —{' '}
-        <span className="font-normal">
-          {new Date(`${today}T00:00:00`).toLocaleDateString('es-ES', {
-            weekday: 'long',
-            day: 'numeric',
-            month: 'long',
-          })}
-        </span>
-      </SectionTitle>
+      {/* Título principal */}
+      <h1 className="text-2xl font-black tracking-tight mb-2">Mi actividad</h1>
+      <p className="text-sm text-black/60 mb-4">
+        Resumen de tu semana y tus progresos diarios.
+      </p>
 
-      {/* 1) Creados por ti */}
-      <section className="mb-6">
-        <SubTitle>Creados por ti</SubTitle>
-        {todayHabits.length === 0 ? (
-          <EmptyBar label="Añadir hábito personal" href="/mizona/crear-habitos" />
+      {/* RUEDA */}
+      <CircularWeekWheel done={wheelTotals.done} total={wheelTotals.total} />
+
+      {/* Programas activos */}
+      <SectionTitle>Programas activos</SectionTitle>
+      <div className="space-y-3 mb-6">
+        {activePrograms?.length ? (
+          activePrograms.map((slug) => {
+            const program = getProgramBySlug(slug);
+            if (!program) return (
+              <div key={slug} className="text-sm text-black/60">Programa no encontrado: <b>{slug}</b></div>
+            );
+            const dayIdx = getDayIndexFor(program.slug) ?? 0;
+            const progressDays = { current: dayIdx + 1, total: program.totalDays ?? program.days?.length };
+
+            return (
+              <ProgramActiveCard
+                key={program.slug}
+                program={program}
+                dayIdx={dayIdx}
+                progressDays={progressDays}
+                onClick={() => router.push(`/habitos/${program.slug}`)}
+              />
+            );
+          })
         ) : (
+          <EmptyBar label="Añadir programa" href="/habitos" />
+        )}
+      </div>
+
+      {/* Estadísticas */}
+      <SectionTitle>Estadísticas</SectionTitle>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+        <div>
+          <SubTitle>Semana (L–D)</SubTitle>
+          <MiniLineChart
+            valuesA={statsGoalPerDay}
+            valuesB={statsDonePerDay}
+            labels={labelsWeek}
+            labelA="Objetivo"
+            labelB="Realizado"
+          />
+        </div>
+        <div>
+          <SubTitle>Actividades de hoy</SubTitle>
+          <MiniLineChart
+            valuesA={[todayGoal, todayGoal]}
+            valuesB={[todayDone, todayDone]}
+            labels={['', '']}
+            labelA="Objetivo"
+            labelB="Realizado"
+          />
+        </div>
+      </div>
+
+      {/* Crear hábito */}
+      <SectionTitle>Crear hábito</SectionTitle>
+      <EmptyBar label="Crear un nuevo hábito" href="/mizona/crear-habitos" />
+
+      {/* (Opcional) Lista de hábitos personales de hoy */}
+      {todayHabits.length > 0 && (
+        <section className="mt-6">
+          <SubTitle>Creados por ti (hoy)</SubTitle>
           <ul className="space-y-3">
             {todayHabits.map((h) => {
               const checked = h.done;
-              const label = h.name;
               const theme = h.color ?? '#e6f7ee';
-
               return (
                 <li key={h.id}>
                   <TaskPill
-                    label={label}
+                    label={h.name}
                     checked={checked}
                     color={theme}
                     onToggle={(e) => toggleDone(h.id, undefined, e)}
@@ -857,35 +947,8 @@ export default function HabitosClient() {
               );
             })}
           </ul>
-        )}
-      </section>
-
-      {/* 2) Programas activos */}
-      <section className="mb-6">
-        <SubTitle>Programas activos</SubTitle>
-
-        {activePrograms?.length ? (
-          <div className="space-y-6">
-            {activePrograms.map((slug) => (
-              <ProgramMiniBar
-                key={slug}
-                slug={slug}
-                onToggle={toggleTaskChecked}
-                isChecked={isTaskChecked}
-                programsTick={programsTick}
-              />
-            ))}
-          </div>
-        ) : (
-          <EmptyBar label="Añadir programa" href="/habitos" />
-        )}
-      </section>
-
-      {/* 3) Retos con amigos */}
-      <section className="mb-2">
-        <SubTitle>Retos con amigos</SubTitle>
-        <EmptyBar label="Añadir reto con amigos" href="/mis-amigos" />
-      </section>
+        </section>
+      )}
     </main>
   );
 }
@@ -911,32 +974,96 @@ function HeaderMinimal({ avatar, greetingName }: { avatar?: string; greetingName
         )}
       </Link>
       <div className="min-w-0">
-        <h1 className="text-xl font-extrabold m-0 leading-none">Hola {greetingName},</h1>
-        <p className="mt-1 text-sm text-black/70 m-0">Gestiona tus hábitos y retos diarios.</p>
+        <h2 className="text-xl font-extrabold m-0 leading-none">Hola {greetingName},</h2>
+        <p className="mt-1 text-sm text-black/70 m-0">Sigue construyendo tus hábitos 🔥</p>
       </div>
     </section>
   );
 }
 
-function TopMenu() {
+/* =========================
+Barras/tareas personales (pill)
+========================= */
+function TaskPill({
+  label,
+  checked,
+  color,
+  onToggle,
+  onInfo,
+  leftIcon,
+}: {
+  label: string;
+  checked: boolean;
+  color: string;
+  onToggle: (e: React.MouseEvent) => void;
+  onInfo?: () => void;
+  leftIcon?: React.ReactNode;
+}) {
+  const bg = checked ? color : '#ffffff';
+  const border = checked ? '#00000080' : `${color}66`;
+  const text = '#111111';
+
+  const lastXY = useRef<{ x?: number; y?: number }>({});
+  const prevChecked = useRef<boolean>(checked);
+  useEffect(() => {
+    if (!prevChecked.current && checked) {
+      const gxy =
+        (typeof window !== 'undefined' && (window as any).__akiraLastXY) || {};
+      const x = lastXY.current.x ?? (gxy as any).x;
+      const y = lastXY.current.y ?? (gxy as any).y;
+      markPoint(x, y, 'TaskPill');
+      void confettiBurstXY(x, y);
+      requestAnimationFrame(() => void confettiBurstXY(x, y));
+    }
+    prevChecked.current = checked;
+  }, [checked]);
+
   return (
-    <nav className="mb-4 flex flex-wrap gap-3">
-      <Link href="/mizona" className="btn" style={{ background: 'black', color: 'white', border: '1px solid black' }}>
-        Mis hábitos
-      </Link>
-      <Link href="/mizona/crear-habitos" className="btn" style={{ background: 'white', color: 'black', border: '1px solid var(--line)' }}>
-        Crear hábito
-      </Link>
-      <Link href="/mizona/logros" className="btn" style={{ background: 'white', color: 'black', border: '1px solid var(--line)' }}>
-        Logros
-      </Link>
-      <Link href="/mizona/perfil" className="btn" style={{ background: 'white', color: 'black', border: '1px solid var(--line)' }}>
-        Mi perfil
-      </Link>
-      <Link href="/mizona/calendarios" className="btn" style={{ background: 'white', color: 'black', border: '1px solid var(--line)' }}>
-        Calendarios
-      </Link>
-    </nav>
+    <div
+      className="flex items-center justify-between px-4 py-3"
+      style={{
+        background: bg,
+        color: text,
+        border: `1px solid ${border}`,
+        borderRadius: PILL_RADIUS,
+      }}
+    >
+      <button
+        onMouseDown={(e) => {
+          lastXY.current = { x: e.clientX, y: e.clientY };
+          (window as any).__akiraLastXY = { x: e.clientX, y: e.clientY };
+          markPoint(e.clientX, e.clientY, 'md');
+        }}
+        onClick={onToggle}
+        className="grid h-9 w-9 place-items-center rounded-full border shrink-0"
+        title={checked ? 'Desmarcar' : 'Marcar'}
+        aria-label={checked ? `Desmarcar ${label}` : `Marcar ${label}`}
+        style={
+          checked
+            ? { background: '#22c55e', color: 'white', borderColor: '#16a34a' }
+            : { background: 'white', borderColor: '#11111140' }
+        }
+      >
+        {checked ? <Check size={16} /> : null}
+      </button>
+
+      <div className="mx-3 min-w-0 flex-1 flex items-center gap-3">
+        {leftIcon ? <span className="text-xl shrink-0 leading-none" aria-hidden>{leftIcon}</span> : null}
+        <div className="text-[15px] leading-snug font-medium break-words">
+          {label}
+        </div>
+      </div>
+
+      <button
+        onClick={onInfo}
+        className="grid h-9 w-9 place-items-center rounded-full border shrink-0"
+        title="Ver detalles"
+        aria-label={`Ver detalles de ${label}`}
+        style={{ background: 'white', borderColor: '#11111140' }}
+      >
+        <Plus size={16} />
+      </button>
+    </div>
   );
 }
 
