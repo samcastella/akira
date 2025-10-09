@@ -26,8 +26,14 @@ import {
   type LocalProgram,
 } from '@/lib/programsLocal';
 
-/* === Sync con Supabase === */
+/* === Sync con Supabase (write-through / pull) === */
 import { pushStartProgram, pushResetProgram, pullUserPrograms } from '@/lib/programSync';
+
+/* === Usuario (para saber si hay sesión antes de hacer pulls) === */
+import { useAuthUserId } from '@/lib/user';
+
+/* ✅ IMPORT NECESARIO PARA REALTIME */
+import { supabase } from '@/lib/supabaseClient';
 
 type JsonTask = { id?: string; label: string; detail?: string; tags?: string[] };
 type JsonDay = { day: number; tasks: JsonTask[] };
@@ -105,6 +111,7 @@ export default function ProgramDetail({
   howItWorks,
 }: Props) {
   const router = useRouter();
+  const uid = useAuthUserId(); // ⬅️ saber si hay sesión
 
   const [data, setData] = useState<ProgramJson | null>(null);
   const [loadingData, setLoadingData] = useState(true);
@@ -120,28 +127,37 @@ export default function ProgramDetail({
   });
   const [openTasks, setOpenTasks] = useState<Record<string, boolean>>({});
 
-  // Estados de acción para evitar dobles clicks y mostrar feedback
+  // Estados de acción
   const [starting, setStarting] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // cargar JSON
   useEffect(() => {
+    let cancelled = false;
     const loader = DATA_LOADERS[slug];
     setLoadingData(true);
     if (!loader) {
-      setData(null);
-      setLoadingData(false);
+      if (!cancelled) {
+        setData(null);
+        setLoadingData(false);
+      }
       return;
     }
     loader()
       .then((payload) => {
+        if (cancelled) return;
         setData(payload);
         setOpenAcc({ do: false, get: false, use: false });
         setOpenTasks({});
       })
-      .catch(() => setData(null))
-      .finally(() => setLoadingData(false));
+      .catch(() => {
+        if (!cancelled) setData(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingData(false);
+      });
+    return () => { cancelled = true; };
   }, [slug]);
 
   // migrar legacy y cargar progreso unificado + subscribirse a cambios externos
@@ -158,22 +174,27 @@ export default function ProgramDetail({
     };
   }, []);
 
-  // ⬇️ Al montar, hidrata desde server (por si entramos directo desde enlace)
+  // ⬇️ Al montar/uid listo, hidrata desde server (por si entramos directo desde enlace)
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       try {
-        await pullUserPrograms();
+        if (!uid) return;               // evita pull sin sesión
+        await pullUserPrograms();       // DB → local
       } finally {
-        setActiveMap(loadActive());
+        if (!cancelled) setActiveMap(loadActive());
       }
     })();
-  }, []);
+    return () => { cancelled = true; };
+  }, [uid]);
 
-  // ⬇️ Al volver a foco / online, rehidratar (puede haber cambios desde "Mi Zona")
+  // ⬇️ Al volver a foco / online, rehidratar (puede haber cambios)
   useEffect(() => {
+    if (!uid) return;
+    let cancelled = false;
     const rehydrate = async () => {
-      await pullUserPrograms();
-      setActiveMap(loadActive());
+      try { await pullUserPrograms(); } catch {}
+      if (!cancelled) setActiveMap(loadActive());
     };
     const onVis = () => { if (document.visibilityState === 'visible') void rehydrate(); };
     const onOnline = () => void rehydrate();
@@ -181,10 +202,44 @@ export default function ProgramDetail({
     document.addEventListener('visibilitychange', onVis);
     window.addEventListener('online', onOnline);
     return () => {
+      cancelled = true;
       document.removeEventListener('visibilitychange', onVis);
       window.removeEventListener('online', onOnline);
     };
-  }, []);
+  }, [uid]);
+
+  /* ✅ Realtime: escucha cambios de tareas del usuario y filtra por slug en el callback.
+     Nota: el filtro múltiple con coma no es válido; usamos user_id y filtramos en código. */
+  useEffect(() => {
+    if (!uid) return;
+    let cancelled = false;
+
+    const channel = supabase
+      .channel(`rt-program-tasks-${slug}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'user_program_tasks',
+          filter: `user_id=eq.${uid}`, // 👈 solo por user; filtramos slug abajo
+        },
+        async (payload: any) => {
+          try {
+            const row = (payload?.new ?? payload?.old) as { program_slug?: string } | undefined;
+            if (!row || row.program_slug !== slug) return; // 👈 filtrado por programa
+            await pullUserPrograms();                       // DB -> local
+            if (!cancelled) setActiveMap(loadActive());     // refresca estado local
+          } catch {}
+        }
+      )
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      try { supabase.removeChannel(channel); } catch {}
+    };
+  }, [uid, slug]);
 
   const active: LocalProgram | null = activeMap[slug] ?? null;
   const started = Boolean(active?.startedAt);
@@ -197,6 +252,7 @@ export default function ProgramDetail({
   const currentDay = useMemo(() => {
     if (!active?.startedAt || totalDays <= 0) return 1;
     const delta = daysBetweenFromMs(active.startedAt, todayKey());
+    // clamp a [1, totalDays]
     return Math.min(totalDays, Math.max(1, delta + 1));
   }, [active?.startedAt, totalDays]);
 
@@ -447,7 +503,7 @@ export default function ProgramDetail({
         {!started ? (
           <button
             onClick={handleStartProgram}
-            disabled={starting || loadingData}
+            disabled={starting || loadingData || !uid}
             className="inline-flex items-center gap-2 rounded-2xl px-5 py-3.5 text-[15px] font-semibold bg-black text-white shadow-md active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
           >
             <Play className="w-4 h-4" />
@@ -456,7 +512,7 @@ export default function ProgramDetail({
         ) : (
           <button
             onClick={requestReset}
-            disabled={resetting}
+            disabled={resetting || !uid}
             className="inline-flex items-center gap-2 justify-center rounded-xl px-3.5 py-2.5 text-xs font-medium bg-neutral-100 text-neutral-700 hover:bg-neutral-200 transition disabled:opacity-60 disabled:cursor-not-allowed"
             title="Reiniciar programa"
           >
@@ -481,7 +537,7 @@ export default function ProgramDetail({
               </button>
               <button
                 onClick={confirmReset}
-                disabled={resetting}
+                disabled={resetting || !uid}
                 className="rounded-xl bg-red-600 text-white py-2 text-sm font-semibold hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {resetting ? 'Reiniciando…' : 'Reiniciar'}
@@ -547,7 +603,7 @@ export default function ProgramDetail({
         </>
       )}
 
-      {/* Lista de tareas: solo si iniciado */}
+      {/* Lista de tareas: solo si iniciado (informativa; checks en Mi Zona) */}
       {started && data && totalDays > 0 && (
         <div className="mt-4">
           {tasks.length === 0 ? (

@@ -25,9 +25,11 @@ type UserProgramTaskRow = {
   day: number;
   completed: boolean;
   completed_at: string | null;
+  // updated_at puede existir en tu tabla; si no, Supabase ignora ese campo en upsert
+  updated_at?: string | null;
 };
 
-/* ===== Utiles ===== */
+/* ===== Útiles ===== */
 const toMs = (ts: string | null | undefined) => (ts ? new Date(ts).getTime() : undefined);
 const nowISO = () => new Date().toISOString();
 
@@ -74,7 +76,6 @@ export async function pullUserPrograms(): Promise<void> {
     const slugs = Array.from(activeSlugs);
     const { data: tasks, error: e2 } = await supabase
       .from('user_program_tasks')
-      // 👇 incluimos user_id para que cuadre con el tipo UserProgramTaskRow
       .select('user_id, program_slug, task_id, day, completed, completed_at')
       .eq('user_id', uid)
       .in('program_slug', slugs);
@@ -95,7 +96,7 @@ export async function pullUserPrograms(): Promise<void> {
       const dayMap = (entry.progress[t.day] ||= {});
       dayMap[t.task_id] = !!t.completed;
 
-      // opcional: usa completed_at para refrescar updatedAt
+      // Refresca updatedAt con la marca más reciente
       const cMs = toMs(t.completed_at) ?? 0;
       if (cMs > (entry.updatedAt ?? 0)) entry.updatedAt = cMs;
     });
@@ -123,6 +124,7 @@ export async function pushStartProgram(slug: string): Promise<void> {
         is_active: true,
         started_at: startedISO,
         current_day: 1,
+        updated_at: startedISO,
       },
       { onConflict: 'user_id,program_slug' }
     );
@@ -148,16 +150,14 @@ export async function pushResetProgram(slug: string, opts?: { deleteTasks?: bool
   const uid = await getAuthUserId();
   if (!uid) throw new Error('Usuario no autenticado');
 
-  // Desactiva
   const { error } = await supabase
-  .from('user_programs')
-  .update({ is_active: false, current_day: 1, updated_at: new Date().toISOString() })
-  .eq('user_id', uid)
-  .eq('program_slug', slug);
+    .from('user_programs')
+    .update({ is_active: false, current_day: 1, updated_at: nowISO() })
+    .eq('user_id', uid)
+    .eq('program_slug', slug);
 
   if (error) throw error;
 
-  // Limpia tareas si se pide
   if (opts?.deleteTasks) {
     const { error: e2 } = await supabase
       .from('user_program_tasks')
@@ -186,8 +186,9 @@ export async function pushToggleTask(params: {
   if (!uid) throw new Error('Usuario no autenticado');
 
   const { slug, day, taskId, completed } = params;
+  const ts = nowISO();
 
-  // upsert tarea; el trigger pone completed_at correcto
+  // upsert tarea; explicitamos completed_at/updated_at
   const { error } = await supabase
     .from('user_program_tasks')
     .upsert(
@@ -197,13 +198,16 @@ export async function pushToggleTask(params: {
         task_id: taskId,
         day,
         completed,
-      },
-      { onConflict: 'user_id,program_slug,task_id' }
+        completed_at: completed ? ts : null,
+        updated_at: ts,
+      } as Partial<UserProgramTaskRow> as any,
+      // 🔧 Clave única correcta: incluye 'day'
+      { onConflict: 'user_id,program_slug,day,task_id' }
     );
 
   if (error) throw error;
 
-  // reflejo local inmediato
+  // Espejo local inmediato
   const local = loadLocalPrograms() || {};
   const entry = (local[slug] ||= {
     programSlug: slug,
@@ -227,8 +231,33 @@ export async function pushCurrentDay(slug: string, currentDay: number) {
   if (!uid) throw new Error('Usuario no autenticado');
   const { error } = await supabase
     .from('user_programs')
-    .update({ current_day: currentDay, updated_at: new Date().toISOString() })
+    .update({ current_day: currentDay, updated_at: nowISO() })
     .eq('user_id', uid)
     .eq('program_slug', slug);
   if (error) throw error;
+}
+
+/* ========================================================== */
+/*  (Opcional) Lectura por rango de días de un programa       */
+/* ========================================================== */
+export async function pullProgramWindow(
+  slug: string,
+  fromDay: number,
+  toDay: number
+): Promise<UserProgramTaskRow[]> {
+  const uid = await getAuthUserId();
+  if (!uid) return [];
+  const { data, error } = await supabase
+    .from('user_program_tasks')
+    .select('user_id, program_slug, task_id, day, completed, completed_at')
+    .eq('user_id', uid)
+    .eq('program_slug', slug)
+    .gte('day', fromDay)
+    .lte('day', toDay);
+
+  if (error) {
+    console.warn('[pullProgramWindow] error', error);
+    return [];
+  }
+  return (data ?? []) as UserProgramTaskRow[];
 }
