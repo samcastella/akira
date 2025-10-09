@@ -35,7 +35,7 @@ type ProgramDef = {
   slug: string;
   title: string;
   themeColor?: string;
-  image?: string; // opcional: /programs/<slug>.png
+  image?: string; // opcional: /images/programs/<img>.jpg
   totalDays?: number; // opcional para mostrar 10/30
   days?: { day: number; tasks: ProgramTask[] }[];
 };
@@ -105,12 +105,8 @@ const startOfMonth = (d = new Date()) => {
   dt.setHours(0,0,0,0);
   return dt;
 };
-const addDays = (d: Date, n: number) => {
-  const x = new Date(d); x.setDate(x.getDate() + n); return x;
-};
-const addMonths = (d: Date, n: number) => {
-  const x = new Date(d); x.setMonth(x.getMonth() + n); x.setDate(1); return x;
-};
+const addDays = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+const addMonths = (d: Date, n: number) => { const x = new Date(d); x.setMonth(x.getMonth() + n); x.setDate(1); return x; };
 const isInRange = (dKey: string, start?: string, end?: string) => {
   if (start && dKey < start) return false;
   if (end && dKey > end) return false;
@@ -122,7 +118,6 @@ const parseKeyToDate = (k: string) => new Date(`${k}T00:00:00`);
 /* =========================
 UI helpers
 ========================= */
-const BORDER = '#E5E7EB';
 const PILL_RADIUS = 9999;
 
 /* ===== DEBUG confetti ===== */
@@ -182,9 +177,9 @@ function resolveProgramImage(program?: ProgramDef | null): string | undefined {
   if (!program) return undefined;
   if (program.image) return program.image;
   const s = program.slug.toLowerCase();
-  if (s.includes('reading')) return '/programs/reading.jpg';
-  if (s.includes('detox')) return '/programs/detox-hero.jpg';
-  if (s.includes('lectura')) return '/programs/lectura-hero.jpg';
+  // Map a las rutas que nos pasaste (carpeta public/ -> accesibles como /images/...)
+  if (s.includes('detox')) return '/images/programs/detox-hero.jpg';
+  if (s.includes('lectura') || s.includes('reading')) return '/images/programs/lectura-hero.jpg';
   return undefined;
 }
 
@@ -282,7 +277,7 @@ function RankingCard({ username, points, rank, avatar }: { username: string; poi
 }
 
 /* =========================
-Tarjeta Programa (diseño tipo adjunto + imágenes)
+Tarjeta Programa (estilo “rectángulo” como captura)
 ========================= */
 function ProgramActiveCard({
   program, dayIdx, progressDays, onClick,
@@ -297,12 +292,20 @@ function ProgramActiveCard({
   return (
     <button
       onClick={onClick}
-      className="w-full text-left rounded-[24px] border px-3 py-3 md:px-4 md:py-4 flex items-center gap-3 hover:shadow-sm transition bg-[#f7f7f7]"
-      style={{ borderColor: 'var(--line, rgba(0,0,0,.10))' }}
+      className="w-full text-left rounded-[24px] px-3 py-3 md:px-4 md:py-4 flex items-center gap-3 hover:shadow-sm transition"
+      style={{ background: '#f5f5f5' }}
       aria-label={`Abrir ${program.title}`}
     >
-      <div className="shrink-0 rounded-full overflow-hidden" style={{ width: 52, height: 52, border: '1px solid #e5e7eb', background: '#fff' }}>
-        {img ? <img src={img} alt={program.title} className="w-full h-full object-cover" /> : <span className="grid place-items-center w-full h-full">🏁</span>}
+      <div
+        className="shrink-0 rounded-full overflow-hidden"
+        style={{ width: 52, height: 52, background: '#fff', border: '1px solid #e5e7eb' }}
+      >
+        {img ? (
+          // resize proporcional dentro del círculo
+          <img src={img} alt={program.title} className="w-full h-full object-cover" />
+        ) : (
+          <span className="grid place-items-center w-full h-full">🏁</span>
+        )}
       </div>
 
       <div className="min-w-0 flex-1">
@@ -310,10 +313,10 @@ function ProgramActiveCard({
         <div className="text-[14px] font-semibold leading-snug line-clamp-2">{program.title}</div>
 
         <div className="mt-2 flex items-center gap-2">
-          <div className="relative h-2 flex-1 rounded-full overflow-hidden" style={{ background: '#eaeef3' }}>
+          <div className="relative h-2 flex-1 rounded-full overflow-hidden" style={{ background: '#ececec' }}>
             <div className="h-full" style={{ width: `${(cur / tot) * 100}%`, background: color }} />
           </div>
-          <div className="text-xs font-semibold text-black/60 shrink-0">{cur}/{tot}</div>
+          <div className="text-xs font-semibold text-black/70 shrink-0">{cur}/{tot}</div>
         </div>
       </div>
 
@@ -323,13 +326,12 @@ function ProgramActiveCard({
 }
 
 /* =========================
-Gráfico semanal (sin borde). Puntos blancos con borde gris oscuro.
-“Retos” separado del 25.
+Gráfico semanal (más oscuro)
 ========================= */
 function WeeklyChecksChart({
   valuesGoal, valuesDone, labels,
 }: { valuesGoal: number[]; valuesDone: number[]; labels: string[] }) {
-  const w = 380, h = 160, padL = 18, padR = 64, padT = 16, padB = 22;
+  const w = 380, h = 160, padL = 18, padR = 66, padT = 16, padB = 22;
   const innerW = w - padL - padR, innerH = h - padT - padB;
   const maxV = Math.max(1, 25, ...valuesGoal, ...valuesDone);
   const y = (v: number) => padT + innerH - (v / maxV) * innerH;
@@ -337,41 +339,34 @@ function WeeklyChecksChart({
   const pts = (vals: number[]) => vals.map((v, i) => `${x(i)},${y(v)}`).join(' ');
 
   return (
-    <div>
-      <svg width={w} height={h} role="img" aria-label="Checks por día (semana)">
-        {/* grid y escala derecha */}
-        {[0, 5, 10, 15, 20, 25].map((t) => (
-          <g key={t}>
-            <line x1={padL} y1={y(t)} x2={w - padR} y2={y(t)} stroke="#f1f5f9" />
-            <text x={w - padR + 8} y={y(t) + 4} fontSize="10" fill="#94a3b8">{t}</text>
-          </g>
-        ))}
-        {/* etiqueta “Retos” separada */}
-        <text x={w - 10} y={padT - 4} fontSize="11" textAnchor="end" fill="#6b7280">Retos</text>
+    <svg width={w} height={h} role="img" aria-label="Checks por día (semana)">
+      {[0, 5, 10, 15, 20, 25].map((t) => (
+        <g key={t}>
+          <line x1={padL} y1={y(t)} x2={w - padR} y2={y(t)} stroke="#e5e7eb" />
+          <text x={w - padR + 10} y={y(t) + 4} fontSize="11" fill="#4b5563">{t}</text>
+        </g>
+      ))}
+      <text x={w - 10} y={padT - 4} fontSize="12" textAnchor="end" fill="#4b5563">Retos</text>
 
-        {/* líneas */}
-        <polyline fill="none" stroke="#9ca3af" strokeWidth={2} points={pts(valuesGoal)} />
-        <polyline fill="none" stroke="#10b981" strokeWidth={2.5} points={pts(valuesDone)} />
+      <polyline fill="none" stroke="#6b7280" strokeWidth={2.2} points={pts(valuesGoal)} />
+      <polyline fill="none" stroke="#0ea5e9" strokeWidth={2.6} points={pts(valuesDone)} />
 
-        {/* puntos (blancos con borde gris oscuro) */}
-        {valuesGoal.map((v, i) => (
-          <circle key={'ga'+i} cx={x(i)} cy={y(v)} r={4} fill="#ffffff" stroke="#374151" strokeWidth={1.25} />
-        ))}
-        {valuesDone.map((v, i) => (
-          <circle key={'do'+i} cx={x(i)} cy={y(v)} r={4} fill="#ffffff" stroke="#374151" strokeWidth={1.25} />
-        ))}
+      {valuesGoal.map((v, i) => (
+        <circle key={'ga'+i} cx={x(i)} cy={y(v)} r={4} fill="#ffffff" stroke="#374151" strokeWidth={1.25} />
+      ))}
+      {valuesDone.map((v, i) => (
+        <circle key={'do'+i} cx={x(i)} cy={y(v)} r={4} fill="#ffffff" stroke="#374151" strokeWidth={1.25} />
+      ))}
 
-        {/* labels abajo */}
-        {labels.map((lb, i) => (
-          <text key={lb+i} x={x(i)} y={h - 4} fontSize="10" textAnchor="middle" fill="#94a3b8">{lb}</text>
-        ))}
-      </svg>
-    </div>
+      {labels.map((lb, i) => (
+        <text key={lb+i} x={x(i)} y={h - 4} fontSize="11" textAnchor="middle" fill="#4b5563">{lb}</text>
+      ))}
+    </svg>
   );
 }
 
 /* =========================
-Calendario (mes navegable) — celdas circulares + flechas laterales
+Calendario (mes navegable) — sin borde, celdas circulares pequeñas
 ========================= */
 function monthMatrix(base = new Date()) {
   const first = startOfMonth(base);
@@ -399,23 +394,23 @@ function CalendarHeat({
   const weekLabels = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
 
   return (
-    <div className="relative rounded-2xl border p-4" style={{ borderColor: 'var(--line, rgba(0,0,0,.12))' }}>
+    <div className="relative p-2">
       {/* Flechas laterales a media altura */}
       <button
         onClick={onPrev}
-        className="absolute left-1 top-1/2 -translate-y-1/2 grid place-items-center w-8 h-8 rounded-full border bg-white"
+        className="absolute left-0 top-1/2 -translate-y-1/2 grid place-items-center w-8 h-8 rounded-full border bg-white"
         style={{ borderColor: 'var(--line, rgba(0,0,0,.12))' }}
         aria-label="Mes anterior"
       >
-        <ChevronLeft size={18} />
+        <ChevronLeft size={16} />
       </button>
       <button
         onClick={onNext}
-        className="absolute right-1 top-1/2 -translate-y-1/2 grid place-items-center w-8 h-8 rounded-full border bg-white"
+        className="absolute right-0 top-1/2 -translate-y-1/2 grid place-items-center w-8 h-8 rounded-full border bg-white"
         style={{ borderColor: 'var(--line, rgba(0,0,0,.12))' }}
         aria-label="Mes siguiente"
       >
-        <ChevronRight size={18} />
+        <ChevronRight size={16} />
       </button>
 
       <div className="flex items-center justify-between mb-2">
@@ -429,13 +424,13 @@ function CalendarHeat({
 
       <div className="grid grid-cols-7 gap-2">
         {cells.map((d, i) => {
-          if (!d) return <div key={i} className="h-9" />;
+          if (!d) return <div key={i} className="h-7" />;
           const meta = colorForDate(d);
           return (
             <div
               key={i}
-              className="h-9 w-9 mx-auto rounded-full grid place-items-center text-xs"
-              style={{ background: meta.color, color: '#111', border: '1px solid #00000033' }}
+              className="h-7 w-7 mx-auto rounded-full grid place-items-center text-[11px]"
+              style={{ background: meta.color, color: '#111', border: '1px solid #00000026' }}
               title={meta.label}
             >
               {d.getDate()}
@@ -745,9 +740,13 @@ export default function MiActividadPage() {
       {/* Ranking */}
       <RankingCard username={username} points={points} rank={rank} avatar={avatar} />
 
-      {/* Programas en progreso */}
-      <SectionTitle>En progreso</SectionTitle>
-      <div className="text-sm text-black/60 mb-2">Sigue con tus entrenamientos planificados.</div>
+      {/* Programas activos (cabecera + link a la derecha) */}
+      <div className="mb-1 flex items-center justify-between">
+        <SectionTitle>Programas activos</SectionTitle>
+        <Link href="/habitos" className="text-sm font-semibold">Ver todos</Link>
+      </div>
+      <div className="text-sm text-black/60 mb-3">Sigue con tus programas activos.</div>
+
       <div className="space-y-3 mb-6">
         {activePrograms?.length ? (
           activePrograms.map((slug) => {
@@ -770,8 +769,11 @@ export default function MiActividadPage() {
         )}
       </div>
 
-      {/* Estadísticas — único gráfico (sin texto extra) */}
-      <SectionTitle>Estadísticas</SectionTitle>
+      {/* Estadísticas */}
+      <div className="mb-1 flex items-center justify-between">
+        <SectionTitle>Estadísticas</SectionTitle>
+      </div>
+      <div className="text-sm text-[#4b5563] mb-2">Descubre tus estadísticas de esta semana</div>
       <div className="mb-6">
         <WeeklyChecksChart valuesGoal={statsGoalPerDay} valuesDone={statsDonePerDay} labels={labelsWeek} />
       </div>
@@ -795,10 +797,12 @@ export default function MiActividadPage() {
 
       {/* Crear hábito */}
       <SectionTitle>Crear hábito</SectionTitle>
+      <div className="text-sm text-black/60 mb-2">Crea tu propio hábito personalizado</div>
       <EmptyBar label="Crear un nuevo hábito" href="/mizona/crear-habitos" />
 
       {/* Logros */}
       <SectionTitle>Logros</SectionTitle>
+      <div className="text-sm text-black/60 mb-2">Disfruta de todo lo logrado hasta hoy</div>
       <div className="grid grid-cols-3 gap-3">
         <div className="rounded-xl border p-3 text-center" style={{ borderColor: 'var(--line, rgba(0,0,0,.12))' }}>
           <div className="text-2xl">🥉</div>
