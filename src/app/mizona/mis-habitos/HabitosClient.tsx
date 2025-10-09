@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Check, Plus, ChevronRight } from 'lucide-react';
+import { Check, Plus, ChevronRight, ChevronLeft } from 'lucide-react';
 import type { HabitMaster } from '@/components/habits/HabitForm';
 import { useUserProfile, useAuthUserId } from '@/lib/user';
 
@@ -108,6 +108,9 @@ const startOfMonth = (d = new Date()) => {
 const addDays = (d: Date, n: number) => {
   const x = new Date(d); x.setDate(x.getDate() + n); return x;
 };
+const addMonths = (d: Date, n: number) => {
+  const x = new Date(d); x.setMonth(x.getMonth() + n); x.setDate(1); return x;
+};
 const isInRange = (dKey: string, start?: string, end?: string) => {
   if (start && dKey < start) return false;
   if (end && dKey > end) return false;
@@ -174,6 +177,15 @@ function getProgramBySlug(slug: string): ProgramDef | null {
   const index = (window as any).__PROGRAMS as Record<string, ProgramDef> | undefined;
   if (!index) return null;
   return index[normalizeSlug(slug)] || null;
+}
+function resolveProgramImage(program?: ProgramDef | null): string | undefined {
+  if (!program) return undefined;
+  if (program.image) return program.image;
+  const s = program.slug.toLowerCase();
+  if (s.includes('reading')) return '/programs/reading.jpg';
+  if (s.includes('detox')) return '/programs/detox-hero.jpg';
+  if (s.includes('lectura')) return '/programs/lectura-hero.jpg';
+  return undefined;
 }
 
 /* =========================
@@ -262,7 +274,7 @@ function RankingCard({ username, points, rank, avatar }: { username: string; poi
       </div>
       <div className="min-w-0 flex-1">
         <div className="text-sm font-semibold truncate">{username || 'Usuario'}</div>
-        <div className="text-xs text-black/60">Puesto global: #{rank}</div>
+        <div className="text-xs text-black/60">Ranking mensual: #{rank}</div>
       </div>
       <div className="text-2xl font-extrabold">{points}</div>
     </div>
@@ -270,7 +282,7 @@ function RankingCard({ username, points, rank, avatar }: { username: string; poi
 }
 
 /* =========================
-Tarjeta Programa (diseño tipo adjunto)
+Tarjeta Programa (diseño tipo adjunto + imágenes)
 ========================= */
 function ProgramActiveCard({
   program, dayIdx, progressDays, onClick,
@@ -280,6 +292,7 @@ function ProgramActiveCard({
   const color = program.themeColor || '#eaeef3';
   const tot = progressDays.total ?? program.totalDays ?? program.days?.length ?? 30;
   const cur = Math.max(1, Math.min(tot, progressDays.current));
+  const img = resolveProgramImage(program);
 
   return (
     <button
@@ -289,12 +302,12 @@ function ProgramActiveCard({
       aria-label={`Abrir ${program.title}`}
     >
       <div className="shrink-0 rounded-full overflow-hidden" style={{ width: 52, height: 52, border: '1px solid #e5e7eb', background: '#fff' }}>
-        {program.image ? <img src={program.image} alt={program.title} className="w-full h-full object-cover" /> : <span className="grid place-items-center w-full h-full">🏁</span>}
+        {img ? <img src={img} alt={program.title} className="w-full h-full object-cover" /> : <span className="grid place-items-center w-full h-full">🏁</span>}
       </div>
 
       <div className="min-w-0 flex-1">
         <div className="text-[12px] text-black/50 leading-none mb-1">Programa</div>
-        <div className="text-[14px] font-semibold leading-snug">{program.title}</div>
+        <div className="text-[14px] font-semibold leading-snug line-clamp-2">{program.title}</div>
 
         <div className="mt-2 flex items-center gap-2">
           <div className="relative h-2 flex-1 rounded-full overflow-hidden" style={{ background: '#eaeef3' }}>
@@ -310,41 +323,42 @@ function ProgramActiveCard({
 }
 
 /* =========================
-Gráfico semanal sin borde – eje “Retos” a la derecha
+Gráfico semanal (sin borde). Puntos blancos con borde gris oscuro.
+“Retos” separado del 25.
 ========================= */
 function WeeklyChecksChart({
   valuesGoal, valuesDone, labels,
 }: { valuesGoal: number[]; valuesDone: number[]; labels: string[] }) {
-  const w = 360, h = 160, padL = 18, padR = 38, padT = 16, padB = 22;
+  const w = 380, h = 160, padL = 18, padR = 64, padT = 16, padB = 22;
   const innerW = w - padL - padR, innerH = h - padT - padB;
-  const maxV = Math.max(1, 25, ...valuesGoal, ...valuesDone); // hasta 25
+  const maxV = Math.max(1, 25, ...valuesGoal, ...valuesDone);
   const y = (v: number) => padT + innerH - (v / maxV) * innerH;
   const x = (i: number) => padL + (i * innerW) / (labels.length - 1 || 1);
   const pts = (vals: number[]) => vals.map((v, i) => `${x(i)},${y(v)}`).join(' ');
 
   return (
-    <div className="rounded-xl">
-      <svg width={w} height={h} role="img" aria-label="Retos · checks (semana)">
-        {/* grid */}
+    <div>
+      <svg width={w} height={h} role="img" aria-label="Checks por día (semana)">
+        {/* grid y escala derecha */}
         {[0, 5, 10, 15, 20, 25].map((t) => (
           <g key={t}>
             <line x1={padL} y1={y(t)} x2={w - padR} y2={y(t)} stroke="#f1f5f9" />
-            <text x={w - padR + 4} y={y(t) + 4} fontSize="10" fill="#94a3b8">{t}</text>
+            <text x={w - padR + 8} y={y(t) + 4} fontSize="10" fill="#94a3b8">{t}</text>
           </g>
         ))}
-        {/* etiqueta derecha */}
-        <text x={w - 6} y={padT - 4} fontSize="11" textAnchor="end" fill="#6b7280">Retos</text>
+        {/* etiqueta “Retos” separada */}
+        <text x={w - 10} y={padT - 4} fontSize="11" textAnchor="end" fill="#6b7280">Retos</text>
 
         {/* líneas */}
-        <polyline fill="none" stroke="#d1d5db" strokeWidth={2} points={pts(valuesGoal)} />
+        <polyline fill="none" stroke="#9ca3af" strokeWidth={2} points={pts(valuesGoal)} />
         <polyline fill="none" stroke="#10b981" strokeWidth={2.5} points={pts(valuesDone)} />
 
-        {/* puntos por día */}
+        {/* puntos (blancos con borde gris oscuro) */}
         {valuesGoal.map((v, i) => (
-          <circle key={'ga'+i} cx={x(i)} cy={y(v)} r={3} fill="#d1d5db" />
+          <circle key={'ga'+i} cx={x(i)} cy={y(v)} r={4} fill="#ffffff" stroke="#374151" strokeWidth={1.25} />
         ))}
         {valuesDone.map((v, i) => (
-          <circle key={'do'+i} cx={x(i)} cy={y(v)} r={3.5} fill="#10b981" />
+          <circle key={'do'+i} cx={x(i)} cy={y(v)} r={4} fill="#ffffff" stroke="#374151" strokeWidth={1.25} />
         ))}
 
         {/* labels abajo */}
@@ -357,7 +371,7 @@ function WeeklyChecksChart({
 }
 
 /* =========================
-Calendario (mes actual) con colores por cumplimiento
+Calendario (mes navegable) — celdas circulares + flechas laterales
 ========================= */
 function monthMatrix(base = new Date()) {
   const first = startOfMonth(base);
@@ -369,29 +383,59 @@ function monthMatrix(base = new Date()) {
   while (cells.length % 7 !== 0) cells.push(null);
   return { cells, month: first.toLocaleString('es-ES', { month: 'long' }), year: first.getFullYear() };
 }
+
 function CalendarHeat({
+  baseDate,
+  onPrev,
+  onNext,
   colorForDate,
 }: {
+  baseDate: Date;
+  onPrev: () => void;
+  onNext: () => void;
   colorForDate: (d: Date) => { color: string; label: string };
 }) {
-  const { cells, month, year } = monthMatrix(new Date());
+  const { cells, month, year } = monthMatrix(baseDate);
   const weekLabels = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+
   return (
-    <div className="rounded-2xl border p-3" style={{ borderColor: 'var(--line, rgba(0,0,0,.12))' }}>
+    <div className="relative rounded-2xl border p-4" style={{ borderColor: 'var(--line, rgba(0,0,0,.12))' }}>
+      {/* Flechas laterales a media altura */}
+      <button
+        onClick={onPrev}
+        className="absolute left-1 top-1/2 -translate-y-1/2 grid place-items-center w-8 h-8 rounded-full border bg-white"
+        style={{ borderColor: 'var(--line, rgba(0,0,0,.12))' }}
+        aria-label="Mes anterior"
+      >
+        <ChevronLeft size={18} />
+      </button>
+      <button
+        onClick={onNext}
+        className="absolute right-1 top-1/2 -translate-y-1/2 grid place-items-center w-8 h-8 rounded-full border bg-white"
+        style={{ borderColor: 'var(--line, rgba(0,0,0,.12))' }}
+        aria-label="Mes siguiente"
+      >
+        <ChevronRight size={18} />
+      </button>
+
       <div className="flex items-center justify-between mb-2">
         <div className="text-sm font-semibold capitalize">{month} {year}</div>
         <Link href="/mizona/calendarios" className="text-sm font-semibold">Ver todos</Link>
       </div>
+
       <div className="grid grid-cols-7 gap-2 text-center text-xs text-black/60 mb-1">
         {weekLabels.map(d => <div key={d}>{d}</div>)}
       </div>
+
       <div className="grid grid-cols-7 gap-2">
         {cells.map((d, i) => {
-          if (!d) return <div key={i} className="h-8" />;
+          if (!d) return <div key={i} className="h-9" />;
           const meta = colorForDate(d);
           return (
-            <div key={i} className="h-8 rounded-md grid place-items-center text-xs"
-              style={{ background: meta.color, color: '#111', border: '1px solid #00000014' }}
+            <div
+              key={i}
+              className="h-9 w-9 mx-auto rounded-full grid place-items-center text-xs"
+              style={{ background: meta.color, color: '#111', border: '1px solid #00000033' }}
               title={meta.label}
             >
               {d.getDate()}
@@ -418,6 +462,9 @@ export default function MiActividadPage() {
   const [checks, setChecks] = useState<ChecksMap>({});
   const [checksVersion, setChecksVersion] = useState<number>(0);
   const [programsTick, setProgramsTick] = useState<number>(0);
+
+  // Estado para calendario
+  const [calDate, setCalDate] = useState<Date>(startOfMonth(new Date()));
 
   // Precalentar confeti
   useEffect(() => { void getConfettiShooter().catch(() => {}); }, []);
@@ -667,9 +714,9 @@ export default function MiActividadPage() {
     return perDone + programsTodayTotals.done;
   });
 
-  // Ranking (puntos = checks de la semana * 10, ranking simulado)
+  // Ranking (simulado)
   const points = wheelTotals.done * 10;
-  const rank = Math.max(1, 500 - wheelTotals.done); // simulación simple
+  const rank = Math.max(1, 500 - wheelTotals.done);
 
   // Calendario: colores por ratio (blanco, rojo, naranja, verde)
   function colorForDate(d: Date) {
@@ -681,15 +728,15 @@ export default function MiActividadPage() {
     const done = personalDone + programsTodayTotals.done;
     if (total === 0) return { color: '#ffffff', label: 'Sin actividades' };
     const ratio = done / total;
-    if (done === 0) return { color: '#fee2e2', label: '0% completado' };         // rojo claro
-    if (ratio < 1) return { color: '#ffedd5', label: `${Math.round(ratio*100)}% completado` }; // naranja claro
-    return { color: '#dcfce7', label: '100% completado' };                        // verde claro
+    if (done === 0) return { color: '#fee2e2', label: '0% completado' };         // rojo
+    if (ratio < 1) return { color: '#ffedd5', label: `${Math.round(ratio*100)}% completado` }; // naranja
+    return { color: '#dcfce7', label: '100% completado' };                        // verde
   }
 
   /* ===== RENDER ===== */
   return (
     <main className="mx-auto w-full max-w-3xl px-5 sm:px-6 md:px-8 py-6 bg-white">
-      {/* Título principal — tamaño más bajo, puede ocupar dos líneas */}
+      {/* Título */}
       <h1 className="text-xl font-black tracking-tight mb-3 leading-snug">Mi actividad</h1>
 
       {/* RUEDA */}
@@ -711,7 +758,7 @@ export default function MiActividadPage() {
             return (
               <ProgramActiveCard
                 key={program.slug}
-                program={program}
+                program={{ ...program, image: resolveProgramImage(program) }}
                 dayIdx={dayIdx}
                 progressDays={progressDays}
                 onClick={() => router.push(`/habitos/${program.slug}`)}
@@ -723,9 +770,8 @@ export default function MiActividadPage() {
         )}
       </div>
 
-      {/* Estadísticas — un único gráfico sin borde */}
+      {/* Estadísticas — único gráfico (sin texto extra) */}
       <SectionTitle>Estadísticas</SectionTitle>
-      <div className="text-sm text-black/60 mb-2">Retos · checks (semana)</div>
       <div className="mb-6">
         <WeeklyChecksChart valuesGoal={statsGoalPerDay} valuesDone={statsDonePerDay} labels={labelsWeek} />
       </div>
@@ -736,11 +782,15 @@ export default function MiActividadPage() {
         <div className="text-sm text-black/60">Selecciona calendario</div>
         <select className="text-sm border rounded-md px-2 py-1" aria-label="Selector de calendario">
           <option>Calendario general</option>
-          {/* En el futuro vendrán opciones como “Dejar de fumar”, etc. */}
         </select>
       </div>
       <div className="mb-6">
-        <CalendarHeat colorForDate={colorForDate} />
+        <CalendarHeat
+          baseDate={calDate}
+          onPrev={() => setCalDate((d) => addMonths(d, -1))}
+          onNext={() => setCalDate((d) => addMonths(d, +1))}
+          colorForDate={colorForDate}
+        />
       </div>
 
       {/* Crear hábito */}
@@ -750,7 +800,6 @@ export default function MiActividadPage() {
       {/* Logros */}
       <SectionTitle>Logros</SectionTitle>
       <div className="grid grid-cols-3 gap-3">
-        {/* Insignias ejemplo (se irán desbloqueando según objetivos) */}
         <div className="rounded-xl border p-3 text-center" style={{ borderColor: 'var(--line, rgba(0,0,0,.12))' }}>
           <div className="text-2xl">🥉</div>
           <div className="text-xs mt-1">5 checks en una semana</div>
