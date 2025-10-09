@@ -22,8 +22,8 @@ export default function HerramientasDentroDeHabitos() {
     <div className="bg-white">
       <SubHeaderTabs
         tabs={[
-          { href: '/habitos', label: 'Hábitos' },
-          { href: '/habitos/herramientas', label: 'Herramientas' },
+          { href: '/programas', label: 'Programas' },
+          { href: '/herramientas', label: 'Herramientas' },
           { href: '/habitos/crear', label: 'Crear programa' },
         ]}
       />
