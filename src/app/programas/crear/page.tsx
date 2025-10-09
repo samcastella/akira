@@ -8,7 +8,7 @@ export default function CrearProgramaPage() {
       <SubHeaderTabs
         tabs={[
           { href: '/programas', label: 'Programas' },
-          { href: '/programas/herramientas', label: 'Herramientas' },
+          { href: '/herramientas', label: 'Herramientas' },
           { href: '/programas/crear', label: 'Crear programa' },
         ]}
       />
