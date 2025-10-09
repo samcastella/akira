@@ -1,18 +1,14 @@
 /** @type {import('next').NextConfig} */
-const nextConfig = {
+module.exports = {
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: 'images.unsplash.com' },
     ],
   },
-  // Ignorar errores de ESLint en el build (temporalmente)
+  // Temporal mientras limpiamos el lint
   eslint: {
     ignoreDuringBuilds: true,
   },
-};
-
-module.exports = nextConfig;
-module.exports = {
   async redirects() {
     return [
       { source: '/habitos', destination: '/programas', permanent: false },
