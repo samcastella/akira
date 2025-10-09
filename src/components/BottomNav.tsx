@@ -17,8 +17,8 @@ export default function BottomNav() {
   const items: Item[] = [
     { href: '/',            label: 'Home',        icon: Home },
     { href: '/programas',   label: 'Programas',   icon: SquarePlay },   // (antes Hábitos)
-    { href: '/mi-actividad',label: 'Mi actividad',icon: BarChart3 },
-    { href: '/community',   label: 'Comunidad',   icon: Users },
+    { href: '/mizona',label: 'Mi actividad',icon: BarChart3 },
+    { href: '/amigos',   label: 'Comunidad',   icon: Users },
   ];
 
   // gris medio para inactivos
