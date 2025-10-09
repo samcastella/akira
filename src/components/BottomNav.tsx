@@ -15,15 +15,19 @@ export default function BottomNav() {
   const pathname = usePathname();
 
   const items: Item[] = [
-    { href: '/',            label: 'Home',        icon: Home },
-    { href: '/programas',   label: 'Programas',   icon: SquarePlay },   // (antes Hábitos)
-    { href: '/mizona',label: 'Mi actividad',icon: BarChart3 },
-    { href: '/amigos',   label: 'Comunidad',   icon: Users },
+    { href: '/',          label: 'Home',         icon: Home },
+    { href: '/programas', label: 'Programas',    icon: SquarePlay }, // antes Hábitos
+    { href: '/mizona',    label: 'Mi actividad', icon: BarChart3 },  // antes Mi zona
+    { href: '/amigos',    label: 'Comunidad',    icon: Users },      // antes Mis amigos
   ];
 
-  // gris medio para inactivos
   const INACTIVE = 'text-gray-500';
   const ACTIVE = 'text-black';
+
+  // helper para marcar activo en rutas hijas
+  const isActive = (href: string) =>
+    pathname === href ||
+    (href !== '/' && (pathname?.startsWith(href + '/') ?? false));
 
   return (
     <nav
@@ -33,10 +37,7 @@ export default function BottomNav() {
     >
       <ul className="mx-auto flex h-full w-full max-w-md items-stretch justify-between px-4 pb-[env(safe-area-inset-bottom,0px)]">
         {items.map(({ href, label, icon: Icon }) => {
-          const active =
-            pathname === href ||
-            (href !== '/' && pathname?.startsWith(href));
-
+          const active = isActive(href);
           return (
             <li key={href} className="flex-1">
               <Link
@@ -47,14 +48,11 @@ export default function BottomNav() {
                   active ? ACTIVE : INACTIVE,
                 ].join(' ')}
               >
-                {/* Icono limpio y minimalista */}
                 <Icon
                   className={[
                     'h-6 w-6 transition-transform duration-150',
                     active ? 'scale-105' : 'scale-100',
                   ].join(' ')}
-                  // Nota: lucide es “stroke”. Para sensación de “relleno” visual,
-                  // mantenemos color negro en activo y gris en inactivo.
                   strokeWidth={active ? 2.5 : 2}
                 />
                 <span className="text-[12px] leading-none">
