@@ -22,24 +22,31 @@ export default function HerramientasListPage() {
       <h2 className="page-title">Herramientas</h2>
       <p className="muted mb-4">Tu caja de herramientas: simple, clara y directa.</p>
 
-      <div role="list" aria-label="Lista de herramientas" className="rounded-2xl border overflow-hidden">
-        {TOOLS.map(t => (
+      {/* Lista a ancho completo con separadores */}
+      <nav role="list" aria-label="Lista de herramientas">
+        {TOOLS.map((t, i) => (
           <Link
             key={t.slug}
             role="listitem"
             href={`/herramientas/${t.slug}`}
-            className="flex items-center justify-between p-4 hover:bg-neutral-50 focus:bg-neutral-50 outline-none"
+            className="flex items-center justify-between py-4 focus:bg-neutral-50 hover:bg-neutral-50 outline-none"
+            style={{
+              borderBottom: i < TOOLS.length - 1 ? '1px solid var(--line)' : 'none',
+            }}
           >
             <div className="flex items-center gap-3">
-              <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border">
+              <span
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border"
+                aria-hidden
+              >
                 <t.Icon className="h-5 w-5" />
               </span>
               <span className="text-[15px]">{t.label}</span>
             </div>
-            <ChevronRight className="h-5 w-5 text-neutral-400" />
+            <ChevronRight className="h-5 w-5 text-neutral-400" aria-hidden />
           </Link>
         ))}
-      </div>
+      </nav>
     </main>
   );
 }
