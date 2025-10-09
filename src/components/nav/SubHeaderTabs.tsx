@@ -5,20 +5,31 @@ import { usePathname } from 'next/navigation';
 
 type Tab = { href: string; label: string };
 
-export default function SubHeaderTabs({ tabs }: { tabs: Tab[] }) {
+export default function SubHeaderTabs({
+  tabs,
+  size = 'compact',
+}: {
+  tabs: Tab[];
+  size?: 'compact' | 'default';
+}) {
   const pathname = usePathname();
+  const hCls = size === 'compact' ? 'h-10' : 'h-11';           // ~40px compact
+  const txt = size === 'compact' ? 'text-[13px]' : 'text-sm';
+
   return (
     <div className="sticky top-0 z-10 bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/70 border-b">
       <div className="container mx-auto px-4">
-        <nav className="flex gap-4 h-11 items-center">
+        <nav className={`flex gap-4 ${hCls} items-center`}>
           {tabs.map(t => {
             const active = pathname === t.href;
             return (
               <Link
                 key={t.href}
                 href={t.href}
-                className={`text-sm px-2 py-1 rounded-md border-b-2 transition ${
-                  active ? 'border-black font-semibold' : 'border-transparent text-neutral-500 hover:text-black'
+                className={`${txt} px-1.5 py-0.5 rounded-md border-b-2 transition ${
+                  active
+                    ? 'border-black font-semibold text-black'
+                    : 'border-transparent text-neutral-500 hover:text-black'
                 }`}
               >
                 {t.label}
