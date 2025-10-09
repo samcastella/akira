@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Bookmark, BookmarkCheck, ChevronRight } from 'lucide-react';
+import SubHeaderTabs from '@/components/nav/SubHeaderTabs';
 
 // Registro central de programas
 import {
@@ -211,161 +212,173 @@ export default function HabitosPage() {
   const savedCount = saved.size;
 
   return (
-    <div className="px-4 pb-28 pt-4 bg-white">
-      {/* Título + buscador */}
-      <h1 className="text-3xl font-semibold tracking-tight mb-3">Programas</h1>
-      <div className="mb-6">
-        <label className="sr-only" htmlFor="search">
-          Buscar programas
-        </label>
-        <input
-          id="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Buscar programas…"
-          className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-[16px] outline-none focus:ring-2 focus:ring-black/10"
-        />
-      </div>
-
-      {/* Sección 1: buenos hábitos */}
-      <SectionTitle
-        title="Programas para buenos hábitos"
-        subtitle="Programas basados en neurociencia para que los buenos hábitos formen parte de ti"
+    <div className="bg-white">
+      {/* ✅ Submenú NUEVO */}
+      <SubHeaderTabs
+        tabs={[
+          { href: '/habitos', label: 'Hábitos' },
+          { href: '/habitos/herramientas', label: 'Herramientas' },
+          { href: '/habitos/crear', label: 'Crear programa' },
+        ]}
       />
-      <div className="divide-y divide-neutral-100">
-        {good.map((p) => (
-          <ProgramCard
-            key={p.id}
-            program={p}
-            saved={saved.has(p.id)}
-            onToggleSave={toggleSave}
+
+      {/* ⬇️ Tu contenido original SIN cambios */}
+      <div className="px-4 pb-28 pt-4">
+        {/* Título + buscador */}
+        <h1 className="text-3xl font-semibold tracking-tight mb-3">Programas</h1>
+        <div className="mb-6">
+          <label className="sr-only" htmlFor="search">
+            Buscar programas
+          </label>
+          <input
+            id="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Buscar programas…"
+            className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-[16px] outline-none focus:ring-2 focus:ring-black/10"
           />
-        ))}
-      </div>
-      <button
-        onClick={() => setSoonOpen(true)}
-        className="mt-2 mb-8 inline-flex items-center gap-1 text-sm font-medium text-neutral-600 hover:text-black"
-      >
-        Ver todo <ChevronRight className="w-4 h-4" />
-      </button>
+        </div>
 
-      {/* Sección 2: malos hábitos */}
-      <SectionTitle
-        title="Programas para eliminar malos hábitos"
-        subtitle="Programas amables basados en neurociencia para eliminar los malos hábitos de una vez por todas"
-      />
-      <div className="divide-y divide-neutral-100">
-        {bad.length === 0 ? (
-          <p className="text-sm text-neutral-500 py-2">Próximamente</p>
-        ) : (
-          bad.map((p) => (
+        {/* Sección 1: buenos hábitos */}
+        <SectionTitle
+          title="Programas para buenos hábitos"
+          subtitle="Programas basados en neurociencia para que los buenos hábitos formen parte de ti"
+        />
+        <div className="divide-y divide-neutral-100">
+          {good.map((p) => (
             <ProgramCard
               key={p.id}
               program={p}
               saved={saved.has(p.id)}
               onToggleSave={toggleSave}
             />
-          ))
-        )}
-      </div>
-      <button
-        onClick={() => setSoonOpen(true)}
-        className="mt-2 mb-8 inline-flex items-center gap-1 text-sm font-medium text-neutral-600 hover:text-black"
-      >
-        Ver todo <ChevronRight className="w-4 h-4" />
-      </button>
+          ))}
+        </div>
+        <button
+          onClick={() => setSoonOpen(true)}
+          className="mt-2 mb-8 inline-flex items-center gap-1 text-sm font-medium text-neutral-600 hover:text-black"
+        >
+          Ver todo <ChevronRight className="w-4 h-4" />
+        </button>
 
-      {/* Sección 3: Por categoría (1 por fila, sin bordes redondeados) */}
-      <SectionTitle title="Por categoría" />
-      <div className="grid grid-cols-1 gap-3 mb-10">
-        {[
-          { label: 'Salud', cat: 'salud' as const, img: '/images/cat/health.jpg' },
-          { label: 'Bienestar', cat: 'bienestar' as const, img: '/images/cat/wellbeing.jpg' },
-          { label: 'Productividad', cat: 'productividad' as const, img: '/images/cat/productivity.jpg' },
-          { label: 'Malos hábitos', cat: 'malos-habitos' as const, img: '/images/cat/badhabits.jpg' },
-        ].map((c) => (
-          <Link
-            key={c.cat}
-            href="/404"
-            className="relative overflow-hidden h-28 w-full text-left active:scale-[0.99] transition"
+        {/* Sección 2: malos hábitos */}
+        <SectionTitle
+          title="Programas para eliminar malos hábitos"
+          subtitle="Programas amables basados en neurociencia para eliminar los malos hábitos de una vez por todas"
+        />
+        <div className="divide-y divide-neutral-100">
+          {bad.length === 0 ? (
+            <p className="text-sm text-neutral-500 py-2">Próximamente</p>
+          ) : (
+            bad.map((p) => (
+              <ProgramCard
+                key={p.id}
+                program={p}
+                saved={saved.has(p.id)}
+                onToggleSave={toggleSave}
+              />
+            ))
+          )}
+        </div>
+        <button
+          onClick={() => setSoonOpen(true)}
+          className="mt-2 mb-8 inline-flex items-center gap-1 text-sm font-medium text-neutral-600 hover:text-black"
+        >
+          Ver todo <ChevronRight className="w-4 h-4" />
+        </button>
+
+        {/* Sección 3: Por categoría */}
+        <SectionTitle title="Por categoría" />
+        <div className="grid grid-cols-1 gap-3 mb-10">
+          {[
+            { label: 'Salud', cat: 'salud' as const, img: '/images/cat/health.jpg' },
+            { label: 'Bienestar', cat: 'bienestar' as const, img: '/images/cat/wellbeing.jpg' },
+            { label: 'Productividad', cat: 'productividad' as const, img: '/images/cat/productivity.jpg' },
+            { label: 'Malos hábitos', cat: 'malos-habitos' as const, img: '/images/cat/badhabits.jpg' },
+          ].map((c) => (
+            <Link
+              key={c.cat}
+              href="/404"
+              className="relative overflow-hidden h-28 w-full text-left active:scale-[0.99] transition"
+            >
+              <Image
+                src={c.img}
+                alt={c.label}
+                width={1920}
+                height={640}
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 bg-black/25" />
+              <div className="absolute left-3 bottom-2 text-white text-lg font-semibold drop-shadow">
+                {c.label}
+              </div>
+            </Link>
+          ))}
+        </div>
+
+        {/* Sección 4: Tus programas */}
+        <SectionTitle title="Tus programas" />
+        <div className="grid grid-cols-3 gap-3 items-start">
+          {/* Guardado */}
+          <button
+            onClick={() => setSoonOpen(true)}
+            className="block rounded-2xl p-2 text-left active:scale-[0.99] transition"
           >
-            <Image
-              src={c.img}
-              alt={c.label}
-              width={1920}
-              height={640}
-              className="w-full h-full object-cover"
-            />
-            <div className="absolute inset-0 bg-black/25" />
-            <div className="absolute left-3 bottom-2 text-white text-lg font-semibold drop-shadow">
-              {c.label}
+            <div className="w-full aspect-square rounded-xl overflow-hidden mb-2">
+              <Image
+                src="/images/ui/programs-saved.jpg"
+                alt="Programas guardados"
+                width={1000}
+                height={1000}
+                className="w-full h-full object-cover"
+              />
+            </div>
+            <div className="text-[13px] font-medium">Guardado</div>
+            <div className="text-neutral-500 text-[12px] mt-1">
+              {savedCount} programas
+            </div>
+          </button>
+
+          {/* Activos */}
+          <button
+            onClick={() => setSoonOpen(true)}
+            className="block rounded-2xl p-2 text-left active:scale-[0.99] transition"
+          >
+            <div className="w-full aspect-square rounded-xl overflow-hidden mb-2">
+              <Image
+                src="/images/ui/programs-active.jpg"
+                alt="Programas activos"
+                width={1000}
+                height={1000}
+                className="w-full h-full object-cover"
+              />
+            </div>
+            <div className="text-[13px] font-medium">Programas activos</div>
+            <div className="text-neutral-500 text-[12px] mt-1">
+              {activeCount} activos
+            </div>
+          </button>
+
+          {/* Todos */}
+          <Link
+            href="/404"
+            className="block rounded-2xl p-2 text-left active:scale-[0.99] transition"
+          >
+            <div className="w-full aspect-square rounded-xl overflow-hidden mb-2">
+              <Image
+                src="/images/ui/programs-all.jpg"
+                alt="Todos los programas"
+                width={1000}
+                height={1000}
+                className="w-full h-full object-cover"
+              />
+            </div>
+            <div className="text-[13px] font-medium">Todos los programas</div>
+            <div className="text-neutral-500 text-[12px] mt-1">
+              {allCount} en total
             </div>
           </Link>
-        ))}
-      </div>
-
-      {/* Sección 4: Tus programas (con imágenes y sin borde) */}
-      <SectionTitle title="Tus programas" />
-      <div className="grid grid-cols-3 gap-3 items-start">
-        {/* Guardado */}
-        <button
-          onClick={() => setSoonOpen(true)}
-          className="block rounded-2xl p-2 text-left active:scale-[0.99] transition"
-        >
-          <div className="w-full aspect-square rounded-xl overflow-hidden mb-2">
-            <Image
-              src="/images/ui/programs-saved.jpg"
-              alt="Programas guardados"
-              width={1000}
-              height={1000}
-              className="w-full h-full object-cover"
-            />
-          </div>
-          <div className="text-[13px] font-medium">Guardado</div>
-          <div className="text-neutral-500 text-[12px] mt-1">
-            {savedCount} programas
-          </div>
-        </button>
-
-        {/* Activos */}
-        <button
-          onClick={() => setSoonOpen(true)}
-          className="block rounded-2xl p-2 text-left active:scale-[0.99] transition"
-        >
-          <div className="w-full aspect-square rounded-xl overflow-hidden mb-2">
-            <Image
-              src="/images/ui/programs-active.jpg"
-              alt="Programas activos"
-              width={1000}
-              height={1000}
-              className="w-full h-full object-cover"
-            />
-          </div>
-          <div className="text-[13px] font-medium">Programas activos</div>
-          <div className="text-neutral-500 text-[12px] mt-1">
-            {activeCount} activos
-          </div>
-        </button>
-
-        {/* Todos */}
-        <Link
-          href="/404"
-          className="block rounded-2xl p-2 text-left active:scale-[0.99] transition"
-        >
-          <div className="w-full aspect-square rounded-xl overflow-hidden mb-2">
-            <Image
-              src="/images/ui/programs-all.jpg"
-              alt="Todos los programas"
-              width={1000}
-              height={1000}
-              className="w-full h-full object-cover"
-            />
-          </div>
-          <div className="text-[13px] font-medium">Todos los programas</div>
-          <div className="text-neutral-500 text-[12px] mt-1">
-            {allCount} en total
-          </div>
-        </Link>
+        </div>
       </div>
 
       <SoonModal open={soonOpen} onClose={() => setSoonOpen(false)} />

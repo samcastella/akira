@@ -1,5 +1,6 @@
 'use client';
 
+import SubHeaderTabs from '@/components/nav/SubHeaderTabs';
 import Link from 'next/link';
 import {
   Notebook, Heart, Activity as ActivityIcon, Utensils, Dumbbell,
@@ -16,37 +17,41 @@ const TOOLS = [
   { slug: 'libros', label: 'Mis libros', Icon: BookOpen },
 ] as const;
 
-export default function HerramientasListPage() {
+export default function HerramientasDentroDeHabitos() {
   return (
-    <main className="container mx-auto px-4 py-6">
-      <h2 className="page-title">Herramientas</h2>
-      <p className="muted mb-4">Tu caja de herramientas: simple, clara y directa.</p>
+    <div className="bg-white">
+      <SubHeaderTabs
+        tabs={[
+          { href: '/habitos', label: 'Hábitos' },
+          { href: '/habitos/herramientas', label: 'Herramientas' },
+          { href: '/habitos/crear', label: 'Crear programa' },
+        ]}
+      />
 
-      {/* Lista a ancho completo con separadores */}
-      <nav role="list" aria-label="Lista de herramientas">
-        {TOOLS.map((t, i) => (
-          <Link
-            key={t.slug}
-            role="listitem"
-            href={`/herramientas/${t.slug}`}
-            className="flex items-center justify-between py-4 focus:bg-neutral-50 hover:bg-neutral-50 outline-none"
-            style={{
-              borderBottom: i < TOOLS.length - 1 ? '1px solid var(--line)' : 'none',
-            }}
-          >
-            <div className="flex items-center gap-3">
-              <span
-                className="inline-flex h-10 w-10 items-center justify-center rounded-full border"
-                aria-hidden
-              >
-                <t.Icon className="h-5 w-5" />
-              </span>
-              <span className="text-[15px]">{t.label}</span>
-            </div>
-            <ChevronRight className="h-5 w-5 text-neutral-400" aria-hidden />
-          </Link>
-        ))}
-      </nav>
-    </main>
+      <main className="container mx-auto px-4 py-6">
+        <h2 className="page-title">Herramientas</h2>
+        <p className="muted mb-4">Tu caja de herramientas: simple, clara y directa.</p>
+
+        <nav role="list" aria-label="Lista de herramientas">
+          {TOOLS.map((t, i) => (
+            <Link
+              key={t.slug}
+              role="listitem"
+              href={`/herramientas/${t.slug}`} // reutiliza las páginas existentes
+              className="flex items-center justify-between py-4 focus:bg-neutral-50 hover:bg-neutral-50 outline-none"
+              style={{ borderBottom: i < TOOLS.length - 1 ? '1px solid var(--line)' : 'none' }}
+            >
+              <div className="flex items-center gap-3">
+                <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border" aria-hidden>
+                  <t.Icon className="h-5 w-5" />
+                </span>
+                <span className="text-[15px]">{t.label}</span>
+              </div>
+              <ChevronRight className="h-5 w-5 text-neutral-400" aria-hidden />
+            </Link>
+          ))}
+        </nav>
+      </main>
+    </div>
   );
 }
