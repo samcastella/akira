@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Check, Plus, Flame, ChevronRight } from 'lucide-react';
+import { Check, Plus, ChevronRight } from 'lucide-react';
 import type { HabitMaster } from '@/components/habits/HabitForm';
 import { useUserProfile, useAuthUserId } from '@/lib/user';
 
@@ -209,7 +209,6 @@ async function confettiBurstXY(x?: number, y?: number, big = false) {
     const oy = Math.min(Math.max((y ?? window.innerHeight / 2) / window.innerHeight, 0), 1);
 
     markPoint(x, y, 'burst');
-    DBG('shoot', { origin: { ox, oy }, big });
 
     shoot({
       particleCount: big ? 180 : 80,
@@ -220,9 +219,7 @@ async function confettiBurstXY(x?: number, y?: number, big = false) {
       origin: { x: ox, y: oy },
       scalar: big ? 1.05 : 0.9,
     });
-  } catch (e) {
-    DBG('ERROR shoot', e);
-  }
+  } catch {}
 }
 
 /* =========================
@@ -252,16 +249,12 @@ const isDeleted = (h: any): boolean => !!h?.deleted_at;
 /* =========================
 Componentes visuales
 ========================= */
-
-// ——— Título de sección
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <h3 className="text-lg font-extrabold tracking-tight mb-2">{children}</h3>;
 }
-// ——— Subtítulo pequeño
 function SubTitle({ children }: { children: React.ReactNode }) {
   return <h4 className="text-sm font-semibold tracking-tight mb-2">{children}</h4>;
 }
-// ——— CTA vacío
 function EmptyBar({ label, href }: { label: string; href: string }) {
   return (
     <Link
@@ -278,7 +271,7 @@ function EmptyBar({ label, href }: { label: string; href: string }) {
 }
 
 /* =========================
-Rueda de progreso semanal
+Rueda de progreso semanal (grande, con texto interior)
 ========================= */
 function CircularWeekWheel({
   done,
@@ -287,8 +280,8 @@ function CircularWeekWheel({
   done: number;
   total: number;
 }) {
-  const size = 200;
-  const strokeW = 14;
+  const size = 280;         // más grande
+  const strokeW = 16;
   const r = (size - strokeW) / 2;
   const cx = size / 2;
   const cy = size / 2;
@@ -298,36 +291,29 @@ function CircularWeekWheel({
   const dash = C * pct;
   const gap = C - dash;
 
-  // posición del marcador 🔥
   const angle = -Math.PI / 2 + 2 * Math.PI * pct;
   const px = cx + r * Math.cos(angle);
   const py = cy + r * Math.sin(angle);
+
+  const pctTxt = total > 0 ? Math.round((done / total) * 100) : 0;
 
   return (
     <div className="grid place-items-center my-4">
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="block">
         <defs>
           <linearGradient id="akiraWheel" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#ffe044" />     {/* amarillo */}
-            <stop offset="50%" stopColor="#ff8a00" />    {/* naranja */}
-            <stop offset="100%" stopColor="#ff3b30" />   {/* rojo */}
+            <stop offset="0%" stopColor="#ffe044" />
+            <stop offset="50%" stopColor="#ff8a00" />
+            <stop offset="100%" stopColor="#ff3b30" />
           </linearGradient>
           <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
             <feDropShadow dx="0" dy="1" stdDeviation="2" floodOpacity="0.25" />
           </filter>
         </defs>
 
-        {/* base gris clara */}
-        <circle
-          cx={cx}
-          cy={cy}
-          r={r}
-          stroke="#eee"
-          strokeWidth={strokeW}
-          fill="none"
-        />
-
-        {/* progreso degradado */}
+        {/* base */}
+        <circle cx={cx} cy={cy} r={r} stroke="#eee" strokeWidth={strokeW} fill="none" />
+        {/* progreso */}
         <circle
           cx={cx}
           cy={cy}
@@ -340,27 +326,29 @@ function CircularWeekWheel({
           transform={`rotate(-90 ${cx} ${cy})`}
           filter="url(#softShadow)"
         />
-
         {/* marcador 🔥 */}
         <g transform={`translate(${px}, ${py})`}>
           <circle r={strokeW / 2} fill="#fff" stroke="#00000020" />
           <text x="0" y="4" fontSize="14" textAnchor="middle">🔥</text>
         </g>
-      </svg>
 
-      <div className="mt-3 text-center">
-        <div className="text-xs uppercase tracking-wide text-black/60">Actividades de esta semana</div>
-        <div className="mt-1 text-lg font-bold">
-          {total > 0 ? Math.round((done / total) * 100) : 0}% completado
-        </div>
-        <div className="text-sm text-black/60">{done}/{total} checks</div>
-      </div>
+        {/* TEXTO INTERIOR */}
+        <text x={cx} y={cy - 20} fontSize="11" fill="#6b7280" textAnchor="middle" style={{ letterSpacing: 1.1 }}>
+          ACTIVIDADES DE ESTA SEMANA
+        </text>
+        <text x={cx} y={cy + 6} fontSize="22" fontWeight={800} textAnchor="middle" fill="#111">
+          {pctTxt}% completado
+        </text>
+        <text x={cx} y={cy + 30} fontSize="13" textAnchor="middle" fill="#6b7280">
+          {done}/{total} checks
+        </text>
+      </svg>
     </div>
   );
 }
 
 /* =========================
-Tarjeta de Programa activo
+Tarjeta de Programa activo – estilo “píldora”
 ========================= */
 function ProgramActiveCard({
   program,
@@ -373,7 +361,7 @@ function ProgramActiveCard({
   progressDays: { current: number; total?: number };
   onClick: () => void;
 }) {
-  const color = program.themeColor || '#fff8dc';
+  const color = program.themeColor || '#f5f5f5';
   const totalDays = program.totalDays ?? program.days?.length ?? undefined;
   const cur = Math.max(1, progressDays.current);
   const tot = progressDays.total ?? totalDays ?? 30;
@@ -382,13 +370,13 @@ function ProgramActiveCard({
   return (
     <button
       onClick={onClick}
-      className="w-full text-left rounded-2xl border p-3 md:p-4 flex items-center gap-3 md:gap-4 hover:shadow-sm transition"
-      style={{ borderColor: 'var(--line, rgba(0,0,0,.12))', background: '#fff' }}
+      className="w-full text-left rounded-[24px] border px-3 py-2 md:px-4 md:py-3 flex items-center gap-3 hover:shadow-sm transition bg-[#f7f7f7]"
+      style={{ borderColor: 'var(--line, rgba(0,0,0,.10))' }}
       aria-label={`Abrir ${program.title}`}
     >
       <div
         className="shrink-0 grid place-items-center rounded-full overflow-hidden"
-        style={{ width: 56, height: 56, background: color, border: '1px solid #00000014' }}
+        style={{ width: 52, height: 52, background: '#fff', border: '1px solid #e5e7eb' }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         {program.image ? (
@@ -399,15 +387,17 @@ function ProgramActiveCard({
       </div>
 
       <div className="min-w-0 flex-1">
-        <div className="text-sm font-semibold leading-tight truncate">{program.title}</div>
-        <div className="mt-1 h-2 rounded-full overflow-hidden" style={{ background: '#f1f5f9' }}>
-          <div
-            className="h-full"
-            style={{ width: `${pct}%`, background: color, border: '1px solid #00000020' }}
-          />
-        </div>
-        <div className="mt-1 text-xs text-black/60">
-          Día {cur}/{tot} — índice actual: {dayIdx}
+        <div className="text-[12px] text-black/50 leading-none mb-1">Programa</div>
+        <div className="text-[15px] font-semibold leading-tight truncate">{program.title}</div>
+
+        <div className="mt-2 flex items-center gap-2">
+          <div className="relative h-2 flex-1 rounded-full overflow-hidden" style={{ background: '#eaeef3' }}>
+            <div
+              className="h-full"
+              style={{ width: `${pct}%`, background: color }}
+            />
+          </div>
+          <div className="text-xs font-semibold text-black/60 w-8 text-right">{pct}%</div>
         </div>
       </div>
 
@@ -417,7 +407,7 @@ function ProgramActiveCard({
 }
 
 /* =========================
-Mini gráficos (SVG simple)
+Mini gráfico semanal (1 único)
 ========================= */
 function MiniLineChart({
   valuesA,
@@ -432,9 +422,9 @@ function MiniLineChart({
   labelA?: string;
   labelB?: string;
 }) {
-  const w = 320;
-  const h = 120;
-  const pad = 16;
+  const w = 360;
+  const h = 140;
+  const pad = 18;
   const innerW = w - pad * 2;
   const innerH = h - pad * 2;
 
@@ -448,28 +438,22 @@ function MiniLineChart({
 
   return (
     <div className="overflow-hidden rounded-xl border" style={{ borderColor: 'var(--line, rgba(0,0,0,.12))' }}>
-      <div className="px-3 py-2 text-xs text-black/60 flex items-center gap-3">
-        <span className="inline-block w-3 h-3 rounded-full bg-gray-300 border" />
-        {labelA}
-        <span className="inline-block w-3 h-3 rounded-full bg-emerald-500 border ml-4" />
-        {labelB}
+      <div className="px-3 py-2 text-xs text-black/60 flex items-center gap-4">
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-block w-3 h-3 rounded-full bg-gray-300 border" />
+          {labelA}
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-block w-3 h-3 rounded-full bg-emerald-500 border" />
+          {labelB}
+        </span>
       </div>
       <svg width={w} height={h} role="img" aria-label={`${labelA} vs ${labelB}`}>
-        {/* grid horizontal */}
         {[0, 0.25, 0.5, 0.75, 1].map((t) => (
-          <line
-            key={t}
-            x1={pad}
-            y1={pad + t * innerH}
-            x2={w - pad}
-            y2={pad + t * innerH}
-            stroke="#f1f5f9"
-          />
+          <line key={t} x1={pad} y1={pad + t * innerH} x2={w - pad} y2={pad + t * innerH} stroke="#f1f5f9" />
         ))}
-        {/* líneas */}
         <polyline fill="none" stroke="#d1d5db" strokeWidth={2} points={pts(valuesA)} />
         <polyline fill="none" stroke="#10b981" strokeWidth={2.5} points={pts(valuesB)} />
-        {/* labels de días abajo */}
         {labels.map((lb, i) => {
           const x = pad + (i * innerW) / (labels.length - 1 || 1);
           return (
@@ -534,12 +518,8 @@ export default function MiActividadPage() {
     };
   }, []);
 
-  // usuario
+  // usuario (solo por si en futuro quieres usar avatar en header secundario)
   const user = (useUserProfile?.() as any) || {};
-  const fullName = String(user?.nombre ?? '').trim();
-  const firstName = fullName.split(/\s+/).filter(Boolean)[0] || '';
-  const greetingName = firstName || (user?.username ?? 'usuario/a');
-  const avatar = (user?.foto as string | undefined) || undefined;
 
   // auth
   const uid = useAuthUserId();
@@ -575,7 +555,6 @@ export default function MiActividadPage() {
     setMasters(loadMasterHabits());
     setDaily(loadDaily());
 
-    // Normalizar checks a slugs canónicos (legacy)
     const checks0 = loadProgramChecks();
     const checksNorm: ChecksMap = {};
     const aliases = getAliases();
@@ -673,7 +652,6 @@ export default function MiActividadPage() {
     });
   }
 
-  // helpers hábitos personales
   function applicableMasterIds(dKey: string) {
     const d = parseKeyToDate(dKey);
     return masters
@@ -683,7 +661,6 @@ export default function MiActividadPage() {
       .map((h) => h.id);
   }
 
-  // toggle hábitos personales
   function toggleDone(habitId: string, dKey?: string, evt?: React.MouseEvent) {
     const key = dKey ?? dateKeyTZ(new Date());
     const bucket = daily[key] ?? {};
@@ -722,7 +699,6 @@ export default function MiActividadPage() {
       .map((h) => ({ ...h, done: !!bucket[h.id]?.done }));
   }, [masters, daily, today]);
 
-  // checks de programas (local cache)
   const isTaskChecked = (slug: string, dayIdx: number, taskId: string) =>
     !!checks?.[slug]?.[dayIdx]?.[taskId];
 
@@ -739,7 +715,6 @@ export default function MiActividadPage() {
     const prevChecked = !!checks?.[slug]?.[dayIdx]?.[taskId];
     const nextChecked = !prevChecked;
 
-    // UI optimista
     setChecks((prev) => {
       const next: ChecksMap = { ...(prev || {}) };
       next[slug] = { ...(next[slug] || {}) };
@@ -758,7 +733,7 @@ export default function MiActividadPage() {
 
     try {
       await pushToggleTask({ slug, day: dayIdx, taskId, completed: nextChecked });
-    } catch (e) {
+    } catch {
       // revert
       setChecks((prev) => {
         const next: ChecksMap = { ...(prev || {}) };
@@ -785,7 +760,7 @@ export default function MiActividadPage() {
   Agregados para la RUEDA y STATS
   ========================== */
 
-  // 1) PROGRAMAS: tareas del día actual (hasta que guardemos histórico real)
+  // PROGRAMAS: tareas del día actual (proxy hasta histórico semanal)
   const programsTodayTotals = useMemo(() => {
     let total = 0;
     let done = 0;
@@ -806,7 +781,7 @@ export default function MiActividadPage() {
     return { total, done };
   }, [activePrograms, checks, programsTick]);
 
-  // 2) HÁBITOS PERSONALES: sumatorio semanal real desde LS_HABITS_DAILY
+  // HÁBITOS PERSONALES: sumatorio semanal real
   const weekKeys = useMemo(() => {
     const start = startOfWeek(parseKeyToDate(today));
     return Array.from({ length: 7 }, (_, i) => dateKeyTZ(addDays(start, i)));
@@ -826,51 +801,34 @@ export default function MiActividadPage() {
     return { total, done };
   }, [weekKeys, masters, daily]);
 
-  // 3) RUEDA: mezcla actual → programas (día) + personales (semana)
-  //    TODO: cuando guardemos histórico de programas, cambiaremos 'programasTodayTotals' por 'programasWeekAgg'
+  // RUEDA
   const wheelTotals = {
     total: programsTodayTotals.total + personalWeekAgg.total,
     done: programsTodayTotals.done + personalWeekAgg.done,
   };
 
-  // 4) STATS: arrays L..D
+  // STATS único (Retos · checks – semana)
   const labelsWeek = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
-  // objetivo = número de actividades objetivo por día (programas hoy + personales de ese día)
-  const statsGoalPerDay = weekKeys.map((k) => {
-    // personales
-    const perIds = applicableMasterIds(k).length;
-    // programas (aprox: usamos tareas del "día actual" como proxy mientras no hay histórico)
-    return perIds + programsTodayTotals.total;
-  });
-  // realizado
+  const statsGoalPerDay = weekKeys.map((k) => applicableMasterIds(k).length + programsTodayTotals.total);
   const statsDonePerDay = weekKeys.map((k) => {
-    const perIds = applicableMasterIds(k);
+    const ids = applicableMasterIds(k);
     const bucket = daily[k] ?? {};
-    const perDone = perIds.reduce((acc, id) => acc + (bucket[id]?.done ? 1 : 0), 0);
-    return perDone + programsTodayTotals.done; // aprox hasta histórico real
+    const perDone = ids.reduce((acc, id) => acc + (bucket[id]?.done ? 1 : 0), 0);
+    return perDone + programsTodayTotals.done;
   });
-
-  // 5) Estadística del DÍA (línea doble)
-  const labelsDay = ['Objetivo', 'Realizado'];
-  const todayGoal = statsGoalPerDay[ (new Date(parseKeyToDate(today)).getDay() + 6) % 7 ];
-  const todayDone = statsDonePerDay[ (new Date(parseKeyToDate(today)).getDay() + 6) % 7 ];
 
   /* ===== RENDER ===== */
   return (
     <main className="mx-auto w-full max-w-3xl px-5 sm:px-6 md:px-8 py-6" style={{ background: 'white' }}>
-      <HeaderMinimal avatar={avatar} greetingName={greetingName} />
-
-      {/* Título principal */}
-      <h1 className="text-2xl font-black tracking-tight mb-2">Mi actividad</h1>
-      <p className="text-sm text-black/60 mb-4">
-        Resumen de tu semana y tus progresos diarios.
-      </p>
+      {/* Título principal – SIN saludo */}
+      <h1 className="text-2xl font-black tracking-tight mb-3">Mi actividad</h1>
 
       {/* RUEDA */}
       <CircularWeekWheel done={wheelTotals.done} total={wheelTotals.total} />
 
       {/* Programas activos */}
-      <SectionTitle>Programas activos</SectionTitle>
+      <SectionTitle>En progreso</SectionTitle>
+      <div className="text-sm text-black/60 mb-2">Sigue con tus entrenamientos planificados.</div>
       <div className="space-y-3 mb-6">
         {activePrograms?.length ? (
           activePrograms.map((slug) => {
@@ -896,29 +854,17 @@ export default function MiActividadPage() {
         )}
       </div>
 
-      {/* Estadísticas */}
+      {/* Estadísticas — un único gráfico */}
       <SectionTitle>Estadísticas</SectionTitle>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-        <div>
-          <SubTitle>Semana (L–D)</SubTitle>
-          <MiniLineChart
-            valuesA={statsGoalPerDay}
-            valuesB={statsDonePerDay}
-            labels={labelsWeek}
-            labelA="Objetivo"
-            labelB="Realizado"
-          />
-        </div>
-        <div>
-          <SubTitle>Actividades de hoy</SubTitle>
-          <MiniLineChart
-            valuesA={[todayGoal, todayGoal]}
-            valuesB={[todayDone, todayDone]}
-            labels={['', '']}
-            labelA="Objetivo"
-            labelB="Realizado"
-          />
-        </div>
+      <div className="text-sm text-black/60 mb-2">Retos · checks (semana)</div>
+      <div className="mb-6">
+        <MiniLineChart
+          valuesA={statsGoalPerDay}
+          valuesB={statsDonePerDay}
+          labels={labelsWeek}
+          labelA="Objetivo"
+          labelB="Realizado"
+        />
       </div>
 
       {/* Crear hábito */}
@@ -954,34 +900,6 @@ export default function MiActividadPage() {
 }
 
 /* =========================
-Subcomponentes simples
-========================= */
-function HeaderMinimal({ avatar, greetingName }: { avatar?: string; greetingName: string }) {
-  return (
-    <section className="mb-5 flex items-center gap-3">
-      <Link
-        href="/mizona/perfil"
-        className="rounded-full overflow-hidden flex items-center justify-center"
-        style={{ width: 32, height: 32, border: `1px solid ${BORDER}`, background: '#f7f7f7' }}
-        aria-label="Ir a mi perfil"
-        title="Mi perfil"
-      >
-        {avatar ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={avatar} alt="Foto de perfil" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-        ) : (
-          <span style={{ fontSize: 16, color: '#9ca3af' }}>👤</span>
-        )}
-      </Link>
-      <div className="min-w-0">
-        <h2 className="text-xl font-extrabold m-0 leading-none">Hola {greetingName},</h2>
-        <p className="mt-1 text-sm text-black/70 m-0">Sigue construyendo tus hábitos 🔥</p>
-      </div>
-    </section>
-  );
-}
-
-/* =========================
 Barras/tareas personales (pill)
 ========================= */
 function TaskPill({
@@ -1011,7 +929,6 @@ function TaskPill({
         (typeof window !== 'undefined' && (window as any).__akiraLastXY) || {};
       const x = lastXY.current.x ?? (gxy as any).x;
       const y = lastXY.current.y ?? (gxy as any).y;
-      markPoint(x, y, 'TaskPill');
       void confettiBurstXY(x, y);
       requestAnimationFrame(() => void confettiBurstXY(x, y));
     }
@@ -1032,7 +949,6 @@ function TaskPill({
         onMouseDown={(e) => {
           lastXY.current = { x: e.clientX, y: e.clientY };
           (window as any).__akiraLastXY = { x: e.clientX, y: e.clientY };
-          markPoint(e.clientX, e.clientY, 'md');
         }}
         onClick={onToggle}
         className="grid h-9 w-9 place-items-center rounded-full border shrink-0"
