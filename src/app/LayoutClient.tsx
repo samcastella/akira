@@ -17,6 +17,7 @@ import { supabase, isSupabaseEnvReady } from '@/lib/supabaseClient';
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import RegistrationModal from '@/components/RegistrationModal';
 import { pullUserPrograms } from '@/lib/programSync';
+import { NAV_HEIGHT } from '@/lib/constants';
 
 const LS_SEEN_AUTH = 'akira_seen_auth_v1';
 const LS_LAST_UID = 'akira_last_uid';
@@ -33,14 +34,13 @@ function canEnter(): boolean {
 
 export default function LayoutClient({
   children,
-  bottomNav, // 🔝 ahora es top nav fijo
+  bottomNav, // ⬇️ se renderiza fijo abajo
 }: {
   children: React.ReactNode;
   bottomNav: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const isAuthRoute =
-    pathname === '/login' || pathname?.startsWith('/auth');
+  const isAuthRoute = pathname === '/login' || pathname?.startsWith('/auth');
 
   const [userOk, setUserOk] = useState<boolean | null>(null);
   const [hasSession, setHasSession] = useState(false);
@@ -242,9 +242,6 @@ export default function LayoutClient({
 
   return (
     <>
-      {/* 🔝 Top nav fijo */}
-      {!hideNav && bottomNav}
-
       {/* Overlays de gating */}
       {gating && (
         <>
@@ -288,12 +285,15 @@ export default function LayoutClient({
         className="bg-[#FAFAFA]"
         style={{
           minHeight: '100svh',
-          // ❌ ya no reservamos espacio inferior para bottom-nav
-          paddingBottom: 0,
+          // Reserva espacio para el bottom-nav fijo (si está visible)
+          paddingBottom: hideNav ? 0 : `calc(${NAV_HEIGHT}px + env(safe-area-inset-bottom, 0px))`,
         }}
       >
         <div className="mx-auto w-full max-w-md">{children}</div>
       </div>
+
+      {/* 🔻 Bottom nav fijo abajo */}
+      {!hideNav && bottomNav}
 
       {isDev && (
         <button

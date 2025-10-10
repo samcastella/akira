@@ -45,12 +45,12 @@ export default function BottomNav() {
 
   return (
     <nav
-      className="fixed top-0 left-0 right-0 z-50 border-b border-gray-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80"
-      style={{ height: `calc(${NAV_HEIGHT}px + env(safe-area-inset-top,0px))` }}
-      aria-label="Navegación superior"
+      className="fixed bottom-0 left-0 right-0 z-30 border-t border-gray-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80"
+      style={{ height: `calc(${NAV_HEIGHT}px + env(safe-area-inset-bottom,0px))` }}
+      aria-label="Navegación inferior"
       role="navigation"
     >
-      <ul className="mx-auto flex h-full w-full max-w-md items-stretch justify-between px-4 pt-[env(safe-area-inset-top,0px)]">
+      <ul className="mx-auto flex h-full w-full max-w-md items-stretch justify-between px-4 pb-[env(safe-area-inset-bottom,0px)]">
         {items.map(({ href, label, outline: Outline, solid: Solid }) => {
           const active = isActive(href);
           const Icon = active ? Solid : Outline;

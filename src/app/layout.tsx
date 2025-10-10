@@ -5,7 +5,7 @@ import BottomNav from "@/components/BottomNav";
 import LayoutClient from "./LayoutClient";
 import SupabaseSessionProvider from "@/components/providers/SupabaseSessionProvider";
 import ProgramsBootstrap from "./ProgramsBootstrap";
-import { NAV_HEIGHT } from "@/lib/constants"; // ⬅️ importa la altura
+import { NAV_HEIGHT } from "@/lib/constants";
 
 export const metadata: Metadata = {
   title: "Akira - Build Your Habits",
@@ -51,16 +51,13 @@ export default function RootLayout({
         <ProgramsBootstrap />
 
         <SupabaseSessionProvider>
-          {/* No pasa nada por seguir pasándolo como bottomNav */}
           <LayoutClient bottomNav={<BottomNav />}>
             <main
               className="app-main"
               id="app-main"
-              // ⬇️ Reserva altura de la barra superior + safe area (notch)
+              // ⬇️ Reserva altura del bottom-nav + safe area inferior
               style={{
-                paddingTop: `calc(${NAV_HEIGHT}px + env(safe-area-inset-top, 0px))`,
-                // Si antes reservabas espacio abajo para el bottom-nav, elimínalo:
-                paddingBottom: undefined,
+                paddingBottom: `calc(${NAV_HEIGHT}px + env(safe-area-inset-bottom, 0px))`,
               }}
             >
               {children}
