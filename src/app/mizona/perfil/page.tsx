@@ -22,7 +22,7 @@ type Profile = {
   email?: string;
   telefono?: string;
   peso?: number;
-  estatura?: number; // ⬅️ NUEVO (cm)
+  estatura?: number; // cm
   foto?: string; // dataURL/URL pública
 };
 
@@ -87,19 +87,20 @@ async function uploadAvatarAndGetUrl(input: string | File, uid: string): Promise
 }
 
 export default function PerfilPage() {
-  const user = useUserProfile(); // ← reactivo a cambios (pullProfile)
+  const user = useUserProfile(); // reactivo (pullProfile)
   const [editing, setEditing] = useState(false);
   const [profile, setProfile] = useState<Profile>({});
   const [savedOpen, setSavedOpen] = useState(false); // pop-up guardado
   const [saving, setSaving] = useState(false);
 
-  // Modal/visor de foto
+  // Foto: modal + progreso propio
   const [photoModalOpen, setPhotoModalOpen] = useState(false);
   const [tempPhoto, setTempPhoto] = useState<string | undefined>(undefined);
+  const [photoSaving, setPhotoSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const modalFileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Hidrata el formulario con el perfil global cuando no estamos editando
+  // Hidratar formulario desde perfil global cuando no editamos
   useEffect(() => {
     if (!editing && user) {
       setProfile(user as Profile);
@@ -119,66 +120,83 @@ export default function PerfilPage() {
     const resized = await resizeImageDataURL(dataURL, 200); // max 200 px lado mayor
 
     if (applyDirect) {
-      // Modo formulario: aplicamos directamente
+      // Modo formulario: aplicamos directamente (no guardamos aún)
       handleChange('foto', resized);
     } else {
-      // Modo modal: lo dejamos en temp y mostramos botón Guardar
+      // Modo modal: lo dejamos en temp y mostramos botón Guardar (guardado directo)
       setTempPhoto(resized);
     }
   }
 
   function openPhotoModal() {
-    // Abre el modal mostrando la foto actual
     setTempPhoto(undefined);
     setPhotoModalOpen(true);
   }
-
   function closePhotoModal() {
     setTempPhoto(undefined);
     setPhotoModalOpen(false);
   }
 
-  function applyTempPhoto() {
-    if (tempPhoto) {
-      handleChange('foto', tempPhoto);
+  // === Guardado DIRECTO de la foto desde el modal ===
+  async function applyTempPhoto() {
+    if (!tempPhoto || photoSaving) return;
+    setPhotoSaving(true);
+    try {
+      const uid = await getAuthUserId();
+      if (!uid) {
+        try { alert('Inicia sesión para actualizar tu foto.'); } catch {}
+        return;
+      }
+
+      // 1) Subimos a Storage
+      const publicUrl = await uploadAvatarAndGetUrl(tempPhoto, uid);
+
+      // 2) Guardamos SOLO la foto en el perfil remoto
+      const updated = await upsertProfile({ foto: publicUrl } as any);
+
+      // 3) Actualizamos UI local
+      setProfile(updated as Profile);
+      setTempPhoto(undefined);
+      setPhotoModalOpen(false);
+      setSavedOpen(true);
+    } catch (e) {
+      console.error('[PerfilPage] error guardando foto', e);
+      try { alert('No se pudo guardar la foto. Intenta de nuevo.'); } catch {}
+    } finally {
+      setPhotoSaving(false);
     }
-    closePhotoModal();
   }
 
-  // Guardado con timeout de seguridad para evitar “Guardando…” infinito
+  // Guardado general (texto/números)
   async function save() {
-    if (saving) return; // evita doble envío
+    if (saving) return;
     setSaving(true);
     try {
-      // 0) Verifica sesión (si no hay, no intentes guardar)
       const uid = await getAuthUserId();
       if (!uid) {
         try { alert('Inicia sesión para guardar tu perfil.'); } catch {}
         return;
       }
 
-      // 1) Si la foto es dataURL -> subir a Storage y usar URL
+      // Si la foto ya es URL http, la dejamos; si es dataURL (subida desde el formulario sin modal), NO forzamos upload aquí.
       let fotoOut = profile.foto;
       const looksLikeHttp = typeof fotoOut === 'string' && /^https?:\/\//i.test(fotoOut);
       if (fotoOut && !looksLikeHttp) {
         try {
           fotoOut = await uploadAvatarAndGetUrl(fotoOut, uid);
         } catch (e) {
-          console.warn('[PerfilPage] subida de avatar falló, continuo sin bloquear', e);
-          // Si falla la subida, mantenemos el dataURL para no perder la UI; el usuario puede reintentar
+          console.warn('[PerfilPage] subida de avatar (desde form) falló, continuo sin bloquear', e);
         }
       }
 
-      // 2) Normalización suave (+ username normalizado)
       const payload: Profile = {
         ...profile,
-        foto: fotoOut, // ← ya es URL pública si subió bien
+        foto: fotoOut,
         email: profile.email?.trim().toLowerCase(),
         instagram: normalizeInstagramLink(profile.instagram),
         tiktok: profile.tiktok?.trim() || undefined,
         username: profile.username ? normalizeUsername(profile.username) : undefined,
         fechaNacimiento: profile.fechaNacimiento || undefined,
-        // Sanitizar numéricos
         peso:
           typeof profile.peso === 'number'
             ? profile.peso
@@ -193,11 +211,9 @@ export default function PerfilPage() {
             : undefined,
       };
 
-      // 3) Guardar en Supabase con timeout de 12s (y re-lectura automática)
       const timeout = new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), 12000));
       const server = await Promise.race([upsertProfile(payload as any), timeout]);
 
-      // 4) Reflejar en UI lo que viene de DB (localStorage ya quedó actualizado)
       setProfile(server as Profile);
       setSavedOpen(true);
       setEditing(false);
@@ -205,13 +221,10 @@ export default function PerfilPage() {
       const code = String(err?.code || err?.status || '');
       const msg  = String(err?.message || '');
 
-      // Username duplicado → avisar y no tocar local
       if (code === '23505' || /duplicate|unique/i.test(msg)) {
         try { alert('Ese nombre de usuario ya está en uso. Prueba con otro.'); } catch {}
         return;
       }
-
-      // Fallback de UX: mensajes claros según error
       if (/Network|Failed to fetch|offline|ECONN|ETIMEDOUT|timeout/i.test(msg)) {
         console.warn('[PerfilPage] red/offline/timeout, no se pudo guardar:', err);
         try { alert('No hay conexión. Intenta de nuevo más tarde.'); } catch {}
@@ -237,18 +250,12 @@ export default function PerfilPage() {
         </Link>
       </div>
 
-      <section
-        style={{
-          background: 'var(--background)',
-          borderRadius: 'var(--radius-card)',
-          padding: 18,
-          border: '1px solid var(--line)',
-        }}
-      >
+      {/* === Estilo tipo "Herramientas": sin card, con separadores === */}
+      <section className="mt-3">
         {!editing ? (
-          <div className="space-y-3 text-sm">
-            {/* Avatar */}
-            <div className="flex items-center gap-3">
+          <div className="text-sm">
+            {/* Avatar / cabecera */}
+            <div className="flex items-center gap-3 py-3 border-b" style={{ borderColor: 'var(--line)' }}>
               <button
                 type="button"
                 onClick={openPhotoModal}
@@ -272,28 +279,29 @@ export default function PerfilPage() {
                   />
                 ) : null}
               </button>
-              <div className="muted">Tu foto de perfil (toca para ampliar / cambiar)</div>
+              <div className="muted">
+                Tu foto de perfil
+                <div className="text-xs">{photoSaving ? 'Guardando foto…' : 'Toca para ampliar / cambiar'}</div>
+              </div>
+              <div className="ml-auto">
+                <button className="btn" onClick={() => setEditing(true)}>Editar</button>
+              </div>
             </div>
 
-            <Row label="Usuario" value={profile.username || '—'} />
+            {/* Filas con separadores */}
+            <Row label="Usuario" value={profile.username || '—'} first />
             <Row label="Nombre" value={profile.nombre || '—'} />
             <Row label="Apellidos" value={profile.apellido || '—'} />
-
-            {/* Fecha de nacimiento sustituye Edad */}
             <Row label="Fecha de nacimiento" value={profile.fechaNacimiento || '—'} />
-
             <Row label="Sexo" value={profile.sexo || '—'} />
             <Row label="Peso (kg)" value={profile.peso ?? '—'} />
-            <Row label="Estatura (cm)" value={profile.estatura ?? '—'} /> {/* ⬅️ NUEVO */}
+            <Row label="Estatura (cm)" value={profile.estatura ?? '—'} />
             <Row label="Calorías diarias" value={profile.caloriasDiarias ?? '—'} />
-
-            {/* Instagram con formateo y enlace normalizado */}
             <Row
               label="Instagram"
               value={profile.instagram ? instagramLabel(profile.instagram) : '—'}
               link={normalizeInstagramLink(profile.instagram)}
             />
-
             <Row
               label="TikTok"
               value={profile.tiktok || '—'}
@@ -301,23 +309,17 @@ export default function PerfilPage() {
             />
             <Row label="Email" value={profile.email || '—'} />
             <Row label="Teléfono" value={profile.telefono || '—'} />
-
-            <div className="mt-4 flex gap-2">
-              <button className="btn" onClick={() => setEditing(true)}>
-                Editar perfil
-              </button>
-            </div>
           </div>
         ) : (
           <form
-            className="space-y-3 text-sm"
+            className="text-sm"
             onSubmit={(e) => {
               e.preventDefault();
               void save();
             }}
           >
             {/* Avatar + selector de archivo con overlay de cámara */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 py-3 border-b" style={{ borderColor: 'var(--line)' }}>
               <button
                 type="button"
                 onClick={openPhotoModal}
@@ -340,8 +342,6 @@ export default function PerfilPage() {
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   />
                 ) : null}
-
-                {/* Botón cámara (overlay) */}
                 <span
                   className="absolute bottom-1 right-1 rounded-full shadow"
                   title="Cambiar foto"
@@ -360,7 +360,6 @@ export default function PerfilPage() {
               </button>
 
               <div>
-                {/* Mantengo también el botón textual por accesibilidad */}
                 <label className="btn secondary" htmlFor="fotoInput">
                   Subir foto
                 </label>
@@ -372,9 +371,11 @@ export default function PerfilPage() {
                   onChange={(e) => onPickFile(e, true)}
                   className="hidden"
                 />
+                <div className="muted text-xs mt-1">La foto se guarda desde el modal.</div>
               </div>
             </div>
 
+            {/* Campos con separadores */}
             <Field label="Nombre de usuario">
               <input
                 className="input text-[16px]"
@@ -383,6 +384,7 @@ export default function PerfilPage() {
                 onChange={(e) => handleChange('username', e.target.value)}
               />
             </Field>
+            <Divider />
 
             <Field label="Nombre">
               <input
@@ -391,6 +393,7 @@ export default function PerfilPage() {
                 onChange={(e) => handleChange('nombre', e.target.value)}
               />
             </Field>
+            <Divider />
 
             <Field label="Apellidos">
               <input
@@ -399,8 +402,8 @@ export default function PerfilPage() {
                 onChange={(e) => handleChange('apellido', e.target.value)}
               />
             </Field>
+            <Divider />
 
-            {/* Sustituimos Edad por Fecha de nacimiento */}
             <Field label="Fecha de nacimiento">
               <input
                 type="date"
@@ -409,6 +412,7 @@ export default function PerfilPage() {
                 onChange={(e) => handleChange('fechaNacimiento', e.target.value || undefined)}
               />
             </Field>
+            <Divider />
 
             <Field label="Sexo">
               <select
@@ -421,6 +425,7 @@ export default function PerfilPage() {
                 <option value="prefiero_no_decirlo">Prefiero no decirlo</option>
               </select>
             </Field>
+            <Divider />
 
             <Field label="Peso (kg)">
               <input
@@ -434,6 +439,7 @@ export default function PerfilPage() {
                 }
               />
             </Field>
+            <Divider />
 
             <Field label="Estatura (cm)">
               <input
@@ -448,6 +454,7 @@ export default function PerfilPage() {
                 }
               />
             </Field>
+            <Divider />
 
             <Field label="Calorías diarias">
               <input
@@ -463,6 +470,7 @@ export default function PerfilPage() {
                 }
               />
             </Field>
+            <Divider />
 
             <Field label="Instagram (URL o @usuario)">
               <input
@@ -472,6 +480,7 @@ export default function PerfilPage() {
                 onChange={(e) => handleChange('instagram', e.target.value)}
               />
             </Field>
+            <Divider />
 
             <Field label="TikTok (URL)">
               <input
@@ -481,6 +490,7 @@ export default function PerfilPage() {
                 onChange={(e) => handleChange('tiktok', e.target.value)}
               />
             </Field>
+            <Divider />
 
             <Field label="Email">
               <input
@@ -490,6 +500,7 @@ export default function PerfilPage() {
                 onChange={(e) => handleChange('email', e.target.value)}
               />
             </Field>
+            <Divider />
 
             <Field label="Teléfono">
               <input
@@ -517,7 +528,7 @@ export default function PerfilPage() {
       </section>
 
       {/* Botón Cerrar sesión */}
-      <div className="mt-4">
+      <div className="mt-6">
         <button
           type="button"
           className="btn"
@@ -541,7 +552,7 @@ export default function PerfilPage() {
             role="dialog"
             aria-modal="true"
           >
-            <p className="font-semibold">Tus cambios han sido guardados con éxito</p>
+            <p className="font-semibold">Cambios guardados con éxito</p>
             <div className="mt-4 flex justify-end gap-2">
               <button
                 className="btn"
@@ -556,17 +567,14 @@ export default function PerfilPage() {
         </div>
       )}
 
-      {/* === Ventana flotante de foto === */}
+      {/* === Modal de foto === */}
       {photoModalOpen && (
         <div
           className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60"
           role="dialog"
           aria-modal="true"
         >
-          <div
-            className="bg-white rounded-2xl shadow-xl p-4"
-            style={{ width: 'min(92vw, 420px)' }}
-          >
+          <div className="bg-white rounded-2xl shadow-xl p-4" style={{ width: 'min(92vw, 420px)' }}>
             <div className="flex items-center justify-between mb-2">
               <h3 className="font-semibold">Foto de perfil</h3>
               <button
@@ -574,6 +582,7 @@ export default function PerfilPage() {
                 className="p-1 rounded hover:bg-black/5"
                 aria-label="Cerrar"
                 onClick={closePhotoModal}
+                disabled={photoSaving}
               >
                 <X size={18} />
               </button>
@@ -612,13 +621,13 @@ export default function PerfilPage() {
                 className="hidden"
               />
 
-              <button type="button" className="btn secondary" onClick={closePhotoModal}>
+              <button type="button" className="btn secondary" onClick={closePhotoModal} disabled={photoSaving}>
                 Cerrar
               </button>
 
               {tempPhoto && (
-                <button type="button" className="btn" onClick={applyTempPhoto}>
-                  Guardar
+                <button type="button" className="btn" onClick={applyTempPhoto} disabled={photoSaving}>
+                  {photoSaving ? 'Guardando…' : 'Guardar'}
                 </button>
               )}
             </div>
@@ -634,10 +643,12 @@ function Row({
   label,
   value,
   link,
+  first,
 }: {
   label: string;
   value: React.ReactNode;
   link?: string;
+  first?: boolean;
 }) {
   const content = link ? (
     <a href={link} target="_blank" rel="noreferrer" className="underline break-all">
@@ -649,11 +660,10 @@ function Row({
 
   return (
     <div
-      className="flex items-start gap-3 border-t"
-      style={{ borderColor: 'var(--line)', paddingTop: 8 }}
+      className={first ? 'flex items-start gap-3 py-3' : 'flex items-start gap-3 py-3 border-t'}
+      style={{ borderColor: 'var(--line)' }}
     >
       <div className="muted shrink-0">{label}</div>
-      {/* min-w-0 es CLAVE para que los enlaces largos no rompan el layout en flex */}
       <div className="ml-auto font-semibold text-right min-w-0">{content}</div>
     </div>
   );
@@ -661,11 +671,15 @@ function Row({
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="block">
+    <label className="block py-3">
       <span className="text-xs font-medium">{label}</span>
       <div className="mt-1">{children}</div>
     </label>
   );
+}
+
+function Divider() {
+  return <div className="border-t" style={{ borderColor: 'var(--line)' }} />;
 }
 
 /* ===== Utils: lectura/resize imagen ===== */
