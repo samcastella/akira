@@ -1,162 +1,157 @@
 // src/app/page.tsx
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import ThoughtModal from '@/components/ThoughtModal';
-import { PROGRAMS } from '@/data/programs';
-import { Dumbbell, BookOpen, PiggyBank, Brain } from 'lucide-react';
+import { Settings } from 'lucide-react';
+import { useUserProfile } from '@/lib/user';
 
-/* ===== Pensamiento del día ===== */
-type Thought = { id: string; title: string; body: string };
+/* ========= Helpers saludo/avatar ========= */
+function useDisplayUser() {
+  const user = useUserProfile(); // reactivo
+  const name =
+    (user?.nombre && user.nombre.trim()) ||
+    (user?.username && user.username.trim()) ||
+    undefined;
 
-const LS_THOUGHTS = 'akira_thoughts_v1';
-const LS_THOUGHT_SHOWN = 'akira_thought_last_seen';
+  const displayName = name ? name : 'usuari@';
+  const avatarUrl = user?.foto || undefined;
 
-function todayKey() {
-  return new Date().toISOString().slice(0, 10);
-}
-function hashStr(s: string) {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-  return h;
-}
-const FALLBACK_THOUGHTS: Thought[] = [
-  {
-    id: 'fallback-1',
-    title: 'El presente cuenta',
-    body:
-      'Cada página leída hoy es un voto a favor de la identidad que quieres construir. Empieza pequeño, pero empieza. ' +
-      'La constancia pesa menos que la perfección.',
-  },
-];
-
-function loadThoughts(): Thought[] {
-  if (typeof window === 'undefined') return FALLBACK_THOUGHTS;
-  try {
-    const raw = localStorage.getItem(LS_THOUGHTS);
-    const arr = raw ? (JSON.parse(raw) as Thought[]) : [];
-    return arr.length ? arr : FALLBACK_THOUGHTS;
-  } catch {
-    return FALLBACK_THOUGHTS;
-  }
-}
-function pickToday(thoughts: Thought[]): Thought {
-  if (!thoughts.length) return FALLBACK_THOUGHTS[0];
-  const idx = Math.abs(hashStr(todayKey())) % thoughts.length;
-  return thoughts[idx];
-}
-function firstWords(txt: string, n = 9) {
-  const words = txt.trim().split(/\s+/);
-  const slice = words.slice(0, n).join(' ');
-  return words.length > n ? slice + '…' : slice;
+  return { displayName, avatarUrl };
 }
 
-/* ===== Icono por programa ===== */
-function ProgramIcon({ slug }: { slug: string }) {
-  if (slug?.includes('burpees')) return <Dumbbell size={18} />;
-  if (slug?.includes('lectura') || slug?.includes('reading')) return <BookOpen size={18} />;
-  if (slug?.includes('finanzas') || slug?.includes('savings')) return <PiggyBank size={18} />;
-  if (slug?.includes('medit')) return <Brain size={18} />;
-  return <BookOpen size={18} />;
-}
-
-/* ===== Página ===== */
-export default function HomePage() {
-  // Pensamiento del día
-  const thoughts = useMemo(() => loadThoughts(), []);
-  const today = useMemo(() => todayKey(), []);
-  const thought = useMemo(() => pickToday(thoughts), [thoughts]);
-
-  const [showThought, setShowThought] = useState(false);
-
-  // Mostrar el pop-up automáticamente la primera vez del día
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      const last = localStorage.getItem(LS_THOUGHT_SHOWN);
-      if (last !== today) {
-        setShowThought(true);
-        localStorage.setItem(LS_THOUGHT_SHOWN, today);
-      }
-    } catch {}
-  }, [today]);
-
-  const excerpt = useMemo(() => firstWords(thought.body, 9), [thought]);
-
-  // Catálogo normalizado a array
-  const programs = useMemo(() => {
-    const cat: any = PROGRAMS as any;
-    if (Array.isArray(cat)) return cat;
-    if (cat && typeof cat === 'object') return Object.values(cat);
-    return [];
-  }, []);
+/* ========= Top bar ========= */
+function HomeTopBar() {
+  const { displayName, avatarUrl } = useDisplayUser();
 
   return (
-    <main className="container" style={{ paddingBottom: 16 }}>
-      {/* Pensamiento del día */}
-      <section
-        className="home-thought"
-        style={{
-          background: 'var(--background)',
-          borderRadius: 'var(--radius-card)',
-          padding: 16,
-          border: '1px solid var(--line)',
-          marginTop: 12,
-        }}
-      >
-        <div>
-          <h2 style={{ margin: 0 }}>{thought.title}</h2>
-          <p className="muted" style={{ margin: '6px 0 0' }}>{excerpt}</p>
-        </div>
-        <div style={{ marginTop: 10 }}>
-          <button
-            className="btn btn-primary"
-            onClick={() => setShowThought(true)}
-            aria-haspopup="dialog"
-          >
-            Ver
-          </button>
-        </div>
-      </section>
-
-      {/* Programas */}
-      <div style={{ marginTop: 16, display: 'grid', gap: 16 }}>
-        {programs.map((p: any, i: number) => (
-          <article key={p?.slug ?? p?.id ?? p?.key ?? i} className="card" style={{ padding: 0, overflow: 'hidden' }}>
-            {p?.cover && (
-              <img
-                src={p.cover}
-                alt={p?.title ?? 'Programa'}
-                className="cover-img"
-              />
-            )}
-            <div style={{ padding: 14 }}>
-              <h3 style={{ margin: '0 0 4px' }}>{p?.title ?? p?.name ?? 'Programa'}</h3>
-              {p?.subtitle && <p className="muted" style={{ margin: 0 }}>{p.subtitle}</p>}
-
-              <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-                <Link href={`/habitos/${p?.slug ?? p?.id ?? p?.key ?? 'programa'}`} className="btn btn-primary">
-                  Empieza ahora
-                </Link>
-
-                <Link href={`/habitos/${p?.slug ?? p?.id ?? p?.key ?? 'programa'}`} className="btn secondary">
-                  Ver programa
-                  <span className="icon"><ProgramIcon slug={(p?.slug ?? p?.id ?? p?.key ?? '')} /></span>
-                </Link>
-              </div>
+    <div className="h-12 bg-white border-b flex items-center justify-between px-4">
+      <div className="flex items-center gap-3">
+        <div className="h-8 w-8 rounded-full overflow-hidden border bg-neutral-100">
+          {avatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={avatarUrl} alt="Avatar" className="h-full w-full object-cover" />
+          ) : (
+            <div className="h-full w-full grid place-items-center text-[10px] text-neutral-500">
+              🙂
             </div>
-          </article>
-        ))}
+          )}
+        </div>
+        <span className="text-sm font-medium">Hola, {displayName}</span>
       </div>
 
-      {/* Modal de Pensamiento */}
-      <ThoughtModal
-        open={showThought}
-        title={thought.title}
-        text={thought.body}
-        onClose={() => setShowThought(false)}
+      <Link
+        href="/mizona/perfil"
+        className="p-1 rounded hover:bg-black/5"
+        aria-label="Abrir perfil"
+      >
+        <Settings size={18} />
+      </Link>
+    </div>
+  );
+}
+
+/* ========= Hero vídeo San Silvestre (1:1) ========= */
+function SanSilvestreHero() {
+  return (
+    <div className="relative w-full max-w-[720px] mx-auto aspect-square overflow-hidden rounded-2xl border mt-4">
+      <video
+        className="h-full w-full object-cover"
+        // ➜ coloca aquí tu vídeo de 5s:
+        src="/videos/sansilvestre.mp4"
+        // ➜ usamos tu imagen como poster:
+        poster="/images/programs/san-silvestre.png"
+        muted
+        playsInline
+        autoPlay
+        loop
+        preload="metadata"
       />
+      {/* Texto incrustado abajo */}
+      <div className="absolute inset-x-0 bottom-0 p-4 pointer-events-none">
+        <div className="rounded-xl bg-black/50 backdrop-blur px-4 py-3 text-white">
+          <div className="text-base font-semibold">Corre 10 km en la San Silvestre</div>
+          <div className="mt-0.5 text-sm/5 opacity-90">Duración: 60 días</div>
+        </div>
+      </div>
+      {/* Botón clickable independiente */}
+      <Link
+        href="/programas/sansilvestre"
+        className="absolute right-4 bottom-4 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium shadow"
+      >
+        <span>Ver programa</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M8 5v14l11-7z" />
+        </svg>
+      </Link>
+    </div>
+  );
+}
+
+/* ========= Tarjeta de programa ========= */
+function ProgramCard({
+  title,
+  days,
+  href,
+  img,
+}: {
+  title: string;
+  days: number;
+  href: string;
+  img: string;
+}) {
+  return (
+    <Link href={href} className="block rounded-2xl border overflow-hidden">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={img} alt={title} className="w-full aspect-[16/9] object-cover" />
+      <div className="p-4">
+        <div className="font-semibold">{title}</div>
+        <div className="text-sm text-neutral-600 mt-1">Duración: {days} días</div>
+        <div className="mt-3 inline-block text-sm font-medium underline">Ver programa</div>
+      </div>
+    </Link>
+  );
+}
+
+/* ========= Página ========= */
+export default function HomePage() {
+  return (
+    <main className="container" style={{ paddingBottom: 16 }}>
+      {/* Top bar: avatar + hola + rueda */}
+      <HomeTopBar />
+
+      {/* Hero de vídeo San Silvestre */}
+      <SanSilvestreHero />
+
+      {/* Programas destacados (Detox y Club 5am) */}
+      <div className="mt-5 grid gap-4">
+        <ProgramCard
+          title="Aprende a controlar la tecnología"
+          days={30}
+          href="/programas/detox-tecnologico"
+          img="/images/programs/controla-tecnología.png"
+        />
+
+        <ProgramCard
+          title="Club de las 5 am"
+          days={30}
+          href="/programas/club-5am"
+          // de momento usamos meditation.jpg como acordamos
+          img="/images/meditation.jpg"
+        />
+      </div>
+
+      {/* CTA final para ver todos */}
+      <div className="mt-6 rounded-2xl border p-4 text-center">
+        <p className="text-sm text-neutral-600">
+          ¿Te gustaría ver todos nuestros programas?
+        </p>
+        <Link
+          href="/programas"
+          className="mt-3 inline-block rounded-full border px-4 py-2 text-sm font-medium"
+        >
+          Ver todos los programas
+        </Link>
+      </div>
     </main>
   );
 }
