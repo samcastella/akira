@@ -23,8 +23,12 @@ export type UserProfile = {
   updatedAt?: string | null; // ISO UTC de DB
   onboardingDone?: boolean;
 
+  /** Redes sociales */
+  instagram?: string;
+  tiktok?: string;
+
   /** URL o dataURL de la foto de perfil (local o Supabase Storage) */
-  foto?: string; // ⬅️ NUEVO
+  foto?: string;
 };
 
 // ---- helpers num/fecha
@@ -69,7 +73,7 @@ function sanitizeUser(u: Partial<UserProfile>): Partial<UserProfile> {
   if (typeof out.email === 'string') out.email = normalizeEmail(out.email);
   if (typeof out.username === 'string') out.username = normalizeUsername(out.username);
   if (typeof out.telefono === 'string') out.telefono = out.telefono.trim();
-  // out.foto: puede ser URL o dataURL; no la tocamos para no romper base64
+  // out.foto puede ser URL o dataURL; no tocar para no romper base64
   return out;
 }
 function keepDefined<T extends Record<string, any>>(obj: T): Partial<T> {
@@ -162,6 +166,7 @@ export function estimateCalories(u: UserProfile): number | undefined {
   return Math.round(base * activityFactor(u.actividad));
 }
 
+// ===== Mapas DB <-> App =====
 export function profileFromDbRow(row: any): Partial<UserProfile> {
   if (!row || typeof row !== 'object') return {};
   return {
@@ -179,9 +184,10 @@ export function profileFromDbRow(row: any): Partial<UserProfile> {
     actividad: row.actividad ?? undefined,
     caloriasDiarias: parseNumOrNull(row.calorias_diarias) ?? undefined,
     updatedAt: row.updated_at ?? null,
-
-    // Foto: acepta 'foto' o 'avatar_url' desde la DB
-    foto: row.foto ?? row.avatar_url ?? undefined, // ⬅️ NUEVO
+    // Nuevos campos
+    instagram: row.instagram ?? undefined,
+    tiktok: row.tiktok ?? undefined,
+    foto: row.foto ?? row.avatar_url ?? undefined,
   };
 }
 
@@ -199,9 +205,12 @@ export function dbRowFromProfile(p: Partial<UserProfile>): any {
     peso: parseNumOrNull(p.peso),
     actividad: p.actividad ?? null,
     calorias_diarias: parseNumOrNull(p.caloriasDiarias),
-
+    // Nuevos mapeos
+    email: p.email ?? null,
+    instagram: p.instagram ?? null,
+    tiktok: p.tiktok ?? null,
     // Guardamos siempre en 'avatar_url' para consistencia
-    avatar_url: p.foto ?? null, // ⬅️ NUEVO
+    avatar_url: p.foto ?? null,
   };
 }
 
@@ -328,13 +337,11 @@ export async function pullProfile(): Promise<UserProfile | null> {
 
     if (error) {
       console.warn('[pullProfile] select error:', error);
-      // devolvemos local para no bloquear
       return loadUser() ?? null;
     }
 
     const local = loadUser();
     if (local) {
-      // sanea numéricos
       local.estatura = parseNumOrNull(local.estatura) ?? undefined;
       local.peso = parseNumOrNull(local.peso) ?? undefined;
       local.caloriasDiarias = parseNumOrNull(local.caloriasDiarias) ?? undefined;
@@ -342,13 +349,11 @@ export async function pullProfile(): Promise<UserProfile | null> {
 
     const r = remote ? (profileFromDbRow(remote) as UserProfile) : null;
 
-    // Remoto más nuevo → guardamos y devolvemos
     if (r && (!local || newer(r.updatedAt, local.updatedAt) > 0)) {
       saveUser(r);
       return r;
     }
 
-    // No hay remoto pero sí local del mismo uid → seed remoto
     if (!r && local && (local.userId === uid || !local.userId)) {
       const row = dbRowFromProfile({ ...local, userId: uid });
       const { error: upErr } = await supabase
@@ -356,7 +361,6 @@ export async function pullProfile(): Promise<UserProfile | null> {
         .upsert(row, { onConflict: 'user_id' });
       if (upErr) {
         console.warn('[pullProfile] upsert from local error', upErr);
-        // aún así devolvemos local
         return local;
       }
 
@@ -376,7 +380,6 @@ export async function pullProfile(): Promise<UserProfile | null> {
       return pf;
     }
 
-    // Local más nuevo → empujamos arriba pero no bloqueamos si falla
     if (r && local && newer(local.updatedAt, r.updatedAt) > 0) {
       const row = dbRowFromProfile({ ...local, userId: uid });
       const { error: upErr } = await supabase
@@ -384,7 +387,6 @@ export async function pullProfile(): Promise<UserProfile | null> {
         .upsert(row, { onConflict: 'user_id' });
       if (upErr) {
         console.warn('[pullProfile] upsert newer local error', upErr);
-        // devolvemos local igualmente
         return local;
       }
 
@@ -403,7 +405,6 @@ export async function pullProfile(): Promise<UserProfile | null> {
       return pf;
     }
 
-    // Igual o sin datos → devolvemos lo que haya
     return (r ?? local ?? null) as UserProfile | null;
   } catch (e) {
     console.warn('[pullProfile] unexpected error:', e);
@@ -432,7 +433,6 @@ export async function syncLocalToRemoteIfMissing(): Promise<UserProfile | null> 
       return loadUser() ?? null;
     }
     if (data) {
-      // ya existe → haz pull normal
       return await pullProfile();
     }
 
@@ -444,7 +444,6 @@ export async function syncLocalToRemoteIfMissing(): Promise<UserProfile | null> 
     }
 
     if (!local || !(local.nombre && local.apellido && (local.email || local.username))) {
-      // nada útil que seedear
       return loadUser() ?? null;
     }
 

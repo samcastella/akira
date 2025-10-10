@@ -371,7 +371,7 @@ export default function PerfilPage() {
                   onChange={(e) => onPickFile(e, true)}
                   className="hidden"
                 />
-                <div className="muted text-xs mt-1">La foto se guarda desde el modal.</div>
+                <div className="muted text-xs mt-1">Actualiza tu foto de perfil.</div>
               </div>
             </div>
 
