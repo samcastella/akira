@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { Camera, X } from 'lucide-react';
 import { logoutAndResetApp } from '@/lib/logout';
 import { useUserProfile, upsertProfile, getAuthUserId, Sex, normalizeUsername } from '@/lib/user';
-
+import { supabase } from '@/lib/supabaseClient';
 
 type Profile = {
   username?: string;
@@ -23,7 +23,7 @@ type Profile = {
   telefono?: string;
   peso?: number;
   estatura?: number; // ⬅️ NUEVO (cm)
-  foto?: string; // dataURL/URL
+  foto?: string; // dataURL/URL pública
 };
 
 /* ===== Helpers Instagram ===== */
@@ -41,6 +41,49 @@ function instagramLabel(val?: string) {
   const m = val.match(/instagram\.com\/([^/?#]+)/i);
   if (m?.[1]) return '@' + m[1];
   return '@' + val.replace(/^@/, '');
+}
+
+/* ===== Helpers de avatar (Storage) ===== */
+function dataURLToBlob(dataURL: string): Blob {
+  const [head, b64] = dataURL.split(',');
+  const mime = head.match(/data:(.*?);base64/)?.[1] || 'image/jpeg';
+  const bin = atob(b64);
+  const u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  return new Blob([u8], { type: mime });
+}
+
+/** Sube avatar a bucket 'avatars' en la ruta {uid}/avatar_YYYYMMDD_HHMMSS.jpg y devuelve la URL pública */
+async function uploadAvatarAndGetUrl(input: string | File, uid: string): Promise<string> {
+  let blob: Blob;
+  if (typeof input === 'string' && input.startsWith('data:')) {
+    blob = dataURLToBlob(input);
+  } else if (input instanceof File) {
+    blob = input;
+  } else {
+    throw new Error('Formato de avatar no válido');
+  }
+
+  const ts = new Date();
+  const stamp =
+    `${ts.getFullYear()}${String(ts.getMonth()+1).padStart(2,'0')}${String(ts.getDate()).padStart(2,'0')}_` +
+    `${String(ts.getHours()).padStart(2,'0')}${String(ts.getMinutes()).padStart(2,'0')}${String(ts.getSeconds()).padStart(2,'0')}`;
+
+  const path = `${uid}/avatar_${stamp}.jpg`;
+
+  const { error } = await supabase.storage
+    .from('avatars')
+    .upload(path, blob, {
+      cacheControl: '3600',
+      upsert: true,
+      contentType: 'image/jpeg',
+    });
+
+  if (error) throw error;
+
+  const { data } = supabase.storage.from('avatars').getPublicUrl(path);
+  if (!data?.publicUrl) throw new Error('No se pudo obtener la URL pública');
+  return data.publicUrl;
 }
 
 export default function PerfilPage() {
@@ -101,74 +144,85 @@ export default function PerfilPage() {
     }
     closePhotoModal();
   }
-// Guardado con timeout de seguridad para evitar “Guardando…” infinito
-async function save() {
-  if (saving) return; // evita doble envío
-  setSaving(true);
-  try {
-    // 0) Verifica sesión (si no hay, no intentes guardar)
-    const uid = await getAuthUserId();
-    if (!uid) {
-      try { alert('Inicia sesión para guardar tu perfil.'); } catch {}
-      return;
+
+  // Guardado con timeout de seguridad para evitar “Guardando…” infinito
+  async function save() {
+    if (saving) return; // evita doble envío
+    setSaving(true);
+    try {
+      // 0) Verifica sesión (si no hay, no intentes guardar)
+      const uid = await getAuthUserId();
+      if (!uid) {
+        try { alert('Inicia sesión para guardar tu perfil.'); } catch {}
+        return;
+      }
+
+      // 1) Si la foto es dataURL -> subir a Storage y usar URL
+      let fotoOut = profile.foto;
+      const looksLikeHttp = typeof fotoOut === 'string' && /^https?:\/\//i.test(fotoOut);
+      if (fotoOut && !looksLikeHttp) {
+        try {
+          fotoOut = await uploadAvatarAndGetUrl(fotoOut, uid);
+        } catch (e) {
+          console.warn('[PerfilPage] subida de avatar falló, continuo sin bloquear', e);
+          // Si falla la subida, mantenemos el dataURL para no perder la UI; el usuario puede reintentar
+        }
+      }
+
+      // 2) Normalización suave (+ username normalizado)
+      const payload: Profile = {
+        ...profile,
+        foto: fotoOut, // ← ya es URL pública si subió bien
+        email: profile.email?.trim().toLowerCase(),
+        instagram: normalizeInstagramLink(profile.instagram),
+        tiktok: profile.tiktok?.trim() || undefined,
+        username: profile.username ? normalizeUsername(profile.username) : undefined,
+        fechaNacimiento: profile.fechaNacimiento || undefined,
+        // Sanitizar numéricos
+        peso:
+          typeof profile.peso === 'number'
+            ? profile.peso
+            : profile.peso
+            ? Number(profile.peso)
+            : undefined,
+        estatura:
+          typeof profile.estatura === 'number'
+            ? profile.estatura
+            : profile.estatura
+            ? Number(profile.estatura)
+            : undefined,
+      };
+
+      // 3) Guardar en Supabase con timeout de 12s (y re-lectura automática)
+      const timeout = new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), 12000));
+      const server = await Promise.race([upsertProfile(payload as any), timeout]);
+
+      // 4) Reflejar en UI lo que viene de DB (localStorage ya quedó actualizado)
+      setProfile(server as Profile);
+      setSavedOpen(true);
+      setEditing(false);
+    } catch (err: any) {
+      const code = String(err?.code || err?.status || '');
+      const msg  = String(err?.message || '');
+
+      // Username duplicado → avisar y no tocar local
+      if (code === '23505' || /duplicate|unique/i.test(msg)) {
+        try { alert('Ese nombre de usuario ya está en uso. Prueba con otro.'); } catch {}
+        return;
+      }
+
+      // Fallback de UX: mensajes claros según error
+      if (/Network|Failed to fetch|offline|ECONN|ETIMEDOUT|timeout/i.test(msg)) {
+        console.warn('[PerfilPage] red/offline/timeout, no se pudo guardar:', err);
+        try { alert('No hay conexión. Intenta de nuevo más tarde.'); } catch {}
+      } else {
+        console.error('[PerfilPage] error guardando perfil', err);
+        try { alert('Ocurrió un error guardando tu perfil.'); } catch {}
+      }
+    } finally {
+      setSaving(false);
     }
-
-    // 1) Normalización suave (+ username normalizado)
-    const payload: Profile = {
-      ...profile,
-      email: profile.email?.trim().toLowerCase(),
-      instagram: normalizeInstagramLink(profile.instagram),
-      tiktok: profile.tiktok?.trim() || undefined,
-      username: profile.username ? normalizeUsername(profile.username) : undefined,
-      fechaNacimiento: profile.fechaNacimiento || undefined,
-      // Sanitizar numéricos
-      peso:
-        typeof profile.peso === 'number'
-          ? profile.peso
-          : profile.peso
-          ? Number(profile.peso)
-          : undefined,
-      estatura:
-        typeof profile.estatura === 'number'
-          ? profile.estatura
-          : profile.estatura
-          ? Number(profile.estatura)
-          : undefined,
-    };
-
-    // 2) Guardar en Supabase con timeout de 12s (y re-lectura automática)
-    const timeout = new Promise<never>((_, rej) =>
-      setTimeout(() => rej(new Error('timeout')), 12000)
-    );
-    const server = await Promise.race([upsertProfile(payload as any), timeout]);
-
-    // 3) Reflejar en UI lo que viene de DB (localStorage ya quedó actualizado)
-    setProfile(server as Profile);
-    setSavedOpen(true);
-    setEditing(false);
-  } catch (err: any) {
-    const code = String(err?.code || err?.status || '');
-    const msg  = String(err?.message || '');
-
-    // Username duplicado → avisar y no tocar local
-    if (code === '23505' || /duplicate|unique/i.test(msg)) {
-      try { alert('Ese nombre de usuario ya está en uso. Prueba con otro.'); } catch {}
-      return;
-    }
-
-    // Fallback de UX: mensajes claros según error
-    if (/Network|Failed to fetch|offline|ECONN|ETIMEDOUT|timeout/i.test(msg)) {
-      console.warn('[PerfilPage] red/offline/timeout, no se pudo guardar:', err);
-      try { alert('No hay conexión. Intenta de nuevo más tarde.'); } catch {}
-    } else {
-      console.error('[PerfilPage] error guardando perfil', err);
-      try { alert('Ocurrió un error guardando tu perfil.'); } catch {}
-    }
-  } finally {
-    setSaving(false);
   }
-}
-
 
   async function handleLogout() {
     await logoutAndResetApp('/login');

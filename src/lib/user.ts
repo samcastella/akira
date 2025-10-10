@@ -22,6 +22,9 @@ export type UserProfile = {
   caloriasDiarias?: number;
   updatedAt?: string | null; // ISO UTC de DB
   onboardingDone?: boolean;
+
+  /** URL o dataURL de la foto de perfil (local o Supabase Storage) */
+  foto?: string; // ⬅️ NUEVO
 };
 
 // ---- helpers num/fecha
@@ -66,6 +69,7 @@ function sanitizeUser(u: Partial<UserProfile>): Partial<UserProfile> {
   if (typeof out.email === 'string') out.email = normalizeEmail(out.email);
   if (typeof out.username === 'string') out.username = normalizeUsername(out.username);
   if (typeof out.telefono === 'string') out.telefono = out.telefono.trim();
+  // out.foto: puede ser URL o dataURL; no la tocamos para no romper base64
   return out;
 }
 function keepDefined<T extends Record<string, any>>(obj: T): Partial<T> {
@@ -175,8 +179,12 @@ export function profileFromDbRow(row: any): Partial<UserProfile> {
     actividad: row.actividad ?? undefined,
     caloriasDiarias: parseNumOrNull(row.calorias_diarias) ?? undefined,
     updatedAt: row.updated_at ?? null,
+
+    // Foto: acepta 'foto' o 'avatar_url' desde la DB
+    foto: row.foto ?? row.avatar_url ?? undefined, // ⬅️ NUEVO
   };
 }
+
 export function dbRowFromProfile(p: Partial<UserProfile>): any {
   return {
     user_id: p.userId ?? undefined,
@@ -191,6 +199,9 @@ export function dbRowFromProfile(p: Partial<UserProfile>): any {
     peso: parseNumOrNull(p.peso),
     actividad: p.actividad ?? null,
     calorias_diarias: parseNumOrNull(p.caloriasDiarias),
+
+    // Guardamos siempre en 'avatar_url' para consistencia
+    avatar_url: p.foto ?? null, // ⬅️ NUEVO
   };
 }
 
