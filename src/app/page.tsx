@@ -1,10 +1,9 @@
-// src/app/page.tsx
 'use client';
 
 import Link from 'next/link';
-import Image from 'next/image';
 import { Settings } from 'lucide-react';
 import { useUserProfile } from '@/lib/user';
+import { useState } from 'react';
 
 /* ========= Helpers saludo/avatar ========= */
 function useDisplayUser() {
@@ -23,19 +22,20 @@ function useDisplayUser() {
 /* ========= Top bar ========= */
 function HomeTopBar() {
   const { displayName, avatarUrl } = useDisplayUser();
+  const [imgOk, setImgOk] = useState(true);
 
   return (
     <div className="h-12 bg-white flex items-center justify-between px-4">
       <div className="flex items-center gap-3">
         <div className="h-9 w-9 rounded-full overflow-hidden bg-neutral-100 relative">
-          {avatarUrl ? (
-            <Image
+          {avatarUrl && imgOk ? (
+            // usamos <img> + onError para evitar el "interrogante" si falla la carga
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
               src={avatarUrl}
               alt="Avatar"
-              fill
-              sizes="36px"
-              className="object-cover"
-              priority
+              className="h-full w-full object-cover"
+              onError={() => setImgOk(false)}
             />
           ) : (
             <div className="h-full w-full grid place-items-center text-[12px] text-neutral-500">
@@ -43,7 +43,8 @@ function HomeTopBar() {
             </div>
           )}
         </div>
-        <span className="text-sm font-medium">Hola, {displayName}</span>
+        {/* sin coma después de Hola */}
+        <span className="text-sm font-medium">Hola {displayName}</span>
       </div>
 
       <Link
@@ -64,7 +65,8 @@ function SanSilvestreHero() {
       <div className="relative w-full aspect-[16/9] overflow-hidden rounded-2xl">
         <video
           className="h-full w-full object-cover"
-          src="/videos/sansilvestre.mp4"
+          // ✅ en Next, los assets de /public se referencian sin "public"
+          src="/videos/san-silvestre.mp4"
           poster="/images/programs/san-silvestre.png"
           muted
           playsInline
@@ -138,7 +140,7 @@ function ProgramCard({
 export default function HomePage() {
   return (
     <main className="container" style={{ paddingBottom: 16 }}>
-      {/* Top bar: avatar + hola + rueda (sin línea inferior) */}
+      {/* Top bar */}
       <HomeTopBar />
 
       {/* Hero de vídeo San Silvestre */}
@@ -151,7 +153,8 @@ export default function HomePage() {
             title="Aprende a controlar la tecnología"
             days={30}
             href="/programas/detox-tecnologico"
-            img="public/images/programs/controla-tecnología.png"
+            // ✅ sin "public" y sin tilde en el nombre de archivo
+            img="/images/programs/controla-tecnologia.png"
             cta="Empieza ahora"
           />
         </div>
@@ -161,23 +164,24 @@ export default function HomePage() {
             title="Club de las 5 am"
             days={30}
             href="/programas/club-5am"
-            img="/images/meditation.jpg"
+            img="/meditation.jpg"
             cta="Únete al club"
           />
         </div>
       </section>
 
-      {/* CTA final (sin borde) */}
+      {/* CTA final (copy adaptado a programas de hábitos) */}
       <section className="mt-8 px-4 text-center">
         <h2 className="text-xl font-extrabold leading-tight">
-          ¿Tienes ganas de más?
-          <br />¡Vamos a entrenar!
+          ¿Listo para construir hábitos que se quedan?
+          <br />
+          Explora todos nuestros programas.
         </h2>
         <Link
           href="/programas"
           className="mt-4 inline-block rounded-full px-6 py-3 text-sm font-semibold bg-black text-white"
         >
-          Descubrir entrenamientos
+          Ver todos los programas
         </Link>
       </section>
     </main>
