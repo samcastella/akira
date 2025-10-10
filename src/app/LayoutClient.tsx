@@ -10,7 +10,6 @@ import {
   pullProfile,
   syncLocalToRemoteIfMissing,
   LS_USER_KEY,
-  // ⬇️ orquestación de listeners de user.ts
   startUserLibRealtime,
   stopUserLibRealtime,
 } from '@/lib/user';
@@ -21,9 +20,8 @@ import { pullUserPrograms } from '@/lib/programSync';
 
 const LS_SEEN_AUTH = 'akira_seen_auth_v1';
 const LS_LAST_UID = 'akira_last_uid';
-const PROFILE_TIMEOUT_MS = 15000; // antes 5000
+const PROFILE_TIMEOUT_MS = 15000;
 
-/** ✅ Permite entrar si perfil completo O si marcó onboardingDone */
 function canEnter(): boolean {
   try {
     const u = loadUser();
@@ -35,43 +33,30 @@ function canEnter(): boolean {
 
 export default function LayoutClient({
   children,
-  bottomNav,
+  bottomNav, // 🔝 ahora es top nav fijo
 }: {
   children: React.ReactNode;
   bottomNav: React.ReactNode;
 }) {
   const pathname = usePathname();
   const isAuthRoute =
-    pathname === '/login' ||
-    pathname?.startsWith('/auth'); // incluye /auth/callback y /auth/confirmed
+    pathname === '/login' || pathname?.startsWith('/auth');
 
   const [userOk, setUserOk] = useState<boolean | null>(null);
   const [hasSession, setHasSession] = useState(false);
   const [authReady, setAuthReady] = useState(false);
-
-  /* 👇 Bandera: primera sincronización terminada */
   const [bootSynced, setBootSynced] = useState(false);
-
-  /* 👇 Suprime el modal de registro justo tras SIGNED_IN para evitar parpadeo */
   const [justSignedIn, setJustSignedIn] = useState(false);
-
-  /* 👇 Evita flicker SSR: no renderizar modales hasta estar montado en cliente */
   const [mounted, setMounted] = useState(false);
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  useEffect(() => { setMounted(true); }, []);
 
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showRegistration, setShowRegistration] = useState(false);
   const [registrationStartStep, setRegistrationStartStep] = useState<1 | 2 | 3 | 4 | 5>(1);
 
-  // ⚠️ ¿tenemos envs de Supabase en esta build/preview?
   const SUPA_READY = isSupabaseEnvReady();
 
-  useEffect(() => {
-    setUserOk(canEnter());
-  }, []);
-
+  useEffect(() => { setUserOk(canEnter()); }, []);
   useEffect(() => {
     const onUserUpdated = () => setUserOk(canEnter());
     if (typeof window !== 'undefined') {
@@ -86,112 +71,68 @@ export default function LayoutClient({
     };
   }, []);
 
-  /** util: timeout con etiqueta para no colgarnos en la primera carga */
   function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
     return new Promise((resolve, reject) => {
       const to = setTimeout(() => {
         console.warn(`[syncAll] ${label} timed out after ${ms}ms`);
-        reject(new Error(`${label} timeout`)); // lo manejamos como no-fatal más abajo
+        reject(new Error(`${label} timeout`));
       }, ms);
       p.then(
-        (v) => {
-          clearTimeout(to);
-          resolve(v);
-        },
-        (e) => {
-          clearTimeout(to);
-          reject(e);
-        }
+        (v) => { clearTimeout(to); resolve(v); },
+        (e) => { clearTimeout(to); reject(e); }
       );
     });
   }
 
-  /** Sincroniza perfil remoto->local y programaciones (progreso tareas) de forma robusta */
   async function syncAll() {
     try {
-      // Bloque 1: perfil (pull y, si falta, seed desde local)
-      await withTimeout(
-        (async () => {
-          try {
-            const remote = await pullProfile();
-            if (!remote) {
-              await syncLocalToRemoteIfMissing();
-            }
-          } catch (e) {
-            console.warn('[syncAll] pullProfile/syncLocalToRemoteIfMissing error:', e);
-          }
-        })(),
-        PROFILE_TIMEOUT_MS,
-        'profile'
-      );
+      await withTimeout((async () => {
+        try {
+          const remote = await pullProfile();
+          if (!remote) await syncLocalToRemoteIfMissing();
+        } catch (e) { console.warn('[syncAll] profile err:', e); }
+      })(), PROFILE_TIMEOUT_MS, 'profile');
 
-      // Bloque 2: programaciones
-      await withTimeout(
-        (async () => {
-          try {
-            await pullUserPrograms();
-          } catch (e) {
-            console.warn('[syncAll] pullUserPrograms error:', e);
-          }
-        })(),
-        PROFILE_TIMEOUT_MS,
-        'programs'
-      );
+      await withTimeout((async () => {
+        try { await pullUserPrograms(); }
+        catch (e) { console.warn('[syncAll] pullUserPrograms err:', e); }
+      })(), PROFILE_TIMEOUT_MS, 'programs');
     } catch (e) {
-      // ✅ No bloqueamos la app si perfil/programas fallan o expiran
-      console.warn('[LayoutClient] syncAll wrapper warn (non-fatal):', e);
+      console.warn('[LayoutClient] syncAll wrapper warn:', e);
     } finally {
       if (canEnter()) setUserOk(true);
-      setBootSynced(true); // ✅ siempre dejamos de “pensar”
+      setBootSynced(true);
     }
   }
 
-  // Cargar sesión + suscripción a cambios de auth (solo si hay Supabase)
   useEffect(() => {
     if (!SUPA_READY) {
-      console.warn('[auth] Supabase env no disponible en esta build/preview. Se omite initAuth.');
-      setHasSession(false);
-      setAuthReady(true);
-      setBootSynced(true);
+      console.warn('[auth] Supabase env no disponible. Se omite initAuth.');
+      setHasSession(false); setAuthReady(true); setBootSynced(true);
       return;
     }
-
     let cancelled = false;
-
     async function initAuth() {
       const { data } = await supabase.auth.getSession();
       if (cancelled) return;
       const has = !!data.session;
-      // 🔐 persistimos/eliminamos UID desde la sesión inicial
       try {
         const uid = data.session?.user?.id ?? null;
         if (uid) localStorage.setItem(LS_LAST_UID, uid);
         else localStorage.removeItem(LS_LAST_UID);
       } catch {}
-      setHasSession(has);
-      setAuthReady(true);
-      try {
-        window.dispatchEvent(new CustomEvent('akira:auth-changed', { detail: { initial: true, has } }));
-      } catch {}
-      if (has) {
-        await syncAll();
-      } else {
-        setBootSynced(true);
-      }
+      setHasSession(has); setAuthReady(true);
+      try { window.dispatchEvent(new CustomEvent('akira:auth-changed', { detail: { initial: true, has } })); } catch {}
+      if (has) await syncAll(); else setBootSynced(true);
     }
     void initAuth();
 
-    // ⬇️ arranca los listeners de user.ts (perfil/realtime) una vez sabemos que hay ENV
     startUserLibRealtime();
 
     const { data: sub } = supabase.auth.onAuthStateChange(
       async (evt: AuthChangeEvent, session: Session | null) => {
         setHasSession(!!session);
-        try {
-          window.dispatchEvent(new CustomEvent('akira:auth-changed', { detail: { evt } }));
-        } catch {}
-
-        // 🔐 persistimos/eliminamos UID en cada cambio de auth
+        try { window.dispatchEvent(new CustomEvent('akira:auth-changed', { detail: { evt } })); } catch {}
         try {
           const uid = session?.user?.id ?? null;
           if (uid) localStorage.setItem(LS_LAST_UID, uid);
@@ -199,8 +140,6 @@ export default function LayoutClient({
         } catch {}
 
         if (evt === 'SIGNED_IN') {
-          // ✅ No navegamos aquí: la navegación la hace /auth/callback (server) tras fijar cookies
-          // Marca onboardingDone y “visto”
           try {
             localStorage.setItem(LS_SEEN_AUTH, '1');
             const raw = localStorage.getItem(LS_USER_KEY);
@@ -208,7 +147,6 @@ export default function LayoutClient({
             localStorage.setItem(LS_USER_KEY, JSON.stringify({ ...prev, onboardingDone: true }));
             window.dispatchEvent(new CustomEvent('akira:user-updated'));
           } catch {}
-          // Cierra modales inmediatamente y evita flicker
           setUserOk(true);
           setShowAuthModal(false);
           setShowRegistration(false);
@@ -231,7 +169,6 @@ export default function LayoutClient({
           if (canEnter()) setUserOk(true);
         }
 
-        // Si hay sesión pero el perfil aún no permite entrar, mostramos personalización
         const okNow = canEnter();
         if (session && !okNow) {
           type AppMeta = { provider?: string };
@@ -247,19 +184,13 @@ export default function LayoutClient({
     );
 
     return () => {
-      try {
-        (sub as any)?.subscription?.unsubscribe?.();
-      } catch {}
-      try {
-        (sub as any)?.unsubscribe?.();
-      } catch {}
-      // ⬇️ detenemos listeners de user.ts
+      try { (sub as any)?.subscription?.unsubscribe?.(); } catch {}
+      try { (sub as any)?.unsubscribe?.(); } catch {}
       stopUserLibRealtime();
       cancelled = true;
     };
   }, [SUPA_READY]);
 
-  /** Rehidratamos PERFIL + PROGRAMAS al volver a foco/online (solo si hay Supabase) */
   useEffect(() => {
     if (!SUPA_READY) return;
     const refetch = () => {
@@ -267,9 +198,7 @@ export default function LayoutClient({
       void pullProfile().catch(() => {});
       void pullUserPrograms().catch(() => {});
     };
-    const onVisibility = () => {
-      if (document.visibilityState === 'visible') refetch();
-    };
+    const onVisibility = () => { if (document.visibilityState === 'visible') refetch(); };
     window.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('online', refetch);
     return () => {
@@ -280,54 +209,22 @@ export default function LayoutClient({
 
   useEffect(() => {
     if (!authReady || userOk === null || !bootSynced) return;
-
-    if (isAuthRoute) {
-      setShowAuthModal(false);
-      setShowRegistration(false);
-      return;
-    }
-
-    // Si no hay Supabase env, no podemos autenticar; evita mostrar modales de login infinitos.
-    if (!SUPA_READY) {
-      setShowAuthModal(false);
-      setShowRegistration(false);
-      return;
-    }
-
-    if (userOk) {
-      setShowAuthModal(false);
-      setShowRegistration(false);
-      return;
-    }
-
-    if (!hasSession) {
-      setShowAuthModal(true);
-      setShowRegistration(false);
-      return;
-    }
-
-    // Hay sesión pero falta completar perfil → abrir registro en paso 4
-    setShowAuthModal(false);
-    setRegistrationStartStep(4);
-    setShowRegistration(true);
+    if (isAuthRoute) { setShowAuthModal(false); setShowRegistration(false); return; }
+    if (!SUPA_READY) { setShowAuthModal(false); setShowRegistration(false); return; }
+    if (userOk) { setShowAuthModal(false); setShowRegistration(false); return; }
+    if (!hasSession) { setShowAuthModal(true); setShowRegistration(false); return; }
+    setShowAuthModal(false); setRegistrationStartStep(4); setShowRegistration(true);
   }, [authReady, userOk, hasSession, isAuthRoute, bootSynced, SUPA_READY]);
 
-  /* ✅ Eliminamos el flicker: mientras NO esté authReady o NO esté bootSynced
-     o ACABAMOS DE HACER SIGNED_IN, no mostramos el gating (ni el formulario) */
   const gating =
     mounted && authReady && bootSynced && userOk === false && !isAuthRoute && !justSignedIn;
 
   const hideNav = pathname === '/bienvenida' || isAuthRoute;
 
-  function handleCloseRegistration() {
-    setShowRegistration(false);
-    if (canEnter()) setUserOk(true);
-  }
+  function handleCloseRegistration() { setShowRegistration(false); if (canEnter()) setUserOk(true); }
   function handleCloseAuthModal() {
     setShowAuthModal(false);
-    try {
-      localStorage.setItem(LS_SEEN_AUTH, '1');
-    } catch {}
+    try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
     if (canEnter()) setUserOk(true);
   }
 
@@ -343,32 +240,12 @@ export default function LayoutClient({
     location.reload();
   }
 
-  // 🚫 Bloqueo total si faltan ENV (no se puede acceder sin registro/login)
-  if (!SUPA_READY) {
-    return (
-      <main
-        className="min-h-[100svh] grid place-items-center p-6 text-center"
-        style={{ background: '#FAFAFA' }}
-      >
-        <div className="mx-auto w-full max-w-md space-y-4">
-          <h1 className="text-xl font-semibold">Configuración incompleta</h1>
-          <p>
-            Esta build no tiene las variables públicas de Supabase. El registro e inicio de sesión
-            están deshabilitados, por lo que no se puede entrar a la app.
-          </p>
-          <p className="text-sm opacity-70">
-            Añade <code>NEXT_PUBLIC_SUPABASE_URL</code> y{' '}
-            <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> en el entorno de esta Preview y vuelve a
-            desplegar.
-          </p>
-        </div>
-      </main>
-    );
-  }
-
   return (
     <>
-      {/* Overlay de gating */}
+      {/* 🔝 Top nav fijo */}
+      {!hideNav && bottomNav}
+
+      {/* Overlays de gating */}
       {gating && (
         <>
           <div
@@ -411,13 +288,12 @@ export default function LayoutClient({
         className="bg-[#FAFAFA]"
         style={{
           minHeight: '100svh',
-          paddingBottom: hideNav ? 0 : 'calc(88px + env(safe-area-inset-bottom))',
+          // ❌ ya no reservamos espacio inferior para bottom-nav
+          paddingBottom: 0,
         }}
       >
         <div className="mx-auto w-full max-w-md">{children}</div>
       </div>
-
-      {!hideNav && bottomNav}
 
       {isDev && (
         <button

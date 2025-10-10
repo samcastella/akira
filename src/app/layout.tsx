@@ -4,7 +4,8 @@ import "./globals.css";
 import BottomNav from "@/components/BottomNav";
 import LayoutClient from "./LayoutClient";
 import SupabaseSessionProvider from "@/components/providers/SupabaseSessionProvider";
-import ProgramsBootstrap from "./ProgramsBootstrap"; // ⬅️ NUEVO
+import ProgramsBootstrap from "./ProgramsBootstrap";
+import { NAV_HEIGHT } from "@/lib/constants"; // ⬅️ importa la altura
 
 export const metadata: Metadata = {
   title: "Akira - Build Your Habits",
@@ -40,7 +41,7 @@ export default function RootLayout({
           ["--font-geist-sans" as any]:
             'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji"',
           ["--font-geist-mono" as any]:
-            'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+            'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
           fontFamily: "var(--font-geist-sans)",
           background: "var(--background)",
           color: "var(--foreground)",
@@ -50,8 +51,18 @@ export default function RootLayout({
         <ProgramsBootstrap />
 
         <SupabaseSessionProvider>
+          {/* No pasa nada por seguir pasándolo como bottomNav */}
           <LayoutClient bottomNav={<BottomNav />}>
-            <main className="app-main" id="app-main">
+            <main
+              className="app-main"
+              id="app-main"
+              // ⬇️ Reserva altura de la barra superior + safe area (notch)
+              style={{
+                paddingTop: `calc(${NAV_HEIGHT}px + env(safe-area-inset-top, 0px))`,
+                // Si antes reservabas espacio abajo para el bottom-nav, elimínalo:
+                paddingBottom: undefined,
+              }}
+            >
               {children}
             </main>
           </LayoutClient>

@@ -2,42 +2,58 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, SquarePlay, BarChart3, Users } from 'lucide-react';
 import { NAV_HEIGHT } from '@/lib/constants';
+
+// Heroicons v2
+import {
+  HomeIcon as HomeSolid,
+  PlayCircleIcon as PlaySolid,
+  ChartBarIcon as ChartBarSolid,
+  UsersIcon as UsersSolid,
+} from '@heroicons/react/24/solid';
+
+import {
+  HomeIcon as HomeOutline,
+  PlayCircleIcon as PlayOutline,
+  ChartBarIcon as ChartBarOutline,
+  UsersIcon as UsersOutline,
+} from '@heroicons/react/24/outline';
 
 type Item = {
   href: string;
   label: string;
-  icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+  outline: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+  solid: React.ComponentType<React.SVGProps<SVGSVGElement>>;
 };
 
 export default function BottomNav() {
   const pathname = usePathname();
 
   const items: Item[] = [
-    { href: '/',          label: 'Home',         icon: Home },
-    { href: '/programas', label: 'Programas',    icon: SquarePlay }, // antes Hábitos
-    { href: '/mizona',    label: 'Mi actividad', icon: BarChart3 },  // antes Mi zona
-    { href: '/amigos',    label: 'Comunidad',    icon: Users },      // antes Mis amigos
+    { href: '/',          label: 'Home',         outline: HomeOutline,     solid: HomeSolid },
+    { href: '/programas', label: 'Programas',    outline: PlayOutline,     solid: PlaySolid },
+    { href: '/mizona',    label: 'Mi actividad', outline: ChartBarOutline, solid: ChartBarSolid },
+    { href: '/amigos',    label: 'Comunidad',    outline: UsersOutline,    solid: UsersSolid },
   ];
 
   const INACTIVE = 'text-gray-500';
   const ACTIVE = 'text-black';
 
-  // helper para marcar activo en rutas hijas
   const isActive = (href: string) =>
     pathname === href ||
     (href !== '/' && (pathname?.startsWith(href + '/') ?? false));
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-50 border-t border-gray-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80"
-      style={{ height: `calc(${NAV_HEIGHT}px + env(safe-area-inset-bottom,0px))` }}
-      aria-label="Navegación inferior"
+      className="fixed top-0 left-0 right-0 z-50 border-b border-gray-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80"
+      style={{ height: `calc(${NAV_HEIGHT}px + env(safe-area-inset-top,0px))` }}
+      aria-label="Navegación superior"
+      role="navigation"
     >
-      <ul className="mx-auto flex h-full w-full max-w-md items-stretch justify-between px-4 pb-[env(safe-area-inset-bottom,0px)]">
-        {items.map(({ href, label, icon: Icon }) => {
+      <ul className="mx-auto flex h-full w-full max-w-md items-stretch justify-between px-4 pt-[env(safe-area-inset-top,0px)]">
+        {items.map(({ href, label, outline: Outline, solid: Solid }) => {
           const active = isActive(href);
+          const Icon = active ? Solid : Outline;
           return (
             <li key={href} className="flex-1">
               <Link
@@ -53,11 +69,9 @@ export default function BottomNav() {
                     'h-6 w-6 transition-transform duration-150',
                     active ? 'scale-105' : 'scale-100',
                   ].join(' ')}
-                  strokeWidth={active ? 2.5 : 2}
+                  aria-hidden="true"
                 />
-                <span className="text-[12px] leading-none">
-                  {label}
-                </span>
+                <span className="text-[12px] leading-none">{label}</span>
               </Link>
             </li>
           );
