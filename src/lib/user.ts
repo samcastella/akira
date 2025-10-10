@@ -191,27 +191,33 @@ export function profileFromDbRow(row: any): Partial<UserProfile> {
   };
 }
 
+/**
+ * Construye una fila de upsert **parcial-segura**:
+ * solo incluye columnas que vengan definidas en `p`
+ * para no pisar datos existentes con `null`.
+ */
 export function dbRowFromProfile(p: Partial<UserProfile>): any {
-  return {
-    user_id: p.userId ?? undefined,
-    username: p.username ?? null,
-    nombre: p.nombre ?? null,
-    apellido: p.apellido ?? null,
-    telefono: p.telefono ?? null,
-    sexo: p.sexo ?? null,
-    fecha_nacimiento: p.fechaNacimiento ?? null,
-    edad: p.edad ?? null,
-    estatura: parseNumOrNull(p.estatura),
-    peso: parseNumOrNull(p.peso),
-    actividad: p.actividad ?? null,
-    calorias_diarias: parseNumOrNull(p.caloriasDiarias),
-    // Nuevos mapeos
-    email: p.email ?? null,
-    instagram: p.instagram ?? null,
-    tiktok: p.tiktok ?? null,
-    // Guardamos siempre en 'avatar_url' para consistencia
-    avatar_url: p.foto ?? null,
-  };
+  const row: any = { user_id: p.userId ?? undefined };
+
+  if (p.username !== undefined) row.username = p.username ?? null;
+  if (p.nombre !== undefined) row.nombre = p.nombre ?? null;
+  if (p.apellido !== undefined) row.apellido = p.apellido ?? null;
+  if (p.telefono !== undefined) row.telefono = p.telefono ?? null;
+  if (p.sexo !== undefined) row.sexo = p.sexo ?? null;
+  if (p.fechaNacimiento !== undefined) row.fecha_nacimiento = p.fechaNacimiento ?? null;
+  if (p.edad !== undefined) row.edad = p.edad ?? null;
+  if (p.estatura !== undefined) row.estatura = parseNumOrNull(p.estatura);
+  if (p.peso !== undefined) row.peso = parseNumOrNull(p.peso);
+  if (p.actividad !== undefined) row.actividad = p.actividad ?? null;
+  if (p.caloriasDiarias !== undefined) row.calorias_diarias = parseNumOrNull(p.caloriasDiarias);
+
+  // Nuevos mapeos
+  if (p.email !== undefined) row.email = p.email ?? null;
+  if (p.instagram !== undefined) row.instagram = p.instagram ?? null;
+  if (p.tiktok !== undefined) row.tiktok = p.tiktok ?? null;
+  if (p.foto !== undefined) row.avatar_url = p.foto ?? null;
+
+  return row;
 }
 
 /* ===========================================================
@@ -296,7 +302,10 @@ export async function upsertProfile(partial: Partial<UserProfile>): Promise<User
     userId: uid,
   };
 
-  const row = dbRowFromProfile(normalized);
+  // Normaliza email/username/teléfono antes de mapear
+  const cleaned = sanitizeUser(normalized);
+
+  const row = dbRowFromProfile(cleaned);
 
   const { error } = await supabase.from('public_profiles').upsert(row, { onConflict: 'user_id' });
   if (error) {
