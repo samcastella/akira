@@ -121,10 +121,9 @@ function ProgramCard({
           draggable={false}
         />
 
-        {/* Overlay con gradiente + textos y botón dentro */}
+        {/* Overlay con gradiente + textos (con más margen al fondo) */}
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/10 via-black/30 to-black/60" />
-        {/* Reservamos espacio para el botón con pb-16 */}
-        <div className="absolute left-0 right-0 bottom-0 p-4 pb-16 z-10">
+        <div className="absolute left-0 right-0 bottom-0 p-4 pb-24 z-10">
           <div className="text-white">
             <div className="text-[12px] opacity-90">Duración: {days} días</div>
             <div className="mt-0.5 text-2xl sm:text-3xl font-black leading-tight tracking-[-0.02em]">
@@ -133,11 +132,13 @@ function ProgramCard({
           </div>
         </div>
 
-        {/* CTA pill dentro de la imagen */}
-        <div className="absolute left-4 bottom-4 z-20">
+        {/* CTA pill dentro de la imagen — anclada abajo derecha, con Play en círculo negro al final */}
+        <div className="absolute right-4 bottom-4 z-20">
           <div className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-semibold shadow transition active:scale-95">
-            <Play size={16} />
-            Ver programa
+            <span>Ver programa</span>
+            <span className="grid place-items-center rounded-full bg-black text-white w-6 h-6">
+              <Play size={14} />
+            </span>
           </div>
         </div>
       </div>
@@ -150,7 +151,7 @@ export default function HomePage() {
   return (
     <main className="pb-4">
       {/* Safe area top para evitar solape con la hora del iPhone */}
-      <div style={{ height: 'env(safe-area-inset-top)' }} />
+      <div className="safe-top" />
 
       {/* Top bar */}
       <HomeTopBar />
@@ -167,12 +168,7 @@ export default function HomePage() {
           img="/images/programs/controla-tecnologia.png"
         />
 
-        {/* Frase motivadora entre programas (negro, blanco) */}
-        <div className="bg-black px-4 py-6">
-          <p className="text-center text-[17px] italic font-semibold text-white">
-            “No cambies lo que haces; empieza a cambiar quién eres.”
-          </p>
-        </div>
+        {/* (Bloque de texto eliminado como pediste) */}
 
         <ProgramCard
           title="Club de las 5 am"
