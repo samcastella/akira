@@ -33,11 +33,13 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-title" content="Akira" />
         {/* Favicon */}
         <link rel="icon" href="/favicon.ico" />
+        {/* Preload del splash para aparición inmediata */}
+        <link rel="preload" as="image" href="/splash.jpg" />
       </head>
 
       <body
         className="antialiased"
-        data-orientation-lock="portrait"  // ⬅️ gancho CSS para mantener layout en vertical en navegador
+        data-orientation-lock="portrait"
         style={{
           ["--font-geist-sans" as any]:
             'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji"',
@@ -48,6 +50,40 @@ export default function RootLayout({
           color: "var(--foreground)",
         }}
       >
+        {/* Splash SSR instantáneo (se quita al 'load') */}
+        <div
+          id="__splash_ssr"
+          style={{
+            position: "fixed",
+            inset: 0 as unknown as number, // TSX quirk: permite "inset:0"
+            zIndex: 9999,
+            backgroundColor: "#000",
+            backgroundImage: "url(/splash.jpg)",
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            backgroundRepeat: "no-repeat",
+          }}
+        />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function(){
+                var remove = function(){
+                  var el = document.getElementById('__splash_ssr');
+                  if (!el) return;
+                  el.style.transition = 'opacity 400ms ease';
+                  el.style.opacity = '0';
+                  setTimeout(function(){
+                    if (el && el.parentNode) el.parentNode.removeChild(el);
+                  }, 420);
+                };
+                if (document.readyState === 'complete') { remove(); }
+                else window.addEventListener('load', remove, { once: true });
+              })();
+            `,
+          }}
+        />
+
         {/* ⬇️ Inyecta window.__PROGRAMS antes de hidratar el cliente */}
         <ProgramsBootstrap />
 

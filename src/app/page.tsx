@@ -121,26 +121,27 @@ function ProgramCard({
           draggable={false}
         />
 
-        {/* Overlay con gradiente + textos (más margen al fondo) */}
+        {/* Overlay con gradiente */}
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/10 via-black/30 to-black/60" />
-        {/* Reservamos más espacio abajo para el botón: pb-28 */}
-        <div className="absolute left-0 right-0 bottom-0 p-4 pb-28 z-10">
+
+        {/* Zona inferior con duración, título y CTA todo junto */}
+        <div className="absolute inset-x-0 bottom-0 p-4 z-10">
           <div className="text-white">
             <div className="text-[12px] opacity-90">Duración: {days} días</div>
             <div className="mt-0.5 text-2xl sm:text-3xl font-black leading-tight tracking-[-0.02em]">
               {title}
             </div>
-          </div>
-        </div>
 
-        {/* CTA: debajo del título/duración, dentro de la imagen (alineado izquierda) */}
-        <div className="absolute left-4 bottom-4 z-20">
-          <div className="inline-flex items-center gap-3 rounded-full bg-white px-4 py-2 text-sm font-semibold shadow transition active:scale-95">
-            <span>Ver programa</span>
-            {/* Triángulo solo (relleno negro), sin círculo */}
-            <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M8 5v14l11-7z" fill="black" />
-            </svg>
+            {/* CTA debajo del título, agrupada */}
+            <div className="mt-3">
+              <span className="inline-flex items-center gap-3 rounded-full bg-white px-4 py-2 text-sm font-semibold shadow transition active:scale-95">
+                <span>Ver programa</span>
+                {/* Triángulo negro (sin círculo) alineado a la derecha del texto */}
+                <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M8 5v14l11-7z" fill="black" />
+                </svg>
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -148,44 +149,32 @@ function ProgramCard({
   );
 }
 
-/* ========= Splash en carga (muestra desde el primer render) ========= */
+/* ========= Splash en carga (React) =========
+   Nota: este splash ya no es responsable de "instante 0".
+   Lo dejamos como refuerzo por si la página tarda en hidratar/renderizar partes. */
 function SplashOverlay() {
   const [show, setShow] = useState(true);
-  const [imgReady, setImgReady] = useState(false);
-
-  // Pre-carga explícita de la imagen para evitar parpadeo
-  useEffect(() => {
-    const img = new Image();
-    img.src = '/splash.jpg';
-    if (img.complete) setImgReady(true);
-    else img.onload = () => setImgReady(true);
-  }, []);
-
   useEffect(() => {
     const done = () => setShow(false);
     if (document.readyState === 'complete') {
-      // Página ya cargada: ocultar en el próximo frame (mantiene “flash” cero)
       const t = requestAnimationFrame(() => done());
       return () => cancelAnimationFrame(t);
     }
     window.addEventListener('load', done);
-    // Fallback: oculta aunque no dispare 'load' por cualquier bloqueo
     const fallback = setTimeout(done, 2000);
     return () => {
       window.removeEventListener('load', done);
       clearTimeout(fallback);
     };
   }, []);
-
   return (
     <div
-      className={`fixed inset-0 z-[80] transition-opacity duration-400 ${
+      className={`fixed inset-0 z-[60] transition-opacity duration-400 ${
         show ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
       }`}
       style={{
-        // Fondo negro inmediato para no ver blanco mientras llega la imagen
         backgroundColor: '#000',
-        backgroundImage: imgReady ? 'url(/splash.jpg)' : 'none',
+        backgroundImage: 'url(/splash.jpg)',
         backgroundSize: 'cover',
         backgroundPosition: 'center',
         backgroundRepeat: 'no-repeat',
@@ -198,7 +187,7 @@ function SplashOverlay() {
 export default function HomePage() {
   return (
     <main className="pb-4">
-      {/* Splash durante la carga (aparece desde el primer render) */}
+      {/* Splash de refuerzo durante carga (el instantáneo lo ponemos en layout) */}
       <SplashOverlay />
 
       {/* Safe area top para evitar solape con la hora del iPhone */}
@@ -210,7 +199,7 @@ export default function HomePage() {
       {/* Hero (vídeo + bloque blanco) */}
       <SanSilvestreHero />
 
-      {/* Programas (todo dentro de la imagen) */}
+      {/* Programas */}
       <section className="mt-0 space-y-0">
         <ProgramCard
           title="Aprende a controlar la tecnología"
