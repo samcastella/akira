@@ -33,7 +33,7 @@ function HomeTopBar() {
             <img
               src={avatarUrl}
               alt="Avatar"
-              className="h-full w-full object-cover object-center"
+              className="block h-full w-full object-cover object-center"
               onError={() => setImgOk(false)}
               referrerPolicy="no-referrer"
             />
@@ -58,13 +58,13 @@ function HomeTopBar() {
   );
 }
 
-/* ========= Hero vídeo San Silvestre (full-bleed 4:5, sin bordes redondeados) ========= */
+/* ========= Hero vídeo San Silvestre (full-bleed, tamaño nativo del vídeo) ========= */
 function SanSilvestreHero() {
   return (
     <section className="mt-3 -mx-4">
-      <div className="relative w-full aspect-[4/5]">
+      <div className="relative w-full">
         <video
-          className="h-full w-full object-cover object-center"
+          className="block w-full h-auto object-cover object-center"
           src="/videos/san-silvestre.mp4"
           poster="/images/programs/san-silvestre.png"
           muted
@@ -73,7 +73,7 @@ function SanSilvestreHero() {
           loop
           preload="metadata"
         />
-        {/* Gradiente estilo Nike + título potente */}
+        {/* Gradiente + título */}
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/10 via-black/30 to-black/60" />
         <div className="absolute inset-x-0 bottom-0 p-4">
           <div className="text-white">
@@ -98,7 +98,7 @@ function SanSilvestreHero() {
   );
 }
 
-/* ========= Tarjeta de programa estilo Nike (4:5, full-bleed, sin bordes) ========= */
+/* ========= Tarjeta de programa (4:5, full-bleed, sin bordes) ========= */
 function ProgramCard({
   title,
   days,
@@ -116,11 +116,15 @@ function ProgramCard({
     <Link href={href} className="block">
       <div className="relative w-full aspect-[4/5]">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={img} alt={title} className="h-full w-full object-cover object-center" />
+        <img
+          src={img}
+          alt={title}
+          className="block h-full w-full object-cover object-center"
+        />
 
-        {/* overlay + título grande */}
+        {/* overlay + título (reservamos espacio para el botón con pb-14) */}
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/10 via-black/30 to-black/60" />
-        <div className="absolute left-0 right-0 bottom-0 p-4">
+        <div className="absolute left-0 right-0 bottom-0 p-4 pb-14">
           <div className="text-white">
             <div className="text-xl font-black leading-tight tracking-tight">
               {title}
@@ -129,7 +133,7 @@ function ProgramCard({
           </div>
         </div>
 
-        {/* CTA pill blanco */}
+        {/* CTA pill blanco (no se solapa gracias al pb-14 anterior) */}
         <div className="absolute left-4 bottom-4">
           <div className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-semibold shadow">
             {cta}
@@ -147,10 +151,17 @@ export default function HomePage() {
       {/* Top bar */}
       <HomeTopBar />
 
-      {/* Hero 4:5 */}
+      {/* Hero (vídeo a tamaño natural) */}
       <SanSilvestreHero />
 
-      {/* Programas destacados: full-bleed sin márgenes entre tarjetas */}
+      {/* Frase motivadora */}
+      <section className="-mx-4 bg-white px-4 py-5">
+        <p className="text-center text-[17px] italic font-semibold">
+          “No cambies lo que haces; cambia en quién te conviertes.”
+        </p>
+      </section>
+
+      {/* Programas destacados: full-bleed pegados a los lados */}
       <section className="mt-0 -mx-4 space-y-0">
         <ProgramCard
           title="Aprende a controlar la tecnología"
@@ -169,7 +180,7 @@ export default function HomePage() {
         />
       </section>
 
-      {/* CTA final adaptada a programas de hábitos */}
+      {/* CTA final */}
       <section className="mt-6 px-4 text-center">
         <h2 className="text-xl font-extrabold leading-tight">
           ¿Listo para diseñar tu mejor versión?
