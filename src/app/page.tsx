@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { Settings, Play } from 'lucide-react';
 import { useUserProfile } from '@/lib/user';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 /* ========= Helpers saludo/avatar ========= */
 function useDisplayUser() {
@@ -121,7 +121,7 @@ function ProgramCard({
           draggable={false}
         />
 
-        {/* Overlay con gradiente + textos (con más margen al fondo) */}
+        {/* Overlay con gradiente + textos (más margen al fondo) */}
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/10 via-black/30 to-black/60" />
         <div className="absolute left-0 right-0 bottom-0 p-4 pb-24 z-10">
           <div className="text-white">
@@ -132,7 +132,7 @@ function ProgramCard({
           </div>
         </div>
 
-        {/* CTA pill dentro de la imagen — anclada abajo derecha, con Play en círculo negro al final */}
+        {/* CTA pill dentro de la imagen — abajo derecha, con Play en círculo negro al final */}
         <div className="absolute right-4 bottom-4 z-20">
           <div className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-semibold shadow transition active:scale-95">
             <span>Ver programa</span>
@@ -146,10 +146,48 @@ function ProgramCard({
   );
 }
 
+/* ========= Splash en carga ========= */
+function SplashOverlay() {
+  const [show, setShow] = useState(true);
+
+  useEffect(() => {
+    const done = () => setShow(false);
+    if (document.readyState === 'complete') {
+      // ya cargado → oculta tras un pequeño delay para que se vea el fade
+      const t = setTimeout(done, 100);
+      return () => clearTimeout(t);
+    }
+    window.addEventListener('load', done);
+    // Fallback por si algún recurso tarda: oculta a los 1200ms
+    const fallback = setTimeout(done, 1200);
+    return () => {
+      window.removeEventListener('load', done);
+      clearTimeout(fallback);
+    };
+  }, []);
+
+  return (
+    <div
+      className={`fixed inset-0 z-[80] transition-opacity duration-500 ${
+        show ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+      }`}
+      style={{
+        backgroundImage: 'url(/splash.jpg)',
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
+      }}
+    />
+  );
+}
+
 /* ========= Página ========= */
 export default function HomePage() {
   return (
     <main className="pb-4">
+      {/* Splash durante la carga */}
+      <SplashOverlay />
+
       {/* Safe area top para evitar solape con la hora del iPhone */}
       <div className="safe-top" />
 
@@ -167,9 +205,6 @@ export default function HomePage() {
           href="/programas/detox-tecnologico"
           img="/images/programs/controla-tecnologia.png"
         />
-
-        {/* (Bloque de texto eliminado como pediste) */}
-
         <ProgramCard
           title="Club de las 5 am"
           days={30}
