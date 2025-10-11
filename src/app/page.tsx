@@ -1,4 +1,3 @@
-// src/app/page.tsx
 'use client';
 
 import Link from 'next/link';
@@ -98,7 +97,7 @@ function SanSilvestreHero() {
   );
 }
 
-/* ========= Tarjeta de programa (1:1, imagen + bloque info blanco debajo) ========= */
+/* ========= Tarjeta de programa (todo dentro de la imagen, 1:1) ========= */
 function ProgramCard({
   title,
   days,
@@ -111,73 +110,70 @@ function ProgramCard({
   img: string;
 }) {
   return (
-    <div className="w-full">
-      <Link href={href} className="block">
+    <Link href={href} className="block">
+      <div className="relative w-full aspect-square">
         {/* Imagen cuadrada full-bleed */}
-        <div className="relative w-full aspect-square">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={img}
-            alt={title}
-            className="block h-full w-full object-cover object-center"
-            draggable={false}
-          />
-        </div>
-      </Link>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={img}
+          alt={title}
+          className="block h-full w-full object-cover object-center"
+          draggable={false}
+        />
 
-      {/* Bloque informativo blanco */}
-      <div className="bg-white px-4 py-3 flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-[12px] text-neutral-600">
-            Duración: {days} días
-          </div>
-          <div className="text-2xl sm:text-3xl font-black leading-tight tracking-[-0.02em]">
-            {title}
+        {/* Overlay con gradiente + textos y botón dentro */}
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/10 via-black/30 to-black/60" />
+        {/* Reservamos espacio para el botón con pb-16 */}
+        <div className="absolute left-0 right-0 bottom-0 p-4 pb-16 z-10">
+          <div className="text-white">
+            <div className="text-[12px] opacity-90">Duración: {days} días</div>
+            <div className="mt-0.5 text-2xl sm:text-3xl font-black leading-tight tracking-[-0.02em]">
+              {title}
+            </div>
           </div>
         </div>
 
-        <Link
-          href={href}
-          className="shrink-0 inline-flex items-center gap-2 rounded-full bg-black text-white px-4 py-2 text-sm font-semibold transition active:scale-95 hover:opacity-90"
-        >
-          <Play size={16} />
-          Ver programa
-        </Link>
+        {/* CTA pill dentro de la imagen */}
+        <div className="absolute left-4 bottom-4 z-20">
+          <div className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-semibold shadow transition active:scale-95">
+            <Play size={16} />
+            Ver programa
+          </div>
+        </div>
       </div>
-    </div>
+    </Link>
   );
 }
 
 /* ========= Página ========= */
 export default function HomePage() {
   return (
-    // Full-bleed real: sin "container", sin padding lateral
     <main className="pb-4">
+      {/* Safe area top para evitar solape con la hora del iPhone */}
+      <div style={{ height: 'env(safe-area-inset-top)' }} />
+
       {/* Top bar */}
       <HomeTopBar />
 
       {/* Hero (vídeo + bloque blanco) */}
       <SanSilvestreHero />
 
-      {/* Programa 1 */}
-      <section className="mt-0">
+      {/* Programas (todo dentro de la imagen) */}
+      <section className="mt-0 space-y-0">
         <ProgramCard
           title="Aprende a controlar la tecnología"
           days={30}
           href="/programas/detox-tecnologico"
           img="/images/programs/controla-tecnologia.png"
         />
-      </section>
 
-      {/* Frase motivadora entre programas (negro, blanco) */}
-      <section className="bg-black px-4 py-6">
-        <p className="text-center text-[17px] italic font-semibold text-white">
-          “No cambies lo que haces; empieza a cambiar quién eres.”
-        </p>
-      </section>
+        {/* Frase motivadora entre programas (negro, blanco) */}
+        <div className="bg-black px-4 py-6">
+          <p className="text-center text-[17px] italic font-semibold text-white">
+            “No cambies lo que haces; empieza a cambiar quién eres.”
+          </p>
+        </div>
 
-      {/* Programa 2 */}
-      <section className="mt-0">
         <ProgramCard
           title="Club de las 5 am"
           days={30}
