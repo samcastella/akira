@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Settings, Play } from 'lucide-react';
+import { Settings } from 'lucide-react';
 import { useUserProfile } from '@/lib/user';
 import { useEffect, useState } from 'react';
 
@@ -123,7 +123,8 @@ function ProgramCard({
 
         {/* Overlay con gradiente + textos (más margen al fondo) */}
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/10 via-black/30 to-black/60" />
-        <div className="absolute left-0 right-0 bottom-0 p-4 pb-24 z-10">
+        {/* Reservamos más espacio abajo para el botón: pb-28 */}
+        <div className="absolute left-0 right-0 bottom-0 p-4 pb-28 z-10">
           <div className="text-white">
             <div className="text-[12px] opacity-90">Duración: {days} días</div>
             <div className="mt-0.5 text-2xl sm:text-3xl font-black leading-tight tracking-[-0.02em]">
@@ -132,13 +133,14 @@ function ProgramCard({
           </div>
         </div>
 
-        {/* CTA pill dentro de la imagen — abajo derecha, con Play en círculo negro al final */}
-        <div className="absolute right-4 bottom-4 z-20">
-          <div className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-semibold shadow transition active:scale-95">
+        {/* CTA: debajo del título/duración, dentro de la imagen (alineado izquierda) */}
+        <div className="absolute left-4 bottom-4 z-20">
+          <div className="inline-flex items-center gap-3 rounded-full bg-white px-4 py-2 text-sm font-semibold shadow transition active:scale-95">
             <span>Ver programa</span>
-            <span className="grid place-items-center rounded-full bg-black text-white w-6 h-6">
-              <Play size={14} />
-            </span>
+            {/* Triángulo solo (relleno negro), sin círculo */}
+            <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M8 5v14l11-7z" fill="black" />
+            </svg>
           </div>
         </div>
       </div>
@@ -146,20 +148,29 @@ function ProgramCard({
   );
 }
 
-/* ========= Splash en carga ========= */
+/* ========= Splash en carga (muestra desde el primer render) ========= */
 function SplashOverlay() {
   const [show, setShow] = useState(true);
+  const [imgReady, setImgReady] = useState(false);
+
+  // Pre-carga explícita de la imagen para evitar parpadeo
+  useEffect(() => {
+    const img = new Image();
+    img.src = '/splash.jpg';
+    if (img.complete) setImgReady(true);
+    else img.onload = () => setImgReady(true);
+  }, []);
 
   useEffect(() => {
     const done = () => setShow(false);
     if (document.readyState === 'complete') {
-      // ya cargado → oculta tras un pequeño delay para que se vea el fade
-      const t = setTimeout(done, 100);
-      return () => clearTimeout(t);
+      // Página ya cargada: ocultar en el próximo frame (mantiene “flash” cero)
+      const t = requestAnimationFrame(() => done());
+      return () => cancelAnimationFrame(t);
     }
     window.addEventListener('load', done);
-    // Fallback por si algún recurso tarda: oculta a los 1200ms
-    const fallback = setTimeout(done, 1200);
+    // Fallback: oculta aunque no dispare 'load' por cualquier bloqueo
+    const fallback = setTimeout(done, 2000);
     return () => {
       window.removeEventListener('load', done);
       clearTimeout(fallback);
@@ -168,11 +179,13 @@ function SplashOverlay() {
 
   return (
     <div
-      className={`fixed inset-0 z-[80] transition-opacity duration-500 ${
+      className={`fixed inset-0 z-[80] transition-opacity duration-400 ${
         show ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
       }`}
       style={{
-        backgroundImage: 'url(/splash.jpg)',
+        // Fondo negro inmediato para no ver blanco mientras llega la imagen
+        backgroundColor: '#000',
+        backgroundImage: imgReady ? 'url(/splash.jpg)' : 'none',
         backgroundSize: 'cover',
         backgroundPosition: 'center',
         backgroundRepeat: 'no-repeat',
@@ -185,7 +198,7 @@ function SplashOverlay() {
 export default function HomePage() {
   return (
     <main className="pb-4">
-      {/* Splash durante la carga */}
+      {/* Splash durante la carga (aparece desde el primer render) */}
       <SplashOverlay />
 
       {/* Safe area top para evitar solape con la hora del iPhone */}
