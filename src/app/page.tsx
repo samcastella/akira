@@ -1,3 +1,4 @@
+// src/app/page.tsx
 'use client';
 
 import Link from 'next/link';
@@ -15,7 +16,6 @@ function useDisplayUser() {
 
   const displayName = name ? name : 'usuari@';
   const avatarUrl = user?.foto || undefined;
-
   return { displayName, avatarUrl };
 }
 
@@ -27,14 +27,16 @@ function HomeTopBar() {
   return (
     <div className="h-12 bg-white flex items-center justify-between px-4">
       <div className="flex items-center gap-3">
-        <div className="h-9 w-9 rounded-full overflow-hidden bg-neutral-100">
+        {/* Avatar perfectamente circular y cubierto */}
+        <div className="h-9 w-9 shrink-0 rounded-full overflow-hidden bg-neutral-100 aspect-square [clip-path:circle()]">
           {avatarUrl && imgOk ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={avatarUrl}
               alt="Avatar"
-              className="block h-full w-full object-cover object-center"
+              className="block h-full w-full object-cover object-center align-middle"
               onError={() => setImgOk(false)}
+              draggable={false}
               referrerPolicy="no-referrer"
             />
           ) : (
@@ -43,7 +45,6 @@ function HomeTopBar() {
             </div>
           )}
         </div>
-        {/* sin coma después de Hola */}
         <span className="text-sm font-medium">Hola {displayName}</span>
       </div>
 
@@ -58,10 +59,10 @@ function HomeTopBar() {
   );
 }
 
-/* ========= Hero vídeo San Silvestre (full-bleed, tamaño nativo del vídeo) ========= */
+/* ========= Hero vídeo San Silvestre (full-bleed, alto nativo) ========= */
 function SanSilvestreHero() {
   return (
-    <section className="mt-3 -mx-4">
+    <section className="mt-3">
       <div className="relative w-full">
         <video
           className="block w-full h-auto object-cover object-center"
@@ -73,11 +74,11 @@ function SanSilvestreHero() {
           loop
           preload="metadata"
         />
-        {/* Gradiente + título */}
+        {/* Overlay + título (sin solaparse con el botón) */}
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/10 via-black/30 to-black/60" />
-        <div className="absolute inset-x-0 bottom-0 p-4">
+        <div className="absolute inset-x-0 bottom-0 p-4 pb-20 z-10">
           <div className="text-white">
-            <h1 className="text-2xl font-black leading-tight tracking-tight">
+            <h1 className="text-3xl font-black leading-tight tracking-tight">
               Corre 10 km en la San Silvestre
             </h1>
             <p className="mt-1 text-sm/5 opacity-90">Duración: 60 días</p>
@@ -86,7 +87,7 @@ function SanSilvestreHero() {
         {/* Botón pill blanco */}
         <Link
           href="/programas/sansilvestre"
-          className="absolute right-4 bottom-4 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-semibold shadow"
+          className="absolute right-4 bottom-4 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-semibold shadow z-20"
         >
           <span>Ver programa</span>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -98,45 +99,44 @@ function SanSilvestreHero() {
   );
 }
 
-/* ========= Tarjeta de programa (4:5, full-bleed, sin bordes) ========= */
+/* ========= Tarjeta de programa (1:1, full-bleed, sin solapes) ========= */
 function ProgramCard({
   title,
   days,
   href,
   img,
-  cta = 'Ver programa',
 }: {
   title: string;
   days: number;
   href: string;
   img: string;
-  cta?: string;
 }) {
   return (
     <Link href={href} className="block">
-      <div className="relative w-full aspect-[4/5]">
+      <div className="relative w-full aspect-square">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={img}
           alt={title}
           className="block h-full w-full object-cover object-center"
+          draggable={false}
         />
 
-        {/* overlay + título (reservamos espacio para el botón con pb-14) */}
+        {/* Overlay + título grande (reservamos espacio para el botón) */}
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/10 via-black/30 to-black/60" />
-        <div className="absolute left-0 right-0 bottom-0 p-4 pb-14">
+        <div className="absolute left-0 right-0 bottom-0 p-4 pb-20 z-10">
           <div className="text-white">
-            <div className="text-xl font-black leading-tight tracking-tight">
+            <div className="text-2xl font-black leading-tight tracking-tight">
               {title}
             </div>
             <div className="mt-1 text-[13px] opacity-90">Duración: {days} días</div>
           </div>
         </div>
 
-        {/* CTA pill blanco (no se solapa gracias al pb-14 anterior) */}
-        <div className="absolute left-4 bottom-4">
+        {/* CTA pill blanco */}
+        <div className="absolute left-4 bottom-4 z-20">
           <div className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-semibold shadow">
-            {cta}
+            Ver programa
           </div>
         </div>
       </div>
@@ -147,36 +147,34 @@ function ProgramCard({
 /* ========= Página ========= */
 export default function HomePage() {
   return (
-    <main className="container" style={{ paddingBottom: 16 }}>
+    // Full-bleed real: sin "container", sin padding lateral
+    <main className="pb-4">
       {/* Top bar */}
       <HomeTopBar />
 
       {/* Hero (vídeo a tamaño natural) */}
       <SanSilvestreHero />
 
-      {/* Frase motivadora */}
-      <section className="-mx-4 bg-white px-4 py-5">
-        <p className="text-center text-[17px] italic font-semibold">
+      {/* Frase motivadora full-bleed (negro, blanco) */}
+      <section className="bg-black px-4 py-6">
+        <p className="text-center text-[17px] italic font-semibold text-white">
           “No cambies lo que haces; cambia en quién te conviertes.”
         </p>
       </section>
 
       {/* Programas destacados: full-bleed pegados a los lados */}
-      <section className="mt-0 -mx-4 space-y-0">
+      <section className="space-y-0">
         <ProgramCard
           title="Aprende a controlar la tecnología"
           days={30}
           href="/programas/detox-tecnologico"
           img="/images/programs/controla-tecnologia.png"
-          cta="Empieza ahora"
         />
-
         <ProgramCard
           title="Club de las 5 am"
           days={30}
           href="/programas/club-5am"
           img="/meditation.jpg"
-          cta="Únete al club"
         />
       </section>
 

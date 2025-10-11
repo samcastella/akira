@@ -34,7 +34,7 @@ function canEnter(): boolean {
 
 export default function LayoutClient({
   children,
-  bottomNav, // ⬇️ se renderiza fijo abajo
+  bottomNav,
 }: {
   children: React.ReactNode;
   bottomNav: React.ReactNode;
@@ -209,7 +209,8 @@ export default function LayoutClient({
 
   useEffect(() => {
     if (!authReady || userOk === null || !bootSynced) return;
-    if (isAuthRoute) { setShowAuthModal(false); setShowRegistration(false); return; }
+    const isAuth = isAuthRoute;
+    if (isAuth) { setShowAuthModal(false); setShowRegistration(false); return; }
     if (!SUPA_READY) { setShowAuthModal(false); setShowRegistration(false); return; }
     if (userOk) { setShowAuthModal(false); setShowRegistration(false); return; }
     if (!hasSession) { setShowAuthModal(true); setShowRegistration(false); return; }
@@ -282,14 +283,15 @@ export default function LayoutClient({
 
       {/* App */}
       <div
-        className="bg-[#FAFAFA]"
+        className="bg-[#FAFAFA] overflow-x-hidden"
         style={{
           minHeight: '100svh',
           // Reserva espacio para el bottom-nav fijo (si está visible)
           paddingBottom: hideNav ? 0 : `calc(${NAV_HEIGHT}px + env(safe-area-inset-bottom, 0px))`,
         }}
       >
-        <div className="mx-auto w-full max-w-md">{children}</div>
+        {/* ⛔️ Sin contenedor ni max-width para full-bleed real */}
+        <div className="w-full">{children}</div>
       </div>
 
       {/* 🔻 Bottom nav fijo abajo */}

@@ -53,10 +53,12 @@ export default function RootLayout({
         <SupabaseSessionProvider>
           <LayoutClient bottomNav={<BottomNav />}>
             <main
-              className="app-main"
               id="app-main"
+              className="app-main px-0"
               // ⬇️ Reserva altura del bottom-nav + safe area inferior
               style={{
+                paddingLeft: 0,
+                paddingRight: 0,
                 paddingBottom: `calc(${NAV_HEIGHT}px + env(safe-area-inset-bottom, 0px))`,
               }}
             >
