@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Settings } from 'lucide-react';
+import { Settings, Play } from 'lucide-react';
 import { useUserProfile } from '@/lib/user';
 import { useState } from 'react';
 
@@ -50,7 +50,7 @@ function HomeTopBar() {
 
       <Link
         href="/mizona/perfil"
-        className="p-1 rounded hover:bg-black/5"
+        className="p-1 rounded hover:bg-black/5 transition"
         aria-label="Abrir perfil"
       >
         <Settings size={18} />
@@ -59,10 +59,11 @@ function HomeTopBar() {
   );
 }
 
-/* ========= Hero vídeo San Silvestre (full-bleed, alto nativo) ========= */
+/* ========= Hero vídeo (alto nativo) + bloque blanco inferior ========= */
 function SanSilvestreHero() {
   return (
     <section className="mt-3">
+      {/* Vídeo full width, alto nativo */}
       <div className="relative w-full">
         <video
           className="block w-full h-auto object-cover object-center"
@@ -74,32 +75,30 @@ function SanSilvestreHero() {
           loop
           preload="metadata"
         />
-        {/* Overlay + título (sin solaparse con el botón) */}
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/10 via-black/30 to-black/60" />
-        <div className="absolute inset-x-0 bottom-0 p-4 pb-20 z-10">
-          <div className="text-white">
-            <h1 className="text-3xl font-black leading-tight tracking-tight">
-              Corre 10 km en la San Silvestre
-            </h1>
-            <p className="mt-1 text-sm/5 opacity-90">Duración: 60 días</p>
+      </div>
+
+      {/* Bloque blanco con texto y botón a la derecha */}
+      <div className="w-full bg-white py-3 px-4 flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-[12px] uppercase tracking-wide text-neutral-600">
+            Reto de la comunidad
           </div>
+          <h1 className="text-2xl sm:text-3xl font-black leading-tight tracking-[-0.02em]">
+            Corre 10 km en la San Silvestre
+          </h1>
         </div>
-        {/* Botón pill blanco */}
         <Link
           href="/programas/sansilvestre"
-          className="absolute right-4 bottom-4 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-semibold shadow z-20"
+          className="shrink-0 inline-flex items-center rounded-full bg-black text-white px-4 py-2 text-sm font-semibold transition active:scale-95 hover:opacity-90"
         >
-          <span>Ver programa</span>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M8 5v14l11-7z" />
-          </svg>
+          Unirse
         </Link>
       </div>
     </section>
   );
 }
 
-/* ========= Tarjeta de programa (1:1, full-bleed, sin solapes) ========= */
+/* ========= Tarjeta de programa (1:1, imagen + bloque info blanco debajo) ========= */
 function ProgramCard({
   title,
   days,
@@ -112,35 +111,40 @@ function ProgramCard({
   img: string;
 }) {
   return (
-    <Link href={href} className="block">
-      <div className="relative w-full aspect-square">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={img}
-          alt={title}
-          className="block h-full w-full object-cover object-center"
-          draggable={false}
-        />
+    <div className="w-full">
+      <Link href={href} className="block">
+        {/* Imagen cuadrada full-bleed */}
+        <div className="relative w-full aspect-square">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={img}
+            alt={title}
+            className="block h-full w-full object-cover object-center"
+            draggable={false}
+          />
+        </div>
+      </Link>
 
-        {/* Overlay + título grande (reservamos espacio para el botón) */}
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/10 via-black/30 to-black/60" />
-        <div className="absolute left-0 right-0 bottom-0 p-4 pb-20 z-10">
-          <div className="text-white">
-            <div className="text-2xl font-black leading-tight tracking-tight">
-              {title}
-            </div>
-            <div className="mt-1 text-[13px] opacity-90">Duración: {days} días</div>
+      {/* Bloque informativo blanco */}
+      <div className="bg-white px-4 py-3 flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-[12px] text-neutral-600">
+            Duración: {days} días
+          </div>
+          <div className="text-2xl sm:text-3xl font-black leading-tight tracking-[-0.02em]">
+            {title}
           </div>
         </div>
 
-        {/* CTA pill blanco */}
-        <div className="absolute left-4 bottom-4 z-20">
-          <div className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-semibold shadow">
-            Ver programa
-          </div>
-        </div>
+        <Link
+          href={href}
+          className="shrink-0 inline-flex items-center gap-2 rounded-full bg-black text-white px-4 py-2 text-sm font-semibold transition active:scale-95 hover:opacity-90"
+        >
+          <Play size={16} />
+          Ver programa
+        </Link>
       </div>
-    </Link>
+    </div>
   );
 }
 
@@ -152,24 +156,28 @@ export default function HomePage() {
       {/* Top bar */}
       <HomeTopBar />
 
-      {/* Hero (vídeo a tamaño natural) */}
+      {/* Hero (vídeo + bloque blanco) */}
       <SanSilvestreHero />
 
-      {/* Frase motivadora full-bleed (negro, blanco) */}
-      <section className="bg-black px-4 py-6">
-        <p className="text-center text-[17px] italic font-semibold text-white">
-          “No cambies lo que haces; cambia en quién te conviertes.”
-        </p>
-      </section>
-
-      {/* Programas destacados: full-bleed pegados a los lados */}
-      <section className="space-y-0">
+      {/* Programa 1 */}
+      <section className="mt-0">
         <ProgramCard
           title="Aprende a controlar la tecnología"
           days={30}
           href="/programas/detox-tecnologico"
           img="/images/programs/controla-tecnologia.png"
         />
+      </section>
+
+      {/* Frase motivadora entre programas (negro, blanco) */}
+      <section className="bg-black px-4 py-6">
+        <p className="text-center text-[17px] italic font-semibold text-white">
+          “No cambies lo que haces; empieza a cambiar quién eres.”
+        </p>
+      </section>
+
+      {/* Programa 2 */}
+      <section className="mt-0">
         <ProgramCard
           title="Club de las 5 am"
           days={30}
@@ -180,14 +188,14 @@ export default function HomePage() {
 
       {/* CTA final */}
       <section className="mt-6 px-4 text-center">
-        <h2 className="text-xl font-extrabold leading-tight">
+        <h2 className="text-xl font-extrabold leading-tight tracking-[-0.01em]">
           ¿Listo para diseñar tu mejor versión?
           <br />
           Elige un programa y empieza hoy.
         </h2>
         <Link
           href="/programas"
-          className="mt-4 inline-block rounded-full px-6 py-3 text-sm font-semibold bg-black text-white"
+          className="mt-4 inline-block rounded-full px-6 py-3 text-sm font-semibold bg-black text-white transition active:scale-95 hover:opacity-90"
         >
           Ver todos los programas
         </Link>

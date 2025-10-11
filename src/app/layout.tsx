@@ -37,6 +37,7 @@ export default function RootLayout({
 
       <body
         className="antialiased"
+        data-orientation-lock="portrait"  // ⬅️ gancho CSS para mantener layout en vertical en navegador
         style={{
           ["--font-geist-sans" as any]:
             'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji"',

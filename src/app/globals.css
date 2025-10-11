@@ -353,3 +353,21 @@ html { scroll-behavior: smooth; }
 }
 body.modal-open { overflow: hidden; width: 100%; }
 input[type="password"] { -webkit-text-security: disc; }
+/* 👉 Mantener la UI en “modo retrato” también en landscape de navegador
+   sin rotar ni mostrar overlays (barras laterales automáticas). */
+
+@media (orientation: landscape) {
+  /* Evita saltos raros y scroll lateral fantasma */
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow-x: hidden;
+  }
+
+  /* El main mantiene proporción de retrato y se centra.
+     100svh = alto del viewport → lo usamos como “ancho” de la UI para simular portrait. */
+  #app-main {
+    margin: 0 auto;
+    max-width: 100svh;     /* ancho máximo igual a la altura del dispositivo */
+  }
+}
