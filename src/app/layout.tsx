@@ -1,4 +1,3 @@
-// app/layout.tsx
 import type { Metadata } from "next";
 import "./globals.css";
 import BottomNav from "@/components/BottomNav";
@@ -6,6 +5,7 @@ import LayoutClient from "./LayoutClient";
 import SupabaseSessionProvider from "@/components/providers/SupabaseSessionProvider";
 import ProgramsBootstrap from "./ProgramsBootstrap";
 import { NAV_HEIGHT } from "@/lib/constants";
+import SplashClient from "./SplashClient"; // ⬅️ desvanecer splash tras hidratar
 
 export const metadata: Metadata = {
   title: "Akira - Build Your Habits",
@@ -43,7 +43,7 @@ export default function RootLayout({
           color: "var(--foreground)",
         }}
       >
-        {/* Splash SSR (aparece al instante) */}
+        {/* Splash SSR: aparece al instante y existe durante la hidratación */}
         <div
           id="__splash_ssr"
           style={{
@@ -57,35 +57,10 @@ export default function RootLayout({
             backgroundRepeat: "no-repeat",
           }}
         />
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              (function(){
-                var remove = function(){
-                  var el = document.getElementById('__splash_ssr');
-                  if (!el) return;
-                  el.style.transition = 'opacity 400ms ease';
-                  el.style.opacity = '0';
-                  setTimeout(function(){
-                    if (el && el.parentNode) el.parentNode.removeChild(el);
-                  }, 420);
-                };
-                // 🔸 No esperamos a 'load' (que bloquea por el vídeo). Quitamos en DOMContentLoaded
-                if (document.readyState === 'interactive' || document.readyState === 'complete') {
-                  // siguiente frame para evitar flash
-                  requestAnimationFrame(remove);
-                } else {
-                  document.addEventListener('DOMContentLoaded', function(){ requestAnimationFrame(remove); }, { once:true });
-                }
-                // Respaldo por si algo falla
-                window.addEventListener('load', remove, { once:true });
-                setTimeout(remove, 2000);
-              })();
-            `,
-          }}
-        />
+        {/* Lo ocultamos justo DESPUÉS de hidratar */}
+        <SplashClient />
 
-        {/* Inyección de datos antes de hidratar */}
+        {/* Inyecta datos antes de hidratar el cliente */}
         <ProgramsBootstrap />
 
         <SupabaseSessionProvider>
