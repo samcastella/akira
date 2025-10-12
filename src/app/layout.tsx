@@ -18,22 +18,15 @@ export default function RootLayout({
   return (
     <html lang="es" suppressHydrationWarning>
       <head>
-        {/* Viewport + safe areas iOS */}
-        <meta
-          name="viewport"
-          content="width=device-width, initial-scale=1, viewport-fit=cover"
-        />
-        {/* PWA */}
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
         <link rel="manifest" href="/manifest.json" />
         <meta name="theme-color" content="#FFD54F" />
-        {/* iOS */}
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="Akira" />
-        {/* Favicon */}
         <link rel="icon" href="/favicon.ico" />
-        {/* Preload del splash para aparición inmediata */}
+        {/* Preload del splash para que pinte ASAP */}
         <link rel="preload" as="image" href="/splash.jpg" />
       </head>
 
@@ -50,12 +43,12 @@ export default function RootLayout({
           color: "var(--foreground)",
         }}
       >
-        {/* Splash SSR instantáneo (se quita al 'load') */}
+        {/* Splash SSR (aparece al instante) */}
         <div
           id="__splash_ssr"
           style={{
             position: "fixed",
-            inset: 0 as unknown as number, // TSX quirk: permite "inset:0"
+            inset: "0",
             zIndex: 9999,
             backgroundColor: "#000",
             backgroundImage: "url(/splash.jpg)",
@@ -77,14 +70,22 @@ export default function RootLayout({
                     if (el && el.parentNode) el.parentNode.removeChild(el);
                   }, 420);
                 };
-                if (document.readyState === 'complete') { remove(); }
-                else window.addEventListener('load', remove, { once: true });
+                // 🔸 No esperamos a 'load' (que bloquea por el vídeo). Quitamos en DOMContentLoaded
+                if (document.readyState === 'interactive' || document.readyState === 'complete') {
+                  // siguiente frame para evitar flash
+                  requestAnimationFrame(remove);
+                } else {
+                  document.addEventListener('DOMContentLoaded', function(){ requestAnimationFrame(remove); }, { once:true });
+                }
+                // Respaldo por si algo falla
+                window.addEventListener('load', remove, { once:true });
+                setTimeout(remove, 2000);
               })();
             `,
           }}
         />
 
-        {/* ⬇️ Inyecta window.__PROGRAMS antes de hidratar el cliente */}
+        {/* Inyección de datos antes de hidratar */}
         <ProgramsBootstrap />
 
         <SupabaseSessionProvider>
@@ -92,7 +93,6 @@ export default function RootLayout({
             <main
               id="app-main"
               className="app-main px-0"
-              // ⬇️ Reserva altura del bottom-nav + safe area inferior
               style={{
                 paddingLeft: 0,
                 paddingRight: 0,
