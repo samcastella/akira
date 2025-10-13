@@ -6,9 +6,19 @@ export default function SplashClient() {
   useEffect(() => {
     const el = document.getElementById('__splash_ssr');
     if (!el) return;
-    el.style.transition = 'opacity 320ms ease';
-    el.style.opacity = '0';
-    const t = setTimeout(() => el.remove(), 340);
+
+    try {
+      el.style.transition = 'opacity 320ms ease';
+      el.style.opacity = '0';
+    } catch {}
+
+    const t = setTimeout(() => {
+      try {
+        // solo si sigue en el DOM (evita NotFound con StrictMode)
+        if (el.isConnected) el.remove();
+      } catch {}
+    }, 340);
+
     return () => clearTimeout(t);
   }, []);
 

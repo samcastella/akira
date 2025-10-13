@@ -5,16 +5,14 @@ import LayoutClient from "./LayoutClient";
 import SupabaseSessionProvider from "@/components/providers/SupabaseSessionProvider";
 import ProgramsBootstrap from "./ProgramsBootstrap";
 import { NAV_HEIGHT } from "@/lib/constants";
-import SplashClient from "./SplashClient"; // ⬅️ desvanecer splash tras hidratar
+import SplashClient from "./SplashClient"; // ⬅️ fade del splash tras hidratar
 
 export const metadata: Metadata = {
   title: "Akira - Build Your Habits",
   description: "Mejora tu vida paso a paso construyendo hábitos duraderos.",
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{ children: React.ReactNode }>) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="es" suppressHydrationWarning>
       <head>
@@ -57,10 +55,10 @@ export default function RootLayout({
             backgroundRepeat: "no-repeat",
           }}
         />
-        {/* Lo ocultamos justo DESPUÉS de hidratar */}
+        {/* Ocultar splash justo DESPUÉS de hidratar: evita el #418 */}
         <SplashClient />
 
-        {/* Inyecta datos antes de hidratar el cliente */}
+        {/* Datos críticos antes de hidratar */}
         <ProgramsBootstrap />
 
         <SupabaseSessionProvider>

@@ -1,3 +1,4 @@
+// src/app/page.tsx
 'use client';
 
 import Link from 'next/link';
@@ -57,7 +58,9 @@ function HomeTopBar() {
   );
 }
 
-/* ========= Hero (igual) ========= */
+/* ========= Hero (vídeo + bloque blanco) ========= */
+const SAN_SILVESTRE_HREF = '/programas/san-silvestre'; // ajusta si tu slug es otro
+
 function SanSilvestreHero() {
   return (
     <section className="mt-3">
@@ -84,7 +87,7 @@ function SanSilvestreHero() {
           </h1>
         </div>
         <Link
-          href="/programas/sansilvestre"
+          href={SAN_SILVESTRE_HREF}
           className="shrink-0 inline-flex items-center rounded-full bg-black text-white px-4 py-2 text-sm font-semibold transition active:scale-95 hover:opacity-90"
         >
           Unirse
@@ -110,20 +113,28 @@ function ProgramCard({
     <Link href={href} className="block">
       <div className="relative w-full aspect-square">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={img} alt={title} className="block h-full w-full object-cover object-center" />
+        <img
+          src={img}
+          alt={title}
+          className="block h-full w-full object-cover object-center"
+          draggable={false}
+          loading="lazy"
+          decoding="async"
+          fetchPriority="low"
+        />
 
         {/* overlay */}
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/10 via-black/30 to-black/60" />
 
         {/* zona inferior: duración + título + CTA juntos */}
-        <div className="absolute inset-x-0 bottom-0 p-4 pb-6 z-10">
+        <div className="absolute inset-x-0 bottom-0 p-4 pb-8 z-10">
           <div className="text-white">
             <div className="text-[12px] opacity-90">Duración: {days} días</div>
             <div className="mt-0.5 text-2xl sm:text-3xl font-black leading-tight tracking-[-0.02em]">
               {title}
             </div>
 
-            {/* CTA agrupada (texto negro explícito) */}
+            {/* CTA agrupada */}
             <div className="mt-3">
               <span className="inline-flex items-center gap-3 rounded-full bg-white px-4 py-2 text-sm font-semibold shadow transition active:scale-95 text-black">
                 <span>Ver programa</span>
@@ -143,7 +154,9 @@ function ProgramCard({
 export default function HomePage() {
   return (
     <main className="pb-4">
-      <div className="safe-top" />
+      {/* safe area top para notch/clock */}
+      <div style={{ height: 'env(safe-area-inset-top, 0px)' }} />
+
       <HomeTopBar />
       <SanSilvestreHero />
 
