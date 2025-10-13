@@ -1,3 +1,4 @@
+// app/layout.tsx
 import type { Metadata } from "next";
 import "./globals.css";
 import BottomNav from "@/components/BottomNav";
@@ -5,14 +6,15 @@ import LayoutClient from "./LayoutClient";
 import SupabaseSessionProvider from "@/components/providers/SupabaseSessionProvider";
 import ProgramsBootstrap from "./ProgramsBootstrap";
 import { NAV_HEIGHT } from "@/lib/constants";
-import SplashClient from "./SplashClient"; // ⬅️ fade del splash tras hidratar
 
 export const metadata: Metadata = {
   title: "Akira - Build Your Habits",
   description: "Mejora tu vida paso a paso construyendo hábitos duraderos.",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="es" suppressHydrationWarning>
       <head>
@@ -41,12 +43,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           color: "var(--foreground)",
         }}
       >
-        {/* Splash SSR: aparece al instante y existe durante la hidratación */}
+        {/* Splash SSR: aparece desde el primer byte */}
         <div
           id="__splash_ssr"
           style={{
             position: "fixed",
-            inset: "0",
+            inset: 0,
             zIndex: 9999,
             backgroundColor: "#000",
             backgroundImage: "url(/splash.jpg)",
@@ -55,10 +57,45 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             backgroundRepeat: "no-repeat",
           }}
         />
-        {/* Ocultar splash justo DESPUÉS de hidratar: evita el #418 */}
-        <SplashClient />
+        <script
+          // Eliminador idempotente y seguro (evita NotFoundError)
+          dangerouslySetInnerHTML={{
+            __html: `
+(function(){
+  var removed = false;
+  function removeSplash(){
+    if (removed) return;
+    removed = true;
+    var el = document.getElementById('__splash_ssr');
+    if (!el) return;
+    try {
+      el.style.transition = 'opacity 400ms ease';
+      el.style.opacity = '0';
+      setTimeout(function(){
+        try { el.remove && el.remove(); } catch(_) {}
+      }, 420);
+    } catch(_) {}
+    window.removeEventListener('load', removeSplash);
+    document.removeEventListener('DOMContentLoaded', domReadyOnce);
+  }
+  function domReadyOnce(){
+    // siguiente frame para evitar flash
+    requestAnimationFrame(removeSplash);
+  }
+  if (document.readyState === 'interactive' || document.readyState === 'complete') {
+    requestAnimationFrame(removeSplash);
+  } else {
+    document.addEventListener('DOMContentLoaded', domReadyOnce, { once: true });
+  }
+  window.addEventListener('load', removeSplash, { once: true });
+  // Fallback por si algo raro impide los eventos
+  setTimeout(removeSplash, 2000);
+})();
+            `,
+          }}
+        />
 
-        {/* Datos críticos antes de hidratar */}
+        {/* Inyección de datos antes de hidratar */}
         <ProgramsBootstrap />
 
         <SupabaseSessionProvider>
