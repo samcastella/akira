@@ -10,11 +10,11 @@ export default function ComunidadHome() {
 
   return (
     <main className="space-y-8">
-      {/* ===== HERO video a ancho completo, sin márgenes ===== */}
-      <section className="-mx-4">
-        <div className="w-screen overflow-hidden">
+      {/* ===== HERO video a ancho del contenido, sin márgenes laterales ===== */}
+      <section className="-mx-4 overflow-x-hidden">
+        <div className="overflow-hidden">
           <video
-            className="w-screen h-[220px] sm:h-[300px] object-cover"
+            className="block w-full h-[220px] sm:h-[300px] object-cover"
             src={videoSrc}
             poster={videoPoster}
             muted
@@ -39,7 +39,7 @@ export default function ComunidadHome() {
             {inscritosMock} personas ya se han unido
           </div>
           <div className="mt-3">
-            <button className="btn">Unirse</button>
+            <Link href="/amigos/retos/unirse" className="btn">Unirse</Link>
           </div>
         </div>
       </section>
