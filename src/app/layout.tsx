@@ -12,9 +12,7 @@ export const metadata: Metadata = {
   description: "Mejora tu vida paso a paso construyendo hábitos duraderos.",
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{ children: React.ReactNode }>) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="es" suppressHydrationWarning>
       <head>
@@ -28,10 +26,37 @@ export default function RootLayout({
         <link rel="icon" href="/favicon.ico" />
         {/* Preload del splash para que pinte ASAP */}
         <link rel="preload" as="image" href="/splash.jpg" />
+        {/* Pequeño script: marca el body como 'hydrated' (no elimina nodos) */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+(function(){
+  var mark = function(){
+    try {
+      var b = document.body;
+      if (!b) return;
+      // Cambiamos clases: de 'preload' -> 'hydrated' (fade en CSS)
+      if (b.classList.contains('preload')) {
+        b.classList.remove('preload');
+      }
+      b.classList.add('hydrated');
+    } catch(_) {}
+  };
+  if (document.readyState === 'interactive' || document.readyState === 'complete') {
+    requestAnimationFrame(mark);
+  } else {
+    document.addEventListener('DOMContentLoaded', function(){ requestAnimationFrame(mark); }, { once:true });
+  }
+  // respaldo
+  window.addEventListener('load', mark, { once:true });
+})();
+            `,
+          }}
+        />
       </head>
 
       <body
-        className="antialiased"
+        className="antialiased preload"  /* 'preload' activa el overlay CSS */
         data-orientation-lock="portrait"
         style={{
           ["--font-geist-sans" as any]:
@@ -43,58 +68,6 @@ export default function RootLayout({
           color: "var(--foreground)",
         }}
       >
-        {/* Splash SSR: aparece desde el primer byte */}
-        <div
-          id="__splash_ssr"
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 9999,
-            backgroundColor: "#000",
-            backgroundImage: "url(/splash.jpg)",
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-            backgroundRepeat: "no-repeat",
-          }}
-        />
-        <script
-          // Eliminador idempotente y seguro (evita NotFoundError)
-          dangerouslySetInnerHTML={{
-            __html: `
-(function(){
-  var removed = false;
-  function removeSplash(){
-    if (removed) return;
-    removed = true;
-    var el = document.getElementById('__splash_ssr');
-    if (!el) return;
-    try {
-      el.style.transition = 'opacity 400ms ease';
-      el.style.opacity = '0';
-      setTimeout(function(){
-        try { el.remove && el.remove(); } catch(_) {}
-      }, 420);
-    } catch(_) {}
-    window.removeEventListener('load', removeSplash);
-    document.removeEventListener('DOMContentLoaded', domReadyOnce);
-  }
-  function domReadyOnce(){
-    // siguiente frame para evitar flash
-    requestAnimationFrame(removeSplash);
-  }
-  if (document.readyState === 'interactive' || document.readyState === 'complete') {
-    requestAnimationFrame(removeSplash);
-  } else {
-    document.addEventListener('DOMContentLoaded', domReadyOnce, { once: true });
-  }
-  window.addEventListener('load', removeSplash, { once: true });
-  // Fallback por si algo raro impide los eventos
-  setTimeout(removeSplash, 2000);
-})();
-            `,
-          }}
-        />
-
         {/* Inyección de datos antes de hidratar */}
         <ProgramsBootstrap />
 
