@@ -23,17 +23,17 @@ function useDisplayUser() {
 }
 
 export default function ComunidadHome() {
-  const inscritosMock = 284; // placeholder
-  const hasActiveChallenges = false; // conectar a supabase después
+  const inscritosMock = 284;                 // mock
+  const hasActiveChallenges = false;         // conectar a supabase después
   const videoSrc = '/videos/san-silvestre.mp4';
-  const videoPoster = '/images/programs/san-silvestre.png'; // usa la misma poster de Home si la tienes
+  const videoPoster = '/images/programs/san-silvestre.png'; // mismo poster que Home
 
   const { displayName, firstSurname, avatarUrl } = useDisplayUser();
   const [imgOk, setImgOk] = useState(true);
 
   return (
-    <main className="space-y-8 pb-4">
-      {/* ===== Hero (idéntico patrón a Home) ===== */}
+    <main className="pb-4">
+      {/* ===== Hero (mismo patrón que Home, sin márgenes y sin scroll) ===== */}
       <section className="mt-3">
         <div className="relative w-full">
           <video
@@ -70,68 +70,71 @@ export default function ComunidadHome() {
         </div>
       </section>
 
-      {/* ===== Tus retos activos ===== */}
-      <section aria-labelledby="titulo-retos">
-        <div className="flex items-baseline justify-between">
-          <h2 id="titulo-retos" className="text-xl font-semibold">
-            Tus retos activos
-          </h2>
-          <Link href="/amigos/retos/mis-retos" className="text-sm underline">
-            Ver todos
-          </Link>
-        </div>
-        <p className="text-xs muted mt-1">
-          {hasActiveChallenges
-            ? 'Accede a los retos en los que participas con amigos o la comunidad.'
-            : 'No tienes ningún reto actualmente activo'}
-        </p>
-      </section>
+      {/* ===== Contenido (ahora sí con padding lateral) ===== */}
+      <div className="px-4 space-y-8">
+        {/* ---- Tus retos activos ---- */}
+        <section aria-labelledby="titulo-retos">
+          <div className="flex items-baseline justify-between">
+            <h2 id="titulo-retos" className="text-xl font-semibold">
+              Tus retos activos
+            </h2>
+            <Link href="/amigos/retos/mis-retos" className="text-sm underline">
+              Ver todos
+            </Link>
+          </div>
+          <p className="text-xs muted mt-1">
+            {hasActiveChallenges
+              ? 'Accede a los retos en los que participas con amigos o la comunidad.'
+              : 'No tienes ningún reto actualmente activo'}
+          </p>
+        </section>
 
-      {/* ===== Ranking ===== */}
-      <section aria-labelledby="titulo-ranking" className="space-y-3">
-        <div className="flex items-baseline justify-between">
-          <h2 id="titulo-ranking" className="text-xl font-semibold">
-            Ranking
-          </h2>
-          <Link href="/amigos/ranking" className="text-sm underline">
-            Ver ranking
-          </Link>
-        </div>
-
-        {/* Tarjeta dorada con avatar, nombre y puesto */}
-        <div
-          className="rounded-2xl p-3 flex items-center justify-between shadow-sm"
-          style={{ background: 'linear-gradient(180deg, #F8E68A 0%, #F2D767 100%)' }}
-        >
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="h-10 w-10 shrink-0 rounded-full overflow-hidden bg-neutral-100 aspect-square [clip-path:circle()]">
-              {avatarUrl && imgOk ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={avatarUrl}
-                  alt="Avatar"
-                  className="block h-full w-full object-cover object-center align-middle"
-                  onError={() => setImgOk(false)}
-                  draggable={false}
-                  referrerPolicy="no-referrer"
-                />
-              ) : (
-                <div className="h-full w-full grid place-items-center text-[12px] text-neutral-600">
-                  🙂
-                </div>
-              )}
-            </div>
-            <div className="min-w-0">
-              <div className="text-sm font-semibold truncate">
-                {displayName} {firstSurname}
-              </div>
-              <div className="text-xs opacity-80 truncate">Mes actual</div>
-            </div>
+        {/* ---- Ranking ---- */}
+        <section aria-labelledby="titulo-ranking" className="space-y-3">
+          <div className="flex items-baseline justify-between">
+            <h2 id="titulo-ranking" className="text-xl font-semibold">
+              Ranking
+            </h2>
+            <Link href="/amigos/ranking" className="text-sm underline">
+              Ver ranking
+            </Link>
           </div>
 
-          <div className="text-base font-bold tabular-nums shrink-0">128º</div>
-        </div>
-      </section>
+          {/* Tarjeta dorada: bordes más redondeados + avatar como en Home */}
+          <div
+            className="rounded-[28px] p-3 pl-3 pr-4 flex items-center justify-between shadow-sm"
+            style={{ background: 'linear-gradient(180deg, #F8E68A 0%, #F2D767 100%)' }}
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="h-10 w-10 shrink-0 rounded-full overflow-hidden bg-neutral-100 aspect-square [clip-path:circle()]">
+                {avatarUrl && imgOk ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={avatarUrl}
+                    alt="Avatar"
+                    className="block h-full w-full object-cover object-center align-middle"
+                    onError={() => setImgOk(false)}
+                    draggable={false}
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <div className="h-full w-full grid place-items-center text-[12px] text-neutral-600">
+                    🙂
+                  </div>
+                )}
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold truncate">
+                  {displayName} {firstSurname}
+                </div>
+                <div className="text-xs opacity-80 truncate">Mes actual</div>
+              </div>
+            </div>
+
+            <div className="text-base font-bold tabular-nums shrink-0">128º</div>
+          </div>
+        </section>
+      </div>
     </main>
   );
 }
