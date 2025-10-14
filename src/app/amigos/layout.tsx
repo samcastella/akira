@@ -14,12 +14,12 @@ const TABS = [
 export default function AmigosLayout({ children }: { children: React.ReactNode }) {
   return (
     <div>
-      {/* sticky arriba como en Programas, con subrayado minimalista */}
       <div className="sticky top-0 z-20 bg-white border-b">
         <SubHeaderTabs tabs={TABS} size="compact" />
       </div>
 
-      <div className="container mx-auto px-4 py-4">
+      {/* Sin container ni px-4 para permitir secciones a sangre */}
+      <div className="pb-4">
         {children}
       </div>
     </div>
