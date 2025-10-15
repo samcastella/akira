@@ -1,165 +1,194 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
+import { ChevronRight } from 'lucide-react';
 
-type Challenge = {
-  id: string;
-  title: string;
-  code: string;
-  start: string; // date
-  end: string;   // date
-};
+function genJoinCode(len = 6) {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let out = '';
+  for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  return out;
+}
+function toISODate(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 
-export default function ChallengeDetailPage() {
-  const params = useParams<{ id: string }>();
+export default function CrearRetoPage() {
   const router = useRouter();
-  const challengeId = params?.id;
 
-  const [challenge, setChallenge] = useState<Challenge | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'reto' | 'ranking'>('reto');
+  // === Auth robusto en cliente ===
+  const [uid, setUid] = useState<string | null>(null);
+  const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
-    if (!challengeId) return;
-    (async () => {
-      setLoading(true);
-      setErr(null);
-      const { data, error } = await supabase
-        .from('challenges')
-        .select('id,title,code,start,end')
-        .eq('id', challengeId)
-        .single();
-      if (error) {
-        setErr(error.message);
-      } else {
-        setChallenge(data as Challenge);
-      }
-      setLoading(false);
-    })();
-  }, [challengeId]);
+    let unsub: (() => void) | undefined;
 
-  function copyCode() {
-    if (!challenge?.code) return;
-    navigator.clipboard?.writeText(challenge.code);
+    (async () => {
+      const { data } = await supabase.auth.getUser();
+      setUid(data.user?.id ?? null);
+      setAuthReady(true);
+
+      const { data: sub } = supabase.auth.onAuthStateChange((_evt, session) => {
+        setUid(session?.user?.id ?? null);
+      });
+      unsub = () => sub.subscription.unsubscribe();
+    })();
+
+    return () => { if (unsub) unsub(); };
+  }, []);
+
+  const todayISO = useMemo(() => toISODate(new Date()), []);
+  const [title, setTitle] = useState('');
+  const [start, setStart] = useState(todayISO);
+  const [duration, setDuration] = useState(30);
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setErrorMsg(null);
+    if (!uid) return setErrorMsg('Debes iniciar sesión para crear un reto.');
+    if (!title.trim()) return setErrorMsg('Ponle un título al reto.');
+    if (duration < 1 || duration > 365) return setErrorMsg('Duración no válida (1–365 días).');
+
+    setSubmitting(true);
+    try {
+      // calcular end
+      const startDate = new Date(start + 'T00:00:00');
+      const endDate = new Date(startDate);
+      endDate.setDate(endDate.getDate() + Number(duration));
+      const endISO = toISODate(endDate);
+
+      // generar code único (reintentos si colisión)
+      let code = genJoinCode(6);
+      let createdId: string | null = null;
+
+      for (let attempt = 0; attempt < 6; attempt++) {
+        const { data, error } = await supabase
+          .from('challenges')
+          .insert([{ owner_id: uid, code, title: title.trim(), start, end: endISO, join_code: code }])
+          .select('id')
+          .single();
+
+        if (error) {
+          const msg = String(error.message || '');
+          if ((error as any).code === '23505' || msg.includes('duplicate key')) {
+            code = genJoinCode(7);
+            continue;
+          }
+          throw error;
+        }
+        createdId = data?.id ?? null;
+        break;
+      }
+
+      if (!createdId) throw new Error('No se pudo crear el reto (código ocupado). Prueba de nuevo.');
+
+      // añadir creador como miembro (sin SELECT implícito)
+      const { error: mErr } = await supabase
+        .from('challenge_members')
+        .insert([{ challenge_id: createdId, user_id: uid }]);
+      if (mErr) throw mErr;
+
+      router.push(`/amigos/retos/${createdId}`);
+    } catch (err: any) {
+      setErrorMsg(err?.message ?? 'Error al crear el reto.');
+    } finally {
+      setSubmitting(false);
+    }
   }
 
-  if (loading) {
+  // === UI de estado de auth ===
+  if (!authReady) {
     return (
-      <main className="container mx-auto px-4 py-6">
+      <main className="container mx-auto px-4 max-w-screen-sm py-6">
         <div className="animate-pulse h-6 w-40 rounded bg-black/10 mb-3" />
         <div className="animate-pulse h-4 w-60 rounded bg-black/10" />
       </main>
     );
   }
 
-  if (err || !challenge) {
+  if (!uid) {
     return (
-      <main className="container mx-auto px-4 py-6 space-y-3">
-        <h1 className="text-xl font-semibold">Reto no disponible</h1>
-        <p className="text-sm muted">
-          {err ?? 'No hemos podido encontrar este reto o no tienes permisos para verlo.'}
-        </p>
+      <main className="container mx-auto px-4 max-w-screen-sm py-6 space-y-3">
+        <h1 className="text-xl font-semibold">Necesitas iniciar sesión</h1>
+        <p className="text-sm muted">Identifícate para crear y gestionar tus retos.</p>
         <button
-          onClick={() => router.push('/amigos/retos/mis-retos')}
+          onClick={() => router.push('/login')}
           className="rounded-xl border px-4 py-2 hover:bg-black/5 transition"
           style={{ borderColor: 'var(--line)' }}
         >
-          Volver a mis retos
+          Ir a iniciar sesión
         </button>
       </main>
     );
   }
 
   return (
-    <main className="container mx-auto px-4 py-6 space-y-4">
-      {/* Header */}
-      <header className="space-y-1">
-        <h1 className="text-xl font-semibold">{challenge.title}</h1>
-        <p className="text-sm muted">
-          {challenge.start} → {challenge.end}
-        </p>
-
-        {/* Código para invitar */}
-        <div className="mt-3 flex items-center gap-2">
-          <div
-            className="rounded-xl border px-3 py-2 text-sm"
-            style={{ borderColor: 'var(--line)' }}
-          >
-            Código: <span className="font-mono font-medium">{challenge.code}</span>
-          </div>
-          <button
-            onClick={copyCode}
-            className="rounded-xl border px-3 py-2 text-sm hover:bg-black/5 transition"
-            style={{ borderColor: 'var(--line)' }}
-            title="Copiar código"
-          >
-            Copiar
-          </button>
-        </div>
+    <main className="container mx-auto px-4 max-w-screen-sm py-4">
+      <header className="mb-4">
+        <h1 className="text-xl font-semibold">Crear reto</h1>
+        <p className="text-sm muted mt-1">Define tu reto y comparte el código con tus amigos.</p>
       </header>
 
-      {/* Tabs */}
-      <nav
-        className="flex gap-2 border-b"
-        style={{ borderColor: 'var(--line)' }}
-      >
-        {(['reto','ranking'] as const).map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`px-3 py-2 text-sm rounded-t-lg border ${
-              activeTab === tab ? 'bg-black/5' : 'hover:bg-black/5'
-            }`}
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <div>
+          <label className="block text-sm mb-1">Título del reto</label>
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="w-full rounded-xl border px-3 py-2"
             style={{ borderColor: 'var(--line)' }}
-          >
-            {tab === 'reto' ? 'Reto' : 'Ranking'}
-          </button>
-        ))}
-      </nav>
+            placeholder="Reto 30 días corriendo"
+            required
+          />
+        </div>
 
-      {/* Contenido por tab */}
-      {activeTab === 'reto' ? (
-        <section className="space-y-3">
-          <div
-            className="rounded-2xl border p-4"
-            style={{ borderColor: 'var(--line)' }}
-          >
-            <h2 className="font-medium mb-1">Hoy</h2>
-            <p className="text-sm muted mb-3">
-              Aquí irá: subir foto del día y lista de validaciones pendientes de tus amigos.
-            </p>
-            <div className="flex gap-2">
-              <button
-                className="rounded-xl border px-3 py-2 text-sm hover:bg-black/5 transition"
-                style={{ borderColor: 'var(--line)' }}
-                onClick={() => alert('TODO: Subir foto')}
-              >
-                Subir foto del día
-              </button>
-              <button
-                className="rounded-xl border px-3 py-2 text-sm hover:bg-black/5 transition"
-                style={{ borderColor: 'var(--line)' }}
-                onClick={() => alert('TODO: Validar pendientes')}
-              >
-                Validar pendientes
-              </button>
-            </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm mb-1">Fecha de inicio</label>
+            <input
+              type="date"
+              value={start}
+              onChange={(e) => setStart(e.target.value)}
+              className="w-full rounded-xl border px-3 py-2"
+              style={{ borderColor: 'var(--line)' }}
+              required
+            />
           </div>
-        </section>
-      ) : (
-        <section
-          className="rounded-2xl border p-4"
+          <div>
+            <label className="block text-sm mb-1">Duración (días)</label>
+            <input
+              type="number"
+              min={1}
+              max={365}
+              value={duration}
+              onChange={(e) => setDuration(Number(e.target.value))}
+              className="w-full rounded-xl border px-3 py-2"
+              style={{ borderColor: 'var(--line)' }}
+              required
+            />
+          </div>
+        </div>
+
+        {errorMsg && <div className="text-sm text-red-600">{errorMsg}</div>}
+
+        <button
+          type="submit"
+          disabled={submitting}
+          className="w-full rounded-2xl border px-4 py-3 flex items-center justify-center gap-2 hover:bg-black/5 transition"
           style={{ borderColor: 'var(--line)' }}
         >
-          <h2 className="font-medium mb-1">Ranking</h2>
-          <p className="text-sm muted">
-            Aquí mostraremos la tabla de puntos (sumas de +5 por día válido).
-          </p>
-        </section>
-      )}
+          <span>{submitting ? 'Creando…' : 'Crear y continuar'}</span>
+          <ChevronRight className="h-5 w-5" />
+        </button>
+      </form>
     </main>
   );
 }
