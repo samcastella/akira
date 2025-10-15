@@ -70,7 +70,7 @@ export default function CrearRetoPage() {
 
       if (!createdId) throw new Error('No se pudo crear el reto (código ocupado). Prueba de nuevo.');
 
-      // añadir creador como miembro
+      // añadir creador como miembro (sin SELECT implícito)
       const { error: mErr } = await supabase
         .from('challenge_members')
         .insert([{ challenge_id: createdId, user_id: uid }]);
