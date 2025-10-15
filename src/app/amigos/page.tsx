@@ -22,7 +22,7 @@ function useDisplayUser() {
   return { displayName, firstSurname, avatarUrl };
 }
 
-// Banner de imagen reutilizable (16:9, bordes redondeados)
+// Banner 16:9 SIN bordes redondeados ni márgenes extras
 function ImageBanner({ src, alt }: { src: string; alt: string }) {
   return (
     <div className="relative w-full">
@@ -30,7 +30,7 @@ function ImageBanner({ src, alt }: { src: string; alt: string }) {
       <img
         src={src}
         alt={alt}
-        className="block w-full aspect-[16/9] object-cover rounded-2xl shadow-[0_1px_10px_rgba(0,0,0,0.05)]"
+        className="block w-full aspect-[16/9] object-cover"
         loading="lazy"
         decoding="async"
         draggable={false}
@@ -40,8 +40,8 @@ function ImageBanner({ src, alt }: { src: string; alt: string }) {
 }
 
 export default function ComunidadHome() {
-  const inscritosMock = 284;                 // mock
-  const hasActiveChallenges = false;         // conectar a supabase después
+  const inscritosMock = 284; // mock
+  const hasActiveChallenges = false; // conectar a supabase después
   const videoSrc = '/videos/san-silvestre.mp4';
   const videoPoster = '/images/programs/san-silvestre.png';
 
@@ -50,7 +50,7 @@ export default function ComunidadHome() {
 
   return (
     <main className="pb-4">
-      {/* ===== Hero (mismo patrón que Home, sin márgenes ni scroll) ===== */}
+      {/* ===== Hero (idéntico a Home) ===== */}
       <section className="mt-0">
         <div className="relative w-full">
           <video
@@ -87,12 +87,12 @@ export default function ComunidadHome() {
         </div>
       </section>
 
-      {/* ===== Contenido (padding lateral) ===== */}
+      {/* ===== Contenido ===== */}
       <div className="px-4 space-y-8">
-        {/* --- Banner IDEA 2: streaks / rachas compartidas --- */}
+        {/* --- Banner 1: amigos en reto (amanecer) --- */}
         <ImageBanner
-          src="/images/community/group-streak.jpg"
-          alt="Varios móviles mostrando rachas de hábitos completadas"
+          src="/images/community/friends-challenge.jpg"
+          alt="Amigos preparando un reto de hábitos juntos"
         />
 
         {/* ---- Tus retos activos ---- */}
@@ -112,10 +112,10 @@ export default function ComunidadHome() {
           </p>
         </section>
 
-        {/* --- Banner IDEA 1: reto social entre amigos --- */}
+        {/* --- Banner 2: rachas compartidas (streaks) --- */}
         <ImageBanner
-          src="/images/community/friends-challenge.jpg"
-          alt="Amigos preparando un reto de hábitos juntos"
+          src="/images/community/group-streak.jpg"
+          alt="Varios móviles mostrando rachas de hábitos completadas"
         />
 
         {/* ---- Ranking ---- */}
@@ -129,7 +129,7 @@ export default function ComunidadHome() {
             </Link>
           </div>
 
-          {/* Tarjeta dorada: bordes muy redondeados + avatar como en Home */}
+          {/* Tarjeta dorada */}
           <div
             className="rounded-[28px] p-3 pl-3 pr-4 flex items-center justify-between shadow-sm"
             style={{ background: 'linear-gradient(180deg, #F8E68A 0%, #F2D767 100%)' }}
