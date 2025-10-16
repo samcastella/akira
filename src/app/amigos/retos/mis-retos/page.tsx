@@ -1,13 +1,57 @@
+// src/app/amigos/retos/page.tsx  (o donde corresponda a “MisRetosPage”)
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { supabase } from '@/lib/supabaseClient';
 
-type ChallengeRow = { id: string; code: string; owner_id: string; title: string; start: string; end: string };
+/** Tipos base */
+type ChallengeRow = {
+  id: string;
+  code: string;
+  owner_id: string;
+  title: string;
+  start: string; // ISO
+  end: string;   // ISO
+  cover_url?: string | null; // si guardaste portada en metadata
+};
+
 type MemberIdRow = { challenge_id: string };
 type MemberRow = { challenge_id: string; user_id: string };
-type DayRow = { id: string; day: string; title: string };
+
+/** (Opcional) si existe una vista o función con puntuaciones/ranking */
+type ScoreRow = {
+  challenge_id: string;
+  user_id: string;
+  score: number;
+  rank_position: number;
+};
+
+/** =========================
+ *  Helpers UI
+ *  ========================= */
+function fmtDate(d: string) {
+  try {
+    return new Date(d).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
+  } catch {
+    return d;
+  }
+}
+
+/** Progreso simple por fechas (inspiración visual, sustituible por checks reales) */
+function progressByDates(startISO?: string, endISO?: string) {
+  if (!startISO || !endISO) return 0;
+  const now = Date.now();
+  const start = new Date(startISO).getTime();
+  const end = new Date(endISO).getTime();
+  if (isNaN(start) || isNaN(end) || end <= start) return 0;
+  const pct = ((now - start) / (end - start)) * 100;
+  return Math.max(0, Math.min(100, pct));
+}
+
+/** Color de fondo del bloque (puedes ajustar a tu paleta) */
+const BLOCK_BG = 'linear-gradient(135deg, #111 0%, #2a2a2a 100%)';
 
 export default function MisRetosPage() {
   const [userId, setUserId] = useState<string | undefined>(undefined);
@@ -22,38 +66,75 @@ export default function MisRetosPage() {
     return () => { ok = false; };
   }, []);
 
-  const [list, setList] = useState<(ChallengeRow & { members_count: number })[]>([]);
+  const [list, setList] = useState<
+    (ChallengeRow & {
+      members_count: number;
+      my_score?: number;
+      my_rank?: number;
+    })[]
+  >([]);
 
   useEffect(() => {
     if (!userId) { setList([]); return; }
     (async () => {
-      const { data: mems } = await supabase.from('challenge_members').select('challenge_id').eq('user_id', userId).returns<MemberIdRow[]>();
+      // 1) Retos en los que participo
+      const { data: mems, error: eMems } = await supabase
+        .from('challenge_members')
+        .select('challenge_id')
+        .eq('user_id', userId)
+        .returns<MemberIdRow[]>();
+      if (eMems) { console.error(eMems); setList([]); return; }
       const ids = (mems ?? []).map((m) => m.challenge_id);
       if (!ids.length) { setList([]); return; }
 
-      const { data: challenges } = await supabase
+      // 2) Datos de los retos (añadimos cover_url si existe en la tabla)
+      const { data: challenges, error: eCh } = await supabase
         .from('challenges')
-        .select('id, code, owner_id, title, start, end')
+        .select('id, code, owner_id, title, start, end, cover_url')
         .in('id', ids)
         .order('start', { ascending: false })
         .returns<ChallengeRow[]>();
+      if (eCh) { console.error(eCh); setList([]); return; }
 
-      const { data: members } = await supabase
+      // 3) Contar miembros
+      const { data: members, error: eMembers } = await supabase
         .from('challenge_members')
         .select('challenge_id, user_id')
         .in('challenge_id', ids)
         .returns<MemberRow[]>();
+      if (eMembers) { console.error(eMembers); }
 
       const counts: Record<string, number> = {};
       (members ?? []).forEach((m) => { counts[m.challenge_id] = (counts[m.challenge_id] ?? 0) + 1; });
 
-      setList((challenges ?? []).map((c) => ({ ...c, members_count: counts[c.id] ?? 1 })));
+      // 4) (Opcional) puntuación/ranking: intenta leer de una vista si existe
+      let scoreMap: Record<string, { score: number; rank: number }> = {};
+      try {
+        const { data: scores } = await supabase
+          .from('challenge_member_scores') // ⚠️ si no existe, se ignora
+          .select('challenge_id, user_id, score, rank_position')
+          .eq('user_id', userId)
+          .in('challenge_id', ids)
+          .returns<ScoreRow[]>();
+        (scores ?? []).forEach(s => {
+          scoreMap[s.challenge_id] = { score: s.score, rank: s.rank_position };
+        });
+      } catch (err) {
+        // vista no existe — seguimos sin romper
+      }
+
+      setList((challenges ?? []).map((c) => ({
+        ...c,
+        members_count: counts[c.id] ?? 1,
+        my_score: scoreMap[c.id]?.score,
+        my_rank: scoreMap[c.id]?.rank,
+      })));
     })();
   }, [userId]);
 
   if (!userId) {
     return (
-      <main className="text-sm space-y-3">
+      <main className="container mx-auto px-4 py-4 text-sm space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="page-title">Retos con amigos</h2>
           <Link href="/amigos/retos" className="btn secondary">Volver</Link>
@@ -66,79 +147,114 @@ export default function MisRetosPage() {
   }
 
   return (
-    <main className="space-y-3">
+    <main className="container mx-auto px-4 py-4 space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="page-title">Retos con amigos</h2>
         <Link href="/amigos/retos" className="btn secondary">Volver</Link>
       </div>
 
-      <section className="rounded-2xl border p-4" style={{ borderColor: 'var(--line)' }}>
-        {!list.length ? (
+      {!list.length ? (
+        <section className="rounded-2xl border p-4" style={{ borderColor: 'var(--line)' }}>
           <p className="text-xs muted">Aún no tienes retos. Crea uno o únete con un código.</p>
-        ) : (
-          <ul className="space-y-3">
-            {list.map((ch) => (
-              <li key={ch.id} className="border rounded-xl p-3" style={{ borderColor: 'var(--line)' }}>
-                <div className="flex items-center justify-between">
-                  <div className="font-semibold">{ch.title}</div>
-                  <div className="text-xs muted">{ch.start} → {ch.end}</div>
+        </section>
+      ) : (
+        <ul className="grid grid-cols-1 gap-4">
+          {list.map((ch) => (
+            <li key={ch.id}>
+              <Link
+                href={`/amigos/retos/${ch.id}`}
+                className="block overflow-hidden rounded-2xl focus:outline-none focus:ring-2 focus:ring-black"
+              >
+                {/* Card */}
+                <div
+                  className="relative rounded-2xl border"
+                  style={{ borderColor: 'var(--line)', background: BLOCK_BG }}
+                >
+                  {/* Imagen de portada (opcional) */}
+                  <div className="relative h-40 w-full overflow-hidden rounded-t-2xl">
+                    {ch.cover_url ? (
+                      <Image
+                        src={ch.cover_url}
+                        alt={ch.title}
+                        fill
+                        className="object-cover"
+                        sizes="100vw"
+                        priority={false}
+                      />
+                    ) : (
+                      <div className="absolute inset-0 opacity-30" />
+                    )}
+                    {/* Gradiente para legibilidad */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
+                    {/* Etiqueta “Reto con amigos” */}
+                    <div className="absolute left-3 top-3">
+                      <span className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium bg-white/90">
+                        Reto con amigos
+                      </span>
+                    </div>
+                    {/* Fechas arriba derecha */}
+                    <div className="absolute right-3 top-3 text-[11px] text-white/90">
+                      {fmtDate(ch.start)} — {fmtDate(ch.end)}
+                    </div>
+                    {/* Título sobre imagen, bottom */}
+                    <div className="absolute bottom-3 left-3 right-3">
+                      <h3 className="text-white text-[15px] font-semibold drop-shadow-sm line-clamp-2">
+                        {ch.title}
+                      </h3>
+                    </div>
+                  </div>
+
+                  {/* Contenido bajo la imagen */}
+                  <div className="p-3 sm:p-4">
+                    {/* Barra de progreso (sustituible por progreso real de checks) */}
+                    <ProgressBar percent={progressByDates(ch.start, ch.end)} />
+
+                    {/* Métricas dentro del bloque */}
+                    <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                      <Metric label="Participantes" value={String(ch.members_count)} />
+                      <Metric label="Puntuación" value={typeof ch.my_score === 'number' ? String(ch.my_score) : '—'} />
+                      <Metric label="Ranking" value={typeof ch.my_rank === 'number' ? `#${ch.my_rank}` : '—'} />
+                    </div>
+
+                    {/* Código (opcional, pequeño) */}
+                    <div className="mt-3 text-[11px] text-white/80">
+                      Código: <b>{ch.code}</b>
+                    </div>
+                  </div>
                 </div>
-                <div className="text-xs mt-1">Código: <b>{ch.code}</b> · Miembros: {ch.members_count}</div>
-                <details className="mt-2">
-                  <summary className="text-sm cursor-pointer">Ver / editar días</summary>
-                  <EditorDays challengeId={ch.id} ownerId={ch.owner_id} />
-                </details>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
     </main>
   );
 }
 
-function EditorDays({ challengeId, ownerId }: { challengeId: string; ownerId: string }) {
-  const [days, setDays] = useState<DayRow[]>([]);
-  const [myId, setMyId] = useState<string | null>(null);
+/** ====== Subcomponentes ====== */
 
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      const { data } = await supabase.auth.getUser();
-      if (!alive) return;
-      setMyId(data.user?.id ?? null);
-
-      const { data: daysData } = await supabase
-        .from('challenge_days')
-        .select('id, day, title')
-        .eq('challenge_id', challengeId)
-        .order('day')
-        .returns<DayRow[]>();
-      if (!alive) return;
-      setDays(daysData ?? []);
-    })();
-    return () => { alive = false; };
-  }, [challengeId]);
-
-  const canEdit = myId === ownerId;
-
-  async function saveTitle(idx: number, val: string) {
-    if (!canEdit) return;
-    const d = days[idx];
-    setDays((prev) => { const n = [...prev]; n[idx] = { ...d, title: val }; return n; });
-    const { error } = await supabase.from('challenge_days').update({ title: val }).eq('id', d.id);
-    if (error) console.error(error);
-  }
-
+function ProgressBar({ percent }: { percent: number }) {
+  const pct = Math.max(0, Math.min(100, Math.round(percent)));
   return (
-    <ul className="space-y-2 mt-2 max-h-[240px] overflow-auto pr-1">
-      {days.map((d, i) => (
-        <li key={d.id} className="flex items-center gap-2">
-          <span className="text-xs shrink-0 w-[96px]">{d.day}</span>
-          <input className="input text-[14px] flex-1" value={d.title} onChange={(e) => saveTitle(i, e.target.value)} disabled={!canEdit} />
-        </li>
-      ))}
-      {!canEdit && <li className="text-xs muted">Solo el creador del reto puede editar los días.</li>}
-    </ul>
+    <div className="w-full rounded-full h-2 bg-[var(--line)] overflow-hidden">
+      <div
+        className="h-2 rounded-full"
+        style={{
+          width: `${pct}%`,
+          background: 'linear-gradient(90deg, #16a34a, #22c55e)', // verde agradable
+          transition: 'width .4s ease',
+        }}
+        aria-label={`Progreso ${pct}%`}
+      />
+    </div>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border px-2 py-2" style={{ borderColor: 'var(--line)' }}>
+      <div className="text-[10px] uppercase tracking-wide text-white/70">{label}</div>
+      <div className="text-sm font-semibold text-white">{value}</div>
+    </div>
   );
 }
