@@ -50,6 +50,13 @@ function RevisionRetoPageInner() {
     [ch?.start, ch?.end]
   );
 
+  // URL con cache-busting para evitar ver la portada antigua por caché CDN
+  const coverSrc = useMemo(() => {
+    if (!ch?.cover_url) return null;
+    const sep = ch.cover_url.includes('?') ? '&' : '?';
+    return `${ch.cover_url}${sep}v=${Date.now()}`;
+  }, [ch?.cover_url]);
+
   useEffect(() => {
     let ok = true;
     (async () => {
@@ -117,7 +124,7 @@ function RevisionRetoPageInner() {
             {new Date(ch.start + 'T00:00:00').toLocaleDateString()} · {duration} días
           </p>
         )}
-        {!isOwner && (
+        {ch && !isOwner && (
           <p className="text-xs text-orange-600">
             Solo el propietario puede publicar cambios. Vista de revisión en modo lectura.
           </p>
@@ -132,9 +139,9 @@ function RevisionRetoPageInner() {
           {/* Portada */}
           <section className="space-y-3">
             <div className="w-full aspect-[3/1] rounded-2xl border overflow-hidden flex items-center justify-center">
-              {ch.cover_url ? (
+              {coverSrc ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={ch.cover_url} alt="Portada del reto" className="w-full h-full object-cover" />
+                <img src={coverSrc} alt="Portada del reto" className="w-full h-full object-cover" />
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-sm text-gray-500">
                   Sin imagen de portada

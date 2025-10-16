@@ -14,6 +14,12 @@ import {
 
 type DayRow = { day: number; label: string };
 
+function bust(url: string | null): string | null {
+  if (!url) return null;
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}v=${Date.now()}`;
+}
+
 function PersonalizarRetoPageInner() {
   const sp = useSearchParams();
   const router = useRouter();
@@ -29,9 +35,13 @@ function PersonalizarRetoPageInner() {
   const [ownerId, setOwnerId] = useState<string | null>(null);
   const [title, setTitle] = useState<string>('');
   const [customize, setCustomize] = useState(false);
+
   const [rules, setRules] = useState('');
   const [savingRules, setSavingRules] = useState<'idle' | 'saving' | 'saved'>('idle');
-  const [coverUrl, setCoverUrl] = useState<string | null>(null);
+
+  const [coverUrl, setCoverUrl] = useState<string | null>(null); // para mostrar (cache-busted)
+  const [savingCover, setSavingCover] = useState(false);
+
   const [days, setDays] = useState<DayRow[]>([]);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -58,7 +68,8 @@ function PersonalizarRetoPageInner() {
         const cst = Boolean(ch?.customize_days);
         setCustomize(cst);
         setRules(ch?.rules || '');
-        setCoverUrl(ch?.cover_url || null);
+        // aplicamos cache-busting solo para visualizar; en BD se guarda sin query
+        setCoverUrl(bust(ch?.cover_url || null));
 
         if (cst) {
           await ensureChallengeDays(cid, duration);
@@ -110,7 +121,7 @@ function PersonalizarRetoPageInner() {
           })
         );
       } else {
-        // al desactivar, dejamos la lista genérica (sin perder lo ya guardado en DB)
+        // al desactivar, mostramos lista genérica (sin perder lo ya guardado en DB)
         setDays(Array.from({ length: duration }, (_, i) => ({ day: i + 1, label: '' })));
       }
     } catch (e: any) {
@@ -136,25 +147,29 @@ function PersonalizarRetoPageInner() {
   async function handleSelectCover(file: File) {
     if (!isOwner) return;
     try {
-      const url = await uploadChallengeCover(cid, file);
-      setCoverUrl(url);
-      await setChallengeMeta(cid, null, null, url);
+      setSavingCover(true);
+      const url = await uploadChallengeCover(cid, file); // devuelve URL pública base
+      // Guardamos en BD la URL base (sin query)…
+      const baseUrl = url.split('?')[0];
+      await setChallengeMeta(cid, null, null, baseUrl);
+      // …y para pintar forzamos cache-busting
+      setCoverUrl(bust(baseUrl));
     } catch (e: any) {
       setMsg(e?.message || 'No se pudo subir la portada.');
+    } finally {
+      setSavingCover(false);
     }
   }
 
   // AUTOGUARDADO (debounce) de Normas
   useEffect(() => {
     if (!isOwner || !cid) return;
-
-    // si no ha habido cambios recientes, no hagas nada
     if (savingRules === 'idle') return;
+
     const t = setTimeout(async () => {
       try {
         await setChallengeMeta(cid, null, rules, null);
         setSavingRules('saved');
-        // limpiar el estado de "saved" para no dejarlo fijo en verde
         const t2 = setTimeout(() => setSavingRules('idle'), 1200);
         return () => clearTimeout(t2);
       } catch (e: any) {
@@ -174,6 +189,25 @@ function PersonalizarRetoPageInner() {
     setSavingRules('saving');
   }
 
+  // Guardado final antes de continuar a revisión
+  async function handleContinue() {
+    if (!isOwner) {
+      router.push(`/amigos/retos/crear/revision?cid=${cid}`);
+      return;
+    }
+    // Si hay un guardado en curso, no permitimos continuar
+    if (savingRules === 'saving' || savingCover) {
+      setMsg('Espera a que termine de guardarse la información…');
+      return;
+    }
+    try {
+      await setChallengeMeta(cid, null, rules, coverUrl ? coverUrl.split('?')[0] : null);
+      router.push(`/amigos/retos/crear/revision?cid=${cid}`);
+    } catch (e: any) {
+      setMsg(e?.message || 'No se pudo guardar antes de continuar.');
+    }
+  }
+
   if (!cid) {
     return (
       <main className="container mx-auto px-4 max-w-screen-sm py-6">
@@ -181,6 +215,8 @@ function PersonalizarRetoPageInner() {
       </main>
     );
   }
+
+  const continueDisabled = savingCover || savingRules === 'saving';
 
   return (
     <main className="container mx-auto px-4 max-w-screen-md py-6 space-y-6">
@@ -212,14 +248,17 @@ function PersonalizarRetoPageInner() {
                 )}
               </div>
               {isOwner && (
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) handleSelectCover(f);
-                  }}
-                />
+                <div className="flex items-center gap-2">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleSelectCover(f);
+                    }}
+                  />
+                  {savingCover && <span className="text-xs text-gray-500">Subiendo…</span>}
+                </div>
               )}
             </div>
           </section>
@@ -278,11 +317,12 @@ function PersonalizarRetoPageInner() {
 
           <div className="pt-2">
             <button
-              onClick={() => router.push(`/amigos/retos/crear/revision?cid=${cid}`)}
-              className="w-full rounded-2xl border px-4 py-3 hover:bg-black/5 transition"
+              onClick={handleContinue}
+              disabled={continueDisabled}
+              className="w-full rounded-2xl border px-4 py-3 hover:bg-black/5 transition disabled:opacity-50"
               style={{ borderColor: 'var(--line)' }}
             >
-              Continuar a revisión
+              {continueDisabled ? 'Guardando…' : 'Continuar a revisión'}
             </button>
           </div>
         </>
