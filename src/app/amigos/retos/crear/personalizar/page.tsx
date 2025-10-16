@@ -30,6 +30,7 @@ function PersonalizarRetoPageInner() {
   const [title, setTitle] = useState<string>('');
   const [customize, setCustomize] = useState(false);
   const [rules, setRules] = useState('');
+  const [savingRules, setSavingRules] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [days, setDays] = useState<DayRow[]>([]);
   const [msg, setMsg] = useState<string | null>(null);
@@ -143,15 +144,34 @@ function PersonalizarRetoPageInner() {
     }
   }
 
-  // autosave reglas
-  async function handleRulesChange(v: string) {
+  // AUTOGUARDADO (debounce) de Normas
+  useEffect(() => {
+    if (!isOwner || !cid) return;
+
+    // si no ha habido cambios recientes, no hagas nada
+    if (savingRules === 'idle') return;
+    const t = setTimeout(async () => {
+      try {
+        await setChallengeMeta(cid, null, rules, null);
+        setSavingRules('saved');
+        // limpiar el estado de "saved" para no dejarlo fijo en verde
+        const t2 = setTimeout(() => setSavingRules('idle'), 1200);
+        return () => clearTimeout(t2);
+      } catch (e: any) {
+        setMsg(e?.message || 'No se pudieron guardar las normas.');
+        setSavingRules('idle');
+      }
+    }, 400); // 400ms debounce
+
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rules, cid, isOwner]);
+
+  // onChange del textarea: solo toca estado y marca "saving"
+  function handleRulesInput(v: string) {
     if (!isOwner) return;
     setRules(v);
-    try {
-      await setChallengeMeta(cid, null, v, null);
-    } catch (e: any) {
-      setMsg(e?.message || 'No se pudieron guardar las normas.');
-    }
+    setSavingRules('saving');
   }
 
   if (!cid) {
@@ -209,12 +229,16 @@ function PersonalizarRetoPageInner() {
             <label className="block text-sm">Normas del reto</label>
             <textarea
               value={rules}
-              onChange={(e) => handleRulesChange(e.target.value)}
+              onChange={(e) => handleRulesInput(e.target.value)}
               disabled={!isOwner}
               className="w-full min-h-28 rounded-xl border px-3 py-2"
               style={{ borderColor: 'var(--line)' }}
               placeholder="Escribe reglas, premios, penalizaciones, etc."
             />
+            <div className="text-xs mt-1">
+              {savingRules === 'saving' && <span className="text-gray-500">Guardando…</span>}
+              {savingRules === 'saved' && <span className="text-green-600">Guardado ✓</span>}
+            </div>
           </section>
 
           {/* Toggle días personalizados */}

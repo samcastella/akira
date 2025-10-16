@@ -42,6 +42,7 @@ function RevisionRetoPageInner() {
   const [ch, setCh] = useState<Challenge | null>(null);
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [days, setDays] = useState<DayRow[]>([]);
+  const [showSuccess, setShowSuccess] = useState(false);
 
   const isOwner = ch?.owner_id && uid ? ch.owner_id === uid : false;
   const duration = useMemo(
@@ -215,13 +216,53 @@ function RevisionRetoPageInner() {
             </button>
 
             <button
-              onClick={() => router.push(`/amigos/retos/${cid}`)}
+              onClick={() => setShowSuccess(true)}
               className="flex-1 rounded-2xl border px-4 py-3 hover:bg-black/5 transition"
               style={{ borderColor: 'var(--line)' }}
             >
               Publicar y ver reto
             </button>
           </div>
+
+          {/* Modal de éxito */}
+          {showSuccess && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+              role="dialog"
+              aria-modal="true"
+            >
+              <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-lg">
+                <h4 className="text-lg font-semibold">¡Tu reto ha sido creado con éxito!</h4>
+                <p className="text-sm text-gray-600 mt-1">
+                  Puedes verlo en <span className="font-medium">Retos con amigos</span>.
+                </p>
+
+                <div className="mt-5 flex gap-3">
+                  <button
+                    onClick={() => {
+                      setShowSuccess(false);
+                      router.push('/amigos/retos/mis-retos');
+                    }}
+                    className="flex-1 rounded-xl border px-4 py-2 hover:bg-black/5 transition"
+                    style={{ borderColor: 'var(--line)' }}
+                  >
+                    Ver retos con amigos
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setShowSuccess(false);
+                      router.push(`/amigos/retos/${cid}`);
+                    }}
+                    className="flex-1 rounded-xl border px-4 py-2 hover:bg-black/5 transition"
+                    style={{ borderColor: 'var(--line)' }}
+                  >
+                    Ver este reto
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </>
       )}
     </main>
