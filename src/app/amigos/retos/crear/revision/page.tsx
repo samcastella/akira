@@ -1,7 +1,7 @@
 // src/app/amigos/retos/crear/revision/page.tsx
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuthUserId } from '@/lib/user';
@@ -22,16 +22,14 @@ type DayRow = { day_index: number; label: string | null };
 type MemberRow = { user_id: string };
 
 function daysBetween(startISO: string, endISO: string): number {
-  // calculamos duración en días usando fechas a medianoche
   const s = new Date(startISO + 'T00:00:00');
   const e = new Date(endISO + 'T00:00:00');
   const MS = 24 * 60 * 60 * 1000;
   const diff = Math.round((e.getTime() - s.getTime()) / MS);
-  // Por cómo creamos el reto, end = start + duration → diff ya es "duration"
   return Math.max(1, Math.min(365, diff));
 }
 
-export default function RevisionRetoPage() {
+function RevisionRetoPageInner() {
   const sp = useSearchParams();
   const router = useRouter();
   const uid = useAuthUserId();
@@ -58,7 +56,6 @@ export default function RevisionRetoPage() {
       setLoading(true);
       setMsg(null);
       try {
-        // 1) challenge base
         const { data: challenge, error: e1 } = await supabase
           .from('challenges')
           .select('id, owner_id, title, start, end, rules, cover_url, join_code, customize_days')
@@ -69,7 +66,6 @@ export default function RevisionRetoPage() {
 
         setCh(challenge as Challenge);
 
-        // 2) miembros (por ahora nos basta el conteo / listado simple)
         const { data: mems, error: e2 } = await supabase
           .from('challenge_members')
           .select('user_id')
@@ -79,7 +75,6 @@ export default function RevisionRetoPage() {
 
         setMembers((mems || []) as MemberRow[]);
 
-        // 3) días (si hay personalización cargamos labels; si no, lista vacía para generar genéricos)
         if ((challenge as Challenge).customize_days) {
           const { data: ds, error: e3 } = await supabase
             .from('challenge_days')
@@ -91,7 +86,7 @@ export default function RevisionRetoPage() {
 
           setDays((ds || []) as DayRow[]);
         } else {
-          setDays([]); // generaremos "Día 1, Día 2..." en render
+          setDays([]);
         }
       } catch (e: any) {
         setMsg(e?.message || 'No se pudo cargar la revisión del reto.');
@@ -173,7 +168,6 @@ export default function RevisionRetoPage() {
           <section className="space-y-2">
             <h3 className="text-sm font-medium">Estructura de días</h3>
 
-            {/* Si hay personalización, usamos labels; si no, generamos “Día X” genérico */}
             <div className="rounded-xl border" style={{ borderColor: 'var(--line)' }}>
               <ul className="divide-y" style={{ borderColor: 'var(--line)' }}>
                 {ch.customize_days
@@ -181,7 +175,6 @@ export default function RevisionRetoPage() {
                     days.length
                       ? days.map((r) => (
                           <li key={r.day_index} className="p-3 flex items-center gap-3">
-                            {/* check decorativo (disabled) */}
                             <input type="checkbox" disabled className="h-4 w-4" />
                             <div className="text-sm">
                               <span className="font-medium mr-2">Día {r.day_index}</span>
@@ -232,5 +225,13 @@ export default function RevisionRetoPage() {
         </>
       )}
     </main>
+  );
+}
+
+export default function RevisionRetoPage() {
+  return (
+    <Suspense fallback={<div className="container mx-auto px-4 py-6">Cargando…</div>}>
+      <RevisionRetoPageInner />
+    </Suspense>
   );
 }

@@ -1,7 +1,7 @@
 // src/app/amigos/retos/crear/personalizar/page.tsx
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuthUserId } from '@/lib/user';
@@ -14,7 +14,7 @@ import {
 
 type DayRow = { day: number; label: string };
 
-export default function PersonalizarRetoPage() {
+function PersonalizarRetoPageInner() {
   const sp = useSearchParams();
   const router = useRouter();
   const uid = useAuthUserId();
@@ -66,6 +66,7 @@ export default function PersonalizarRetoPage() {
             .select('day_index, label')
             .eq('challenge_id', cid)
             .order('day_index', { ascending: true });
+
           if (!ok) return;
           const map = new Map((ds || []).map((r) => [r.day_index as number, r.label || '']));
           setDays(
@@ -107,6 +108,9 @@ export default function PersonalizarRetoPage() {
             return { day: d, label: map.get(d) || '' };
           })
         );
+      } else {
+        // al desactivar, dejamos la lista genérica (sin perder lo ya guardado en DB)
+        setDays(Array.from({ length: duration }, (_, i) => ({ day: i + 1, label: '' })));
       }
     } catch (e: any) {
       setMsg(e?.message || 'No se pudo actualizar la personalización.');
@@ -260,5 +264,13 @@ export default function PersonalizarRetoPage() {
         </>
       )}
     </main>
+  );
+}
+
+export default function PersonalizarRetoPage() {
+  return (
+    <Suspense fallback={<div className="container mx-auto px-4 py-6">Cargando…</div>}>
+      <PersonalizarRetoPageInner />
+    </Suspense>
   );
 }
