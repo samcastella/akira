@@ -33,6 +33,7 @@ export default function CrearRetoPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErrorMsg(null);
+
     if (!uid) return setErrorMsg('Debes iniciar sesión para crear un reto.');
     if (!title.trim()) return setErrorMsg('Ponle un título al reto.');
     if (duration < 1 || duration > 365) return setErrorMsg('Duración no válida (1–365 días).');
@@ -52,7 +53,16 @@ export default function CrearRetoPage() {
       for (let attempt = 0; attempt < 6; attempt++) {
         const { data, error } = await supabase
           .from('challenges')
-          .insert([{ owner_id: uid, code, title: title.trim(), start, end: endISO, join_code: code }])
+          .insert([
+            {
+              owner_id: uid,
+              code,
+              join_code: code,
+              title: title.trim(),
+              start,
+              end: endISO,
+            },
+          ])
           .select('id')
           .single();
 
@@ -70,13 +80,14 @@ export default function CrearRetoPage() {
 
       if (!createdId) throw new Error('No se pudo crear el reto (código ocupado). Prueba de nuevo.');
 
-      // añadir creador como miembro (sin SELECT implícito)
+      // añadir creador como miembro
       const { error: mErr } = await supabase
         .from('challenge_members')
         .insert([{ challenge_id: createdId, user_id: uid }]);
       if (mErr) throw mErr;
 
-      router.push(`/amigos/retos/${createdId}`);
+      // ⤵️ Cambio: encadenar con Paso 2 (personalización)
+      router.push(`/amigos/retos/crear/personalizar?cid=${createdId}&duration=${duration}`);
     } catch (err: any) {
       setErrorMsg(err?.message ?? 'Error al crear el reto.');
     } finally {
