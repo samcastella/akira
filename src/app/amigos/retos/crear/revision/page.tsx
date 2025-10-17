@@ -5,6 +5,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuthUserId } from '@/lib/user';
+import { ensureChallengeDays, upsertDayLabel } from '@/lib/challenges';
 
 type Challenge = {
   id: string;
@@ -29,6 +30,11 @@ function daysBetween(startISO: string, endISO: string): number {
   return Math.max(1, Math.min(365, diff));
 }
 
+function getDefaultDayLabel(title: string, label?: string | null) {
+  const t = (label || '').trim();
+  return t ? t : title;
+}
+
 function RevisionRetoPageInner() {
   const sp = useSearchParams();
   const router = useRouter();
@@ -42,6 +48,7 @@ function RevisionRetoPageInner() {
   const [ch, setCh] = useState<Challenge | null>(null);
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [days, setDays] = useState<DayRow[]>([]);
+  const [publishing, setPublishing] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
 
   const isOwner = ch?.owner_id && uid ? ch.owner_id === uid : false;
@@ -84,6 +91,7 @@ function RevisionRetoPageInner() {
         setMembers((mems || []) as MemberRow[]);
 
         if ((challenge as Challenge).customize_days) {
+          // si personalizan, leemos labels
           const { data: ds, error: e3 } = await supabase
             .from('challenge_days')
             .select('day_index, label')
@@ -94,6 +102,7 @@ function RevisionRetoPageInner() {
 
           setDays((ds || []) as DayRow[]);
         } else {
+          // si NO personalizan, no hace falta traer nada (render con fallback al título)
           setDays([]);
         }
       } catch (e: any) {
@@ -106,6 +115,51 @@ function RevisionRetoPageInner() {
       ok = false;
     };
   }, [cid]);
+
+  async function publish() {
+    if (!ch) return;
+    if (!isOwner) {
+      // si no es propietario, solo navega
+      router.push(`/amigos/retos/${cid}`);
+      return;
+    }
+    setPublishing(true);
+    setMsg(null);
+    try {
+      // Si NO personalizan: asegurar filas y rellenar vacíos con el título
+      if (!ch.customize_days) {
+        await ensureChallengeDays(cid, duration);
+        const { data: ds, error } = await supabase
+          .from('challenge_days')
+          .select('day_index, label')
+          .eq('challenge_id', cid)
+          .order('day_index', { ascending: true });
+        if (error) throw error;
+
+        // Completar etiquetas vacías sin sobreescribir las existentes
+        const updates: Promise<any>[] = [];
+        for (let i = 1; i <= duration; i++) {
+          const row = (ds || []).find((r) => r.day_index === i);
+          const current = (row?.label || '').trim();
+          if (!current) {
+            updates.push(upsertDayLabel(cid, i, ch.title));
+          }
+        }
+        if (updates.length) {
+          const chunk = 25;
+          for (let i = 0; i < updates.length; i += chunk) {
+            await Promise.all(updates.slice(i, i + chunk));
+          }
+        }
+      }
+      // Mostramos modal de éxito y dejamos que el usuario elija dónde ir
+      setShowSuccess(true);
+    } catch (e: any) {
+      setMsg(e?.message || 'No se pudo publicar el reto.');
+    } finally {
+      setPublishing(false);
+    }
+  }
 
   if (!cid) {
     return (
@@ -205,7 +259,9 @@ function RevisionRetoPageInner() {
                         <input type="checkbox" disabled className="h-4 w-4" />
                         <div className="text-sm">
                           <span className="font-medium mr-2">Día {d}</span>
-                          <span className="text-gray-500">—</span>
+                          <span className="text-gray-700">
+                            {getDefaultDayLabel(ch.title)}
+                          </span>
                         </div>
                       </li>
                     ))}
@@ -223,11 +279,12 @@ function RevisionRetoPageInner() {
             </button>
 
             <button
-              onClick={() => setShowSuccess(true)}
-              className="flex-1 rounded-2xl border px-4 py-3 hover:bg-black/5 transition"
+              onClick={publish}
+              disabled={publishing}
+              className="flex-1 rounded-2xl border px-4 py-3 hover:bg-black/5 transition disabled:opacity-50"
               style={{ borderColor: 'var(--line)' }}
             >
-              Publicar y ver reto
+              {publishing ? 'Publicando…' : 'Publicar y ver reto'}
             </button>
           </div>
 

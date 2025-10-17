@@ -1,11 +1,10 @@
 // src/app/amigos/retos/[id]/page.tsx
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-// import Image from 'next/image';  // usamos <img> para evitar restricciones de dominios
 import { supabase } from '@/lib/supabaseClient';
-import { ChevronRight, ImagePlus, Info, X, Camera } from 'lucide-react';
+import { ImagePlus, Info, X, Camera } from 'lucide-react';
 import CreateHabitBar from '@/components/habits/CreateHabitBar';
 
 type Challenge = {
@@ -15,7 +14,8 @@ type Challenge = {
   start: string; // 'YYYY-MM-DD'
   end: string;   // 'YYYY-MM-DD'
   cover_url?: string | null;
-  description?: string | null;
+  description?: string | null; // compat
+  rules?: string | null;       // fuente principal de normas
 };
 
 type Summary = {
@@ -48,7 +48,8 @@ type LeaderRow = {
   apellido: string | null;
 };
 
-const PHOTOS_BUCKET = 'CHALLENGE-PHOTOS';
+// ⬇️ Asegúrate de que coincide EXACTAMENTE con el nombre en Supabase Storage
+const PHOTOS_BUCKET = 'challenge-photos';
 const COVERS_BUCKET = 'challenge-covers';
 
 const TABS = ['Resumen', 'Check del día', 'Validaciones', 'Ranking'] as const;
@@ -116,7 +117,7 @@ export default function RetoDetallePage() {
       const [retos, resumen, lb, meta] = await Promise.all([
         supabase
           .from('challenges')
-          .select('id, owner_id, title, start, end, cover_url, description')
+          .select('id, owner_id, title, start, end, cover_url, description, rules')
           .eq('id', id)
           .single(),
         supabase
@@ -132,7 +133,7 @@ export default function RetoDetallePage() {
         supabase
           .from('challenge_meta')
           .select('key, value')
-          .eq('challenge_id', id)
+          .eq('challenge_id', id),
       ]);
 
       if (!alive) return;
@@ -147,18 +148,15 @@ export default function RetoDetallePage() {
 
       // Fallbacks desde meta: description/normas/rules y cover_url
       const metaRows: Array<{ key: string; value: string }> = (meta as any).data ?? [];
-      const metaMap = Object.fromEntries(metaRows.map(r => [r.key, r.value]));
+      const metaMap = Object.fromEntries(metaRows.map((r) => [r.key, r.value]));
       const descMeta =
-        metaMap['description'] ||
-        metaMap['normas'] ||
-        metaMap['rules'] ||
-        null;
+        metaMap['description'] || metaMap['normas'] || metaMap['rules'] || null;
       const coverMeta = metaMap['cover_url'] || null;
       setMetaDescription(descMeta);
       setMetaCoverUrl(coverMeta);
 
       // Traer fotos de perfil para ranking
-      const ids = ((lb.data ?? []) as LeaderRow[]).map(r => r.user_id);
+      const ids = ((lb.data ?? []) as LeaderRow[]).map((r) => r.user_id);
       if (ids.length) {
         const { data: profs, error: pErr } = await supabase
           .from('public_profiles')
@@ -166,7 +164,9 @@ export default function RetoDetallePage() {
           .in('user_id', ids);
         if (pErr) console.error(pErr);
         const map: Record<string, string | null> = {};
-        (profs ?? []).forEach((p) => { map[p.user_id] = p.foto ?? null; });
+        (profs ?? []).forEach((p) => {
+          map[p.user_id] = p.foto ?? null;
+        });
         setLeaderPhotos(map);
       } else {
         setLeaderPhotos({});
@@ -188,7 +188,7 @@ export default function RetoDetallePage() {
     const idx = clamp(
       diffDays(challenge.start, todayISO) + 1,
       1,
-      Math.max(1, summary.total_days || 1)
+      Math.max(1, summary.total_days || 1),
     );
     setTodayIdx(idx);
 
@@ -246,13 +246,13 @@ export default function RetoDetallePage() {
         (q.data ?? []).map(async (row) => ({
           ...row,
           signed_url: await signPath(row.photo_path),
-        }))
+        })),
       );
       const withSignedR = await Promise.all(
         (r.data ?? []).map(async (row) => ({
           ...row,
           signed_url: await signPath(row.photo_path),
-        }))
+        })),
       );
       setQueue(withSigned as any);
       setReviewables(withSignedR as any);
@@ -265,9 +265,10 @@ export default function RetoDetallePage() {
 
   async function signPath(path: string | null) {
     if (!path) return null;
-    const { data } = await supabase.storage
+    const { data, error } = await supabase.storage
       .from(PHOTOS_BUCKET)
       .createSignedUrl(path, 60 * 60 * 6); // 6h
+    if (error) console.error(error);
     return data?.signedUrl ?? null;
   }
 
@@ -289,12 +290,12 @@ export default function RetoDetallePage() {
   const isOwner = uid === challenge.owner_id;
 
   // ===== edición inline =====
-function startEdit() {
-  if (!challenge) return;                 // ✅ evita null
-  setTitleEdit(challenge.title);
-  setDescEdit((challenge.description ?? metaDescription ?? '') || '');
-  setIsEditing(true);
-}
+  function startEdit() {
+    if (!challenge) return;
+    setTitleEdit(challenge.title);
+    setDescEdit((challenge.rules ?? challenge.description ?? metaDescription ?? '') || '');
+    setIsEditing(true);
+  }
   function cancelEdit() {
     setIsEditing(false);
   }
@@ -304,11 +305,11 @@ function startEdit() {
     try {
       const payload: Partial<Challenge> = {
         title: titleEdit.trim() || challenge.title,
-        description: descEdit.trim() || null,
+        rules: descEdit.trim() || null, // ✅ guardamos en rules
       };
       const { error } = await supabase.from('challenges').update(payload).eq('id', challenge.id);
       if (error) throw error;
-      setChallenge((prev) => prev ? { ...prev, ...payload } as Challenge : prev);
+      setChallenge((prev) => (prev ? { ...prev, ...payload } as Challenge : prev));
       setIsEditing(false);
     } catch (e) {
       console.error(e);
@@ -347,14 +348,15 @@ function startEdit() {
     if (!file || !uid || !todayIdx || !challenge) return;
     setUploading(true);
     try {
-      const path = `${challenge.id}/${todayIdx}/${uid}/${crypto.randomUUID()}.${ext(file.name)}`;
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      const path = `${challenge.id}/${todayIdx}/${uid}/${crypto.randomUUID()}.${ext}`;
 
       const { error: upErr } = await supabase.storage
         .from(PHOTOS_BUCKET)
         .upload(path, file, {
           cacheControl: '3600',
           upsert: false,
-          contentType: file.type || 'image/jpeg',
+          contentType: file.type || 'application/octet-stream',
         });
       if (upErr) throw upErr;
 
@@ -389,7 +391,7 @@ function startEdit() {
       } as any);
     } catch (err: any) {
       console.error(err);
-      alert('No se pudo subir la foto. Intenta de nuevo.');
+      alert(`No se pudo subir la foto. ${err?.message || 'Intenta de nuevo.'}`);
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = '';
@@ -427,7 +429,7 @@ function startEdit() {
       if (updErr) throw updErr;
 
       setChallenge((prev) => (prev ? { ...prev, cover_url: coverUrl } : prev));
-      setMetaCoverUrl(null);
+      setMetaCoverUrl(null); // ya no usamos el fallback
     } catch (err) {
       console.error(err);
       alert('No se pudo actualizar la imagen de portada.');
@@ -470,10 +472,6 @@ function startEdit() {
   function pct(n?: number) {
     return Math.max(0, Math.min(100, Math.round(n ?? 0)));
   }
-  function ext(name: string) {
-    const m = /\.([a-zA-Z0-9]+)$/.exec(name);
-    return (m?.[1] || 'jpg').toLowerCase();
-  }
   function sanitizeFileName(n: string) {
     return n.replace(/[^\w.\-]+/g, '_');
   }
@@ -481,13 +479,14 @@ function startEdit() {
   // ===== labels por día (fallback = título del reto) =====
   function getDayLabel(dayIndex?: number | null) {
     if (!dayIndex || !challenge) return '';
-    // Si más adelante lees una tabla de labels (challenge_day_labels), usa su valor aquí.
+    // Si añades tabla de labels por día al detalle, léela aquí.
     return challenge.title;
   }
 
   const resolvedCover = challenge.cover_url || metaCoverUrl || null;
 
   const resolvedDescription =
+    (challenge.rules && challenge.rules.trim()) ||
     (challenge.description && challenge.description.trim()) ||
     (metaDescription && metaDescription.trim()) ||
     '';
@@ -496,42 +495,41 @@ function startEdit() {
   return (
     <main className="min-h-screen bg-white relative">
       {/* ===== HERO ===== */}
-<section className="relative w-full overflow-hidden bg-neutral-100">
-  {resolvedCover ? (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={resolvedCover}
-      alt={challenge.title}
-      className="block w-full h-auto aspect-[16/9] object-cover"
-      draggable={false}
-    />
-  ) : (
-    <div className="aspect-[16/9] w-full flex items-center justify-center text-neutral-400">
-      <ImagePlus className="h-10 w-10" />
-      <span className="ml-2 text-sm">Sin imagen</span>
-    </div>
-  )}
+      <section className="relative w-full overflow-hidden bg-neutral-100">
+        {resolvedCover ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={resolvedCover}
+            alt={challenge.title}
+            className="block w-full h-auto aspect-[16/9] object-cover"
+            draggable={false}
+          />
+        ) : (
+          <div className="aspect-[16/9] w-full flex items-center justify-center text-neutral-400">
+            <ImagePlus className="h-10 w-10" />
+            <span className="ml-2 text-sm">Sin imagen</span>
+          </div>
+        )}
 
-  {isOwner && (
-    <>
-      <input
-        ref={coverInputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={onPickCover}
-      />
-      <button
-        className="absolute top-3 right-3 rounded-full bg-white/80 backdrop-blur px-3 py-1.5 text-[13px] font-medium hover:bg-white transition"
-        onClick={triggerCoverPick}
-        disabled={coverUploading}
-      >
-        {coverUploading ? 'Subiendo…' : 'Cambiar imagen'}
-      </button>
-    </>
-  )}
-</section>
-
+        {isOwner && (
+          <>
+            <input
+              ref={coverInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={onPickCover}
+            />
+            <button
+              className="absolute top-3 right-3 rounded-full bg-white/80 backdrop-blur px-3 py-1.5 text-[13px] font-medium hover:bg-white transition"
+              onClick={triggerCoverPick}
+              disabled={coverUploading}
+            >
+              {coverUploading ? 'Subiendo…' : 'Cambiar imagen'}
+            </button>
+          </>
+        )}
+      </section>
 
       {/* ===== SUBMENÚ ===== */}
       <nav className="border-b bg-white sticky top-[48px] z-10">
@@ -584,7 +582,7 @@ function startEdit() {
                   rows={5}
                   className="w-full rounded-xl border px-3 py-2"
                   style={{ borderColor: 'var(--line)' }}
-                  placeholder="Describe brevemente el reto, normas, premio y castigo…"
+                  placeholder="Incluye aquí una breve descripción del reto, normas, premio para el ganador, castigo para el perdedor…"
                 />
               ) : resolvedDescription ? (
                 <p className="text-sm text-neutral-700 whitespace-pre-line">
@@ -624,8 +622,8 @@ function startEdit() {
               </div>
               <div className="w-full h-3 rounded-full bg-neutral-200 overflow-hidden">
                 <div
-                  className="h-3 bg-green-500 transition-all duration-300"
-                  style={{ width: `${pct(summary?.progress_pct)}%` }}
+                  className="h-3 transition-all duration-300"
+                  style={{ width: `${pct(summary?.progress_pct)}%`, background: '#22c55e' }}
                 />
               </div>
             </div>
@@ -687,17 +685,12 @@ function startEdit() {
         {/* CHECK DEL DÍA */}
         {activeTab === 'Check del día' && (
           <div className="space-y-4">
-            {/* Barra estilo CreateHabitBar con label del día (fallback = título del reto) */}
             <CreateHabitBar
               variant="task"
               checked={!!myTodayCheck && (myTodayCheck.status === 'valid' || myTodayCheck.status === 'auto_valid')}
               label={`Día ${todayIdx ?? '-'} – ${getDayLabel(todayIdx)}`}
-              onToggle={() => {
-                // Solo visual: no cambiamos estado aquí; el check real lo decide la validación.
-                // Podríamos abrir detalles si lo deseas.
-              }}
+              onToggle={() => {}}
               onInfo={() => {
-                // ejemplo: scroll a la tarjeta del check
                 document.getElementById('my-today-check')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
               }}
               color="#F8E68A"
@@ -842,8 +835,7 @@ function startEdit() {
                     )}
                     <div className="p-3 flex items-center justify-between text-sm">
                       <div>
-                        Día {q.day_index} – {getDayLabel(q.day_index)} · estado: <b>{labelStatus(q.status)}</b> · vence{' '}
-                        {fmtDate(q.photo_expires_at)}
+                        Día {q.day_index} – {getDayLabel(q.day_index)} · estado: <b>{labelStatus(q.status)}</b> · vence {fmtDate(q.photo_expires_at)}
                       </div>
                       <button
                         onClick={() => requestReview(q.check_id)}
@@ -863,9 +855,7 @@ function startEdit() {
         {/* RANKING */}
         {activeTab === 'Ranking' && (
           <div className="space-y-3">
-            {!leaders.length && (
-              <p className="text-sm text-neutral-600">Sin datos de ranking.</p>
-            )}
+            {!leaders.length && <p className="text-sm text-neutral-600">Sin datos de ranking.</p>}
 
             <ul className="space-y-2">
               {leaders.map((r) => {
