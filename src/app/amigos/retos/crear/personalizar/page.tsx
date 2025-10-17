@@ -20,6 +20,12 @@ function bust(url: string | null): string | null {
   return `${url}${sep}v=${Date.now()}`;
 }
 
+// título por defecto si no hay personalización
+function getDefaultDayLabel(challengeTitle: string, label?: string | null) {
+  const t = (label || '').trim();
+  return t ? t : challengeTitle;
+}
+
 function PersonalizarRetoPageInner() {
   const sp = useSearchParams();
   const router = useRouter();
@@ -68,7 +74,6 @@ function PersonalizarRetoPageInner() {
         const cst = Boolean(ch?.customize_days);
         setCustomize(cst);
         setRules(ch?.rules || '');
-        // aplicamos cache-busting solo para visualizar; en BD se guarda sin query
         setCoverUrl(bust(ch?.cover_url || null));
 
         if (cst) {
@@ -149,10 +154,8 @@ function PersonalizarRetoPageInner() {
     try {
       setSavingCover(true);
       const url = await uploadChallengeCover(cid, file); // devuelve URL pública base
-      // Guardamos en BD la URL base (sin query)…
       const baseUrl = url.split('?')[0];
       await setChallengeMeta(cid, null, null, baseUrl);
-      // …y para pintar forzamos cache-busting
       setCoverUrl(bust(baseUrl));
     } catch (e: any) {
       setMsg(e?.message || 'No se pudo subir la portada.');
@@ -176,17 +179,46 @@ function PersonalizarRetoPageInner() {
         setMsg(e?.message || 'No se pudieron guardar las normas.');
         setSavingRules('idle');
       }
-    }, 400); // 400ms debounce
+    }, 400);
 
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rules, cid, isOwner]);
 
-  // onChange del textarea: solo toca estado y marca "saving"
   function handleRulesInput(v: string) {
     if (!isOwner) return;
     setRules(v);
     setSavingRules('saving');
+  }
+
+  // Rellena labels vacíos con el título del reto (solo si no personalizan)
+  async function fillDefaultLabelsIfNeeded() {
+    if (!cid || !title) return;
+    await ensureChallengeDays(cid, duration);
+
+    const { data: ds, error } = await supabase
+      .from('challenge_days')
+      .select('day_index, label')
+      .eq('challenge_id', cid)
+      .order('day_index', { ascending: true });
+
+    if (error) throw error;
+
+    const updates: Promise<any>[] = [];
+    for (let i = 1; i <= duration; i++) {
+      const row = (ds || []).find((r) => r.day_index === i);
+      const current = (row?.label || '').trim();
+      if (!current) {
+        updates.push(upsertDayLabel(cid, i, title)); // ⚡ label = título del reto
+      }
+    }
+    if (updates.length) {
+      // limitar concurrencia básica
+      const chunk = 25;
+      for (let i = 0; i < updates.length; i += chunk) {
+        await Promise.all(updates.slice(i, i + chunk));
+      }
+    }
   }
 
   // Guardado final antes de continuar a revisión
@@ -195,13 +227,18 @@ function PersonalizarRetoPageInner() {
       router.push(`/amigos/retos/crear/revision?cid=${cid}`);
       return;
     }
-    // Si hay un guardado en curso, no permitimos continuar
     if (savingRules === 'saving' || savingCover) {
       setMsg('Espera a que termine de guardarse la información…');
       return;
     }
     try {
       await setChallengeMeta(cid, null, rules, coverUrl ? coverUrl.split('?')[0] : null);
+
+      // 👇 Si NO personalizan, nos aseguramos de que los días vacíos queden con el título
+      if (!customize) {
+        await fillDefaultLabelsIfNeeded();
+      }
+
       router.push(`/amigos/retos/crear/revision?cid=${cid}`);
     } catch (e: any) {
       setMsg(e?.message || 'No se pudo guardar antes de continuar.');
@@ -222,7 +259,9 @@ function PersonalizarRetoPageInner() {
     <main className="container mx-auto px-4 max-w-screen-md py-6 space-y-6">
       <header className="space-y-1">
         <h1 className="text-xl font-semibold">Personalizar reto</h1>
-        <p className="text-sm muted">Reto: <span className="font-medium">{title || '—'}</span></p>
+        <p className="text-sm muted">
+          Reto: <span className="font-medium">{title || '—'}</span>
+        </p>
         {!isOwner && (
           <p className="text-xs text-orange-600">
             Solo el propietario del reto puede editar. Estás en modo lectura.
@@ -272,7 +311,7 @@ function PersonalizarRetoPageInner() {
               disabled={!isOwner}
               className="w-full min-h-28 rounded-xl border px-3 py-2"
               style={{ borderColor: 'var(--line)' }}
-              placeholder="Escribe reglas, premios, penalizaciones, etc."
+              placeholder="Incluye aquí una breve descripción del reto, normas, premio para el ganador, castigo para el perdedor…"
             />
             <div className="text-xs mt-1">
               {savingRules === 'saving' && <span className="text-gray-500">Guardando…</span>}
@@ -296,7 +335,7 @@ function PersonalizarRetoPageInner() {
             </p>
           </section>
 
-          {/* Lista de días */}
+          {/* Lista de días (solo si personalizan) */}
           {customize && (
             <section className="space-y-2">
               {days.map((d, i) => (
@@ -305,7 +344,7 @@ function PersonalizarRetoPageInner() {
                   <input
                     className="col-span-9 rounded-xl border px-3 py-2 text-sm"
                     style={{ borderColor: 'var(--line)' }}
-                    placeholder={`Día ${d.day} – ...`}
+                    placeholder={`Día ${d.day} — ${getDefaultDayLabel(title, d.label)}`}
                     value={d.label}
                     onChange={(e) => handleLabelChange(i, e.target.value)}
                     disabled={!isOwner}
