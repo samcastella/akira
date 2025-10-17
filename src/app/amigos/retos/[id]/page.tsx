@@ -496,41 +496,42 @@ function startEdit() {
   return (
     <main className="min-h-screen bg-white relative">
       {/* ===== HERO ===== */}
-      <section className="relative w-full aspect-[16/9] bg-neutral-100">
-        {resolvedCover ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={resolvedCover}
-            alt={challenge.title}
-            className="absolute inset-0 block w-full h-full object-cover"
-            draggable={false}
-          />
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center text-neutral-400">
-            <ImagePlus className="h-10 w-10" />
-            <span className="ml-2 text-sm">Sin imagen</span>
-          </div>
-        )}
+<section className="relative w-full overflow-hidden bg-neutral-100">
+  {resolvedCover ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={resolvedCover}
+      alt={challenge.title}
+      className="block w-full h-auto aspect-[16/9] object-cover"
+      draggable={false}
+    />
+  ) : (
+    <div className="aspect-[16/9] w-full flex items-center justify-center text-neutral-400">
+      <ImagePlus className="h-10 w-10" />
+      <span className="ml-2 text-sm">Sin imagen</span>
+    </div>
+  )}
 
-        {isOwner && (
-          <>
-            <input
-              ref={coverInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={onPickCover}
-            />
-            <button
-              className="absolute top-3 right-3 rounded-full bg-white/80 backdrop-blur px-3 py-1.5 text-[13px] font-medium hover:bg-white transition"
-              onClick={triggerCoverPick}
-              disabled={coverUploading}
-            >
-              {coverUploading ? 'Subiendo…' : 'Cambiar imagen'}
-            </button>
-          </>
-        )}
-      </section>
+  {isOwner && (
+    <>
+      <input
+        ref={coverInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={onPickCover}
+      />
+      <button
+        className="absolute top-3 right-3 rounded-full bg-white/80 backdrop-blur px-3 py-1.5 text-[13px] font-medium hover:bg-white transition"
+        onClick={triggerCoverPick}
+        disabled={coverUploading}
+      >
+        {coverUploading ? 'Subiendo…' : 'Cambiar imagen'}
+      </button>
+    </>
+  )}
+</section>
+
 
       {/* ===== SUBMENÚ ===== */}
       <nav className="border-b bg-white sticky top-[48px] z-10">

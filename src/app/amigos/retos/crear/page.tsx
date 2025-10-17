@@ -28,7 +28,6 @@ export default function CrearRetoPage() {
   const [title, setTitle] = useState('');
   const [start, setStart] = useState(todayISO);
   const [duration, setDuration] = useState(30);
-  const [description, setDescription] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -61,7 +60,7 @@ export default function CrearRetoPage() {
               title: title.trim(),
               start,
               end: endISO,
-              description: description.trim() || null,
+              // 👇 quitamos description aquí. Se edita en “personalizar”.
             },
           ])
           .select('id')
@@ -142,24 +141,6 @@ export default function CrearRetoPage() {
               required
             />
           </div>
-        </div>
-
-        {/* Descripción / Normas opcional */}
-        <div>
-          <label className="block text-sm mb-1">
-            Descripción / Normas (opcional)
-          </label>
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={5}
-            className="w-full rounded-xl border px-3 py-2"
-            style={{ borderColor: 'var(--line)' }}
-            placeholder={`Incluye aquí una breve descripción del reto, normas, premio para el ganador, castigo para el perdedor… para que todos lo vean`}
-          />
-          <p className="text-[12px] text-neutral-500 mt-1">
-            Puedes editar estas normas después en “Personalizar”.
-          </p>
         </div>
 
         {errorMsg && <div className="text-sm text-red-600">{errorMsg}</div>}
