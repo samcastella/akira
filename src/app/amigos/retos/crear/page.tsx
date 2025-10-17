@@ -28,7 +28,7 @@ export default function CrearRetoPage() {
   const [title, setTitle] = useState('');
   const [start, setStart] = useState(todayISO);
   const [duration, setDuration] = useState(30);
-  const [description, setDescription] = useState(''); // ⬅️ NUEVO
+  const [description, setDescription] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -42,13 +42,11 @@ export default function CrearRetoPage() {
 
     setSubmitting(true);
     try {
-      // calcular end
       const startDate = new Date(start + 'T00:00:00');
       const endDate = new Date(startDate);
       endDate.setDate(endDate.getDate() + Number(duration));
       const endISO = toISODate(endDate);
 
-      // generar code único (reintentos si colisión)
       let code = genJoinCode(6);
       let createdId: string | null = null;
 
@@ -63,7 +61,7 @@ export default function CrearRetoPage() {
               title: title.trim(),
               start,
               end: endISO,
-              description: description.trim() || null, // ⬅️ guarda normas/desc si se aporta
+              description: description.trim() || null,
             },
           ])
           .select('id')
@@ -83,13 +81,11 @@ export default function CrearRetoPage() {
 
       if (!createdId) throw new Error('No se pudo crear el reto (código ocupado). Prueba de nuevo.');
 
-      // añadir creador como miembro
       const { error: mErr } = await supabase
         .from('challenge_members')
         .insert([{ challenge_id: createdId, user_id: uid }]);
       if (mErr) throw mErr;
 
-      // Paso 2 (personalización)
       router.push(`/amigos/retos/crear/personalizar?cid=${createdId}&duration=${duration}`);
     } catch (err: any) {
       setErrorMsg(err?.message ?? 'Error al crear el reto.');
@@ -148,7 +144,7 @@ export default function CrearRetoPage() {
           </div>
         </div>
 
-        {/* NUEVO: Descripción / Normas opcional */}
+        {/* Descripción / Normas opcional */}
         <div>
           <label className="block text-sm mb-1">
             Descripción / Normas (opcional)
@@ -159,12 +155,7 @@ export default function CrearRetoPage() {
             rows={5}
             className="w-full rounded-xl border px-3 py-2"
             style={{ borderColor: 'var(--line)' }}
-            placeholder={`Ejemplo:
-· Cada día subes una foto cumpliendo el reto.
-· Necesitas que otro participante valide tu participación diaria (con sólo 1 validación es suficiente).
-· Cada validación suma 1 punto.
-· Tu participación diaria puede quedar invalidada si el 50% vota “no válido”.
-· Si nadie valida en 4 horas, se valida automáticamente.`}
+            placeholder={`Incluye aquí una breve descripción del reto, normas, premio para el ganador, castigo para el perdedor… para que todos lo vean`}
           />
           <p className="text-[12px] text-neutral-500 mt-1">
             Puedes editar estas normas después en “Personalizar”.

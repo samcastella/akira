@@ -3,9 +3,10 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import Image from 'next/image';
+// import Image from 'next/image';  // usamos <img> para evitar restricciones de dominios
 import { supabase } from '@/lib/supabaseClient';
 import { ChevronRight, ImagePlus, Info, X, Camera } from 'lucide-react';
+import CreateHabitBar from '@/components/habits/CreateHabitBar';
 
 type Challenge = {
   id: string;
@@ -77,6 +78,12 @@ export default function RetoDetallePage() {
   const [metaDescription, setMetaDescription] = useState<string | null>(null);
   const [metaCoverUrl, setMetaCoverUrl] = useState<string | null>(null);
 
+  // Edición inline
+  const [isEditing, setIsEditing] = useState(false);
+  const [titleEdit, setTitleEdit] = useState('');
+  const [descEdit, setDescEdit] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+
   // Check del día
   const [todayIdx, setTodayIdx] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -89,6 +96,7 @@ export default function RetoDetallePage() {
 
   // Ranking
   const [leaders, setLeaders] = useState<LeaderRow[]>([]);
+  const [leaderPhotos, setLeaderPhotos] = useState<Record<string, string | null>>({});
 
   // Cover change
   const coverInputRef = useRef<HTMLInputElement | null>(null);
@@ -148,6 +156,21 @@ export default function RetoDetallePage() {
       const coverMeta = metaMap['cover_url'] || null;
       setMetaDescription(descMeta);
       setMetaCoverUrl(coverMeta);
+
+      // Traer fotos de perfil para ranking
+      const ids = ((lb.data ?? []) as LeaderRow[]).map(r => r.user_id);
+      if (ids.length) {
+        const { data: profs, error: pErr } = await supabase
+          .from('public_profiles')
+          .select('user_id, foto')
+          .in('user_id', ids);
+        if (pErr) console.error(pErr);
+        const map: Record<string, string | null> = {};
+        (profs ?? []).forEach((p) => { map[p.user_id] = p.foto ?? null; });
+        setLeaderPhotos(map);
+      } else {
+        setLeaderPhotos({});
+      }
 
       setLoading(false);
     })();
@@ -265,6 +288,36 @@ export default function RetoDetallePage() {
 
   const isOwner = uid === challenge.owner_id;
 
+  // ===== edición inline =====
+function startEdit() {
+  if (!challenge) return;                 // ✅ evita null
+  setTitleEdit(challenge.title);
+  setDescEdit((challenge.description ?? metaDescription ?? '') || '');
+  setIsEditing(true);
+}
+  function cancelEdit() {
+    setIsEditing(false);
+  }
+  async function saveEdit() {
+    if (!challenge) return;
+    setSavingEdit(true);
+    try {
+      const payload: Partial<Challenge> = {
+        title: titleEdit.trim() || challenge.title,
+        description: descEdit.trim() || null,
+      };
+      const { error } = await supabase.from('challenges').update(payload).eq('id', challenge.id);
+      if (error) throw error;
+      setChallenge((prev) => prev ? { ...prev, ...payload } as Challenge : prev);
+      setIsEditing(false);
+    } catch (e) {
+      console.error(e);
+      alert('No se pudo guardar los cambios.');
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
   async function handleDelete() {
     setModal(null);
     const { error } = await supabase.from('challenges').delete().eq('id', id);
@@ -305,7 +358,6 @@ export default function RetoDetallePage() {
         });
       if (upErr) throw upErr;
 
-      // Insertar check
       const expiresAt = new Date(Date.now() + 48 * 3600 * 1000).toISOString();
       const { data, error: insErr } = await supabase
         .from('challenge_checks')
@@ -366,7 +418,6 @@ export default function RetoDetallePage() {
 
       const { data: pub } = supabase.storage.from(COVERS_BUCKET).getPublicUrl(path);
       const coverUrl = pub?.publicUrl ?? null;
-
       if (!coverUrl) throw new Error('No se pudo obtener URL pública de la portada.');
 
       const { error: updErr } = await supabase
@@ -376,7 +427,7 @@ export default function RetoDetallePage() {
       if (updErr) throw updErr;
 
       setChallenge((prev) => (prev ? { ...prev, cover_url: coverUrl } : prev));
-      setMetaCoverUrl(null); // ya no necesitamos el fallback
+      setMetaCoverUrl(null);
     } catch (err) {
       console.error(err);
       alert('No se pudo actualizar la imagen de portada.');
@@ -427,28 +478,32 @@ export default function RetoDetallePage() {
     return n.replace(/[^\w.\-]+/g, '_');
   }
 
-  const resolvedCover =
-    challenge.cover_url ||
-    metaCoverUrl ||
-    null;
+  // ===== labels por día (fallback = título del reto) =====
+  function getDayLabel(dayIndex?: number | null) {
+    if (!dayIndex || !challenge) return '';
+    // Si más adelante lees una tabla de labels (challenge_day_labels), usa su valor aquí.
+    return challenge.title;
+  }
+
+  const resolvedCover = challenge.cover_url || metaCoverUrl || null;
 
   const resolvedDescription =
     (challenge.description && challenge.description.trim()) ||
     (metaDescription && metaDescription.trim()) ||
     '';
 
+  // ======= RENDER =======
   return (
     <main className="min-h-screen bg-white relative">
       {/* ===== HERO ===== */}
       <section className="relative w-full aspect-[16/9] bg-neutral-100">
         {resolvedCover ? (
-          <Image
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
             src={resolvedCover}
             alt={challenge.title}
-            fill
-            className="object-cover"
-            sizes="100vw"
-            priority
+            className="absolute inset-0 block w-full h-full object-cover"
+            draggable={false}
           />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center text-neutral-400">
@@ -502,7 +557,17 @@ export default function RetoDetallePage() {
         {activeTab === 'Resumen' && (
           <div className="space-y-5">
             <div className="flex items-center justify-between">
-              <h1 className="text-2xl font-semibold">{challenge.title}</h1>
+              {isEditing ? (
+                <input
+                  value={titleEdit}
+                  onChange={(e) => setTitleEdit(e.target.value)}
+                  className="text-2xl font-semibold border-b outline-none flex-1 mr-3"
+                  style={{ borderColor: 'var(--line)' }}
+                />
+              ) : (
+                <h1 className="text-2xl font-semibold">{challenge.title}</h1>
+              )}
+
               <div className="text-sm text-neutral-500">
                 👥 {summary?.members_count ?? 0} participantes
               </div>
@@ -510,7 +575,17 @@ export default function RetoDetallePage() {
 
             <div className="space-y-2">
               <h2 className="text-sm font-semibold tracking-wide text-neutral-900">Normas del reto</h2>
-              {resolvedDescription ? (
+
+              {isEditing ? (
+                <textarea
+                  value={descEdit}
+                  onChange={(e) => setDescEdit(e.target.value)}
+                  rows={5}
+                  className="w-full rounded-xl border px-3 py-2"
+                  style={{ borderColor: 'var(--line)' }}
+                  placeholder="Describe brevemente el reto, normas, premio y castigo…"
+                />
+              ) : resolvedDescription ? (
                 <p className="text-sm text-neutral-700 whitespace-pre-line">
                   {resolvedDescription}
                 </p>
@@ -554,24 +629,49 @@ export default function RetoDetallePage() {
               </div>
             </div>
 
-            {isOwner ? (
+            {isOwner && (
               <div className="flex gap-2">
-                <button
-                  className="rounded-xl border px-4 py-2 text-sm hover:bg-black/5 transition"
-                  style={{ borderColor: 'var(--line)' }}
-                  onClick={() => alert('Abrir edición de reto')}
-                >
-                  Editar reto
-                </button>
-                <button
-                  className="rounded-xl border px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition"
-                  style={{ borderColor: 'var(--line)' }}
-                  onClick={() => setModal('delete')}
-                >
-                  Borrar reto
-                </button>
+                {!isEditing ? (
+                  <button
+                    className="rounded-xl border px-4 py-2 text-sm hover:bg-black/5 transition"
+                    style={{ borderColor: 'var(--line)' }}
+                    onClick={startEdit}
+                  >
+                    Editar reto
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      className="rounded-xl border px-4 py-2 text-sm hover:bg-black/5 transition"
+                      style={{ borderColor: 'var(--line)' }}
+                      onClick={cancelEdit}
+                      disabled={savingEdit}
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      className="rounded-xl bg-black text-white px-4 py-2 text-sm hover:opacity-90 transition disabled:opacity-60"
+                      onClick={saveEdit}
+                      disabled={savingEdit}
+                    >
+                      {savingEdit ? 'Guardando…' : 'Guardar'}
+                    </button>
+                  </>
+                )}
+
+                {!isEditing && (
+                  <button
+                    className="rounded-xl border px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition"
+                    style={{ borderColor: 'var(--line)' }}
+                    onClick={() => setModal('delete')}
+                  >
+                    Borrar reto
+                  </button>
+                )}
               </div>
-            ) : (
+            )}
+
+            {!isOwner && !isEditing && (
               <button
                 className="rounded-xl border px-4 py-2 text-sm text-neutral-600 hover:bg-black/5 transition"
                 style={{ borderColor: 'var(--line)' }}
@@ -586,6 +686,23 @@ export default function RetoDetallePage() {
         {/* CHECK DEL DÍA */}
         {activeTab === 'Check del día' && (
           <div className="space-y-4">
+            {/* Barra estilo CreateHabitBar con label del día (fallback = título del reto) */}
+            <CreateHabitBar
+              variant="task"
+              checked={!!myTodayCheck && (myTodayCheck.status === 'valid' || myTodayCheck.status === 'auto_valid')}
+              label={`Día ${todayIdx ?? '-'} – ${getDayLabel(todayIdx)}`}
+              onToggle={() => {
+                // Solo visual: no cambiamos estado aquí; el check real lo decide la validación.
+                // Podríamos abrir detalles si lo deseas.
+              }}
+              onInfo={() => {
+                // ejemplo: scroll a la tarjeta del check
+                document.getElementById('my-today-check')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
+              color="#F8E68A"
+              className="mt-1"
+            />
+
             <div className="flex items-center justify-between">
               <div className="text-sm">
                 Día <b>{todayIdx ?? '-'}</b> / {summary?.total_days ?? '-'}
@@ -608,7 +725,7 @@ export default function RetoDetallePage() {
             </div>
 
             {myTodayCheck ? (
-              <div className="rounded-2xl overflow-hidden border" style={{ borderColor: 'var(--line)' }}>
+              <div id="my-today-check" className="rounded-2xl overflow-hidden border" style={{ borderColor: 'var(--line)' }}>
                 {myTodayCheck.signed_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -653,7 +770,7 @@ export default function RetoDetallePage() {
               )}
               <ul className="space-y-3">
                 {queue
-                  .filter((q) => q.author_id !== uid) // no votarse a sí mismo
+                  .filter((q) => q.author_id !== uid)
                   .map((q) => (
                     <li
                       key={q.check_id}
@@ -674,7 +791,7 @@ export default function RetoDetallePage() {
                       )}
                       <div className="p-3 flex items-center justify-between text-sm">
                         <div>
-                          Día {q.day_index} · subido {fmtDate(q.created_at)}
+                          Día {q.day_index} – {getDayLabel(q.day_index)} · subido {fmtDate(q.created_at)}
                         </div>
                         <div className="flex gap-2">
                           <button
@@ -724,7 +841,7 @@ export default function RetoDetallePage() {
                     )}
                     <div className="p-3 flex items-center justify-between text-sm">
                       <div>
-                        Día {q.day_index} · estado: <b>{labelStatus(q.status)}</b> · vence{' '}
+                        Día {q.day_index} – {getDayLabel(q.day_index)} · estado: <b>{labelStatus(q.status)}</b> · vence{' '}
                         {fmtDate(q.photo_expires_at)}
                       </div>
                       <button
@@ -748,22 +865,50 @@ export default function RetoDetallePage() {
             {!leaders.length && (
               <p className="text-sm text-neutral-600">Sin datos de ranking.</p>
             )}
+
             <ul className="space-y-2">
-              {leaders.map((r) => (
-                <li
-                  key={r.user_id}
-                  className="flex items-center justify-between rounded-xl border px-3 py-2"
-                  style={{ borderColor: 'var(--line)' }}
-                >
-                  <div className="text-sm">
-                    <span className="font-semibold">#{r.rank_position}</span>{' '}
-                    {r.handle ||
-                      `${r.nombre ?? ''} ${r.apellido ?? ''}`.trim() ||
-                      r.user_id.slice(0, 6)}
-                  </div>
-                  <div className="text-sm font-semibold">{r.score} pts</div>
-                </li>
-              ))}
+              {leaders.map((r) => {
+                const name =
+                  r.handle ||
+                  `${(r.nombre ?? '').trim()} ${(r.apellido ?? '').trim()}`.trim() ||
+                  r.user_id.slice(0, 6);
+                const avatar = leaderPhotos[r.user_id] || null;
+
+                return (
+                  <li
+                    key={r.user_id}
+                    className="flex items-center justify-between rounded-[28px] px-3 py-2 shadow-sm"
+                    style={{ background: 'linear-gradient(180deg, #F8E68A 0%, #F2D767 100%)' }}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="h-10 w-10 shrink-0 rounded-full overflow-hidden bg-neutral-100 aspect-square [clip-path:circle()]">
+                        {avatar ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={avatar}
+                            alt="Avatar"
+                            className="block h-full w-full object-cover object-center align-middle"
+                            draggable={false}
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <div className="h-full w-full grid place-items-center text-[12px] text-neutral-600">🙂</div>
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold truncate">
+                          #{r.rank_position} · {name}
+                        </div>
+                        <div className="text-xs opacity-80 truncate">Puntos acumulados</div>
+                      </div>
+                    </div>
+
+                    <div className="text-base font-bold tabular-nums shrink-0">
+                      {r.score} pts
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           </div>
         )}
