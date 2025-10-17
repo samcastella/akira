@@ -1,3 +1,4 @@
+// src/app/amigos/retos/crear/page.tsx
 'use client';
 
 import { useState, useMemo } from 'react';
@@ -27,6 +28,7 @@ export default function CrearRetoPage() {
   const [title, setTitle] = useState('');
   const [start, setStart] = useState(todayISO);
   const [duration, setDuration] = useState(30);
+  const [description, setDescription] = useState(''); // ⬅️ NUEVO
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -61,6 +63,7 @@ export default function CrearRetoPage() {
               title: title.trim(),
               start,
               end: endISO,
+              description: description.trim() || null, // ⬅️ guarda normas/desc si se aporta
             },
           ])
           .select('id')
@@ -86,7 +89,7 @@ export default function CrearRetoPage() {
         .insert([{ challenge_id: createdId, user_id: uid }]);
       if (mErr) throw mErr;
 
-      // ⤵️ Cambio: encadenar con Paso 2 (personalización)
+      // Paso 2 (personalización)
       router.push(`/amigos/retos/crear/personalizar?cid=${createdId}&duration=${duration}`);
     } catch (err: any) {
       setErrorMsg(err?.message ?? 'Error al crear el reto.');
@@ -99,7 +102,9 @@ export default function CrearRetoPage() {
     <main className="container mx-auto px-4 max-w-screen-sm py-4">
       <header className="mb-4">
         <h1 className="text-xl font-semibold">Crear reto</h1>
-        <p className="text-sm muted mt-1">Define tu reto y comparte el código con tus amigos.</p>
+        <p className="text-sm muted mt-1">
+          Define tu reto y comparte el código con tus amigos.
+        </p>
       </header>
 
       <form onSubmit={handleSubmit} className="space-y-5">
@@ -141,6 +146,29 @@ export default function CrearRetoPage() {
               required
             />
           </div>
+        </div>
+
+        {/* NUEVO: Descripción / Normas opcional */}
+        <div>
+          <label className="block text-sm mb-1">
+            Descripción / Normas (opcional)
+          </label>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={5}
+            className="w-full rounded-xl border px-3 py-2"
+            style={{ borderColor: 'var(--line)' }}
+            placeholder={`Ejemplo:
+· Cada día subes una foto cumpliendo el reto.
+· Necesitas que otro participante valide tu participación diaria (con sólo 1 validación es suficiente).
+· Cada validación suma 1 punto.
+· Tu participación diaria puede quedar invalidada si el 50% vota “no válido”.
+· Si nadie valida en 4 horas, se valida automáticamente.`}
+          />
+          <p className="text-[12px] text-neutral-500 mt-1">
+            Puedes editar estas normas después en “Personalizar”.
+          </p>
         </div>
 
         {errorMsg && <div className="text-sm text-red-600">{errorMsg}</div>}
