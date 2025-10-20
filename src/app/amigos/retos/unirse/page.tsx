@@ -29,6 +29,9 @@ export default function UnirseRetoPage() {
   const [msg, setMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // Modal de éxito
+  const [joined, setJoined] = useState<{ open: boolean; challengeId?: string }>({ open: false });
+
   async function join() {
     setMsg(null);
     if (!userId) { setMsg('Debes iniciar sesión para unirte.'); return; }
@@ -41,22 +44,25 @@ export default function UnirseRetoPage() {
 
     setLoading(true);
     try {
-      // 👈 clave: usar _code, no p_code
+      // ⚠️ Ajusta el nombre/params de tu RPC si es distinto
       const { data, error } = await supabase.rpc('join_challenge_by_code', { _code: clean });
       if (error) {
-        if (String(error.message).includes('RETO_NO_ENCONTRADO')) {
-          throw new Error('No existe ningún reto con ese código.');
-        }
-        if (String(error.message).includes('NO_AUTH')) {
-          throw new Error('Debes iniciar sesión para unirte.');
-        }
+        const m = String(error.message || '');
+        if (m.includes('RETO_NO_ENCONTRADO')) throw new Error('No existe ningún reto con ese código.');
+        if (m.includes('NO_AUTH')) throw new Error('Debes iniciar sesión para unirte.');
         throw error;
       }
-      const challengeId = String(data);
+      // La RPC devuelve el id del reto. Si no, recupéralo por código:
+      let challengeId = String(data || '');
+      if (!challengeId) {
+        const { data: c, error: e2 } = await supabase.from('challenges').select('id').eq('join_code', clean).single();
+        if (e2) throw e2;
+        challengeId = c?.id;
+      }
       if (!challengeId) throw new Error('No se pudo unir al reto.');
 
-      // Redirigir al detalle del reto
-      router.push(`/amigos/retos/${challengeId}`);
+      // Abre modal de éxito
+      setJoined({ open: true, challengeId });
     } catch (e: any) {
       setMsg(e?.message || 'No hemos podido unirte al reto.');
     } finally {
@@ -102,8 +108,39 @@ export default function UnirseRetoPage() {
           {loading ? 'Uniéndote…' : 'Unirme'}
         </button>
 
-        {msg && <p className="text-xs mt-1">{msg}</p>}
+        {msg && <p className="text-xs mt-1 text-red-600">{msg}</p>}
       </section>
+
+      {/* Modal de éxito */}
+      {joined.open && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm grid place-items-center">
+          <div className="bg-white rounded-2xl p-5 w-[90%] max-w-sm relative shadow-xl">
+            <button
+              className="absolute top-3 right-3 text-neutral-400 hover:text-black"
+              onClick={() => setJoined({ open: false, challengeId: joined.challengeId })}
+              aria-label="Cerrar"
+            >
+              ×
+            </button>
+            <h3 className="text-lg font-semibold">¡Te has unido al reto con éxito!</h3>
+            <p className="text-sm text-neutral-600 mt-1">
+              A partir de ahora lo puedes ver en <b>Retos con amigos</b>.
+            </p>
+            <div className="mt-4">
+              <button
+                onClick={() => {
+                  const id = joined.challengeId;
+                  setJoined({ open: false, challengeId: id });
+                  if (id) router.push(`/amigos/retos/${id}`);
+                }}
+                className="w-full rounded-xl bg-black text-white px-4 py-2 text-sm font-semibold hover:opacity-90"
+              >
+                Ver reto
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

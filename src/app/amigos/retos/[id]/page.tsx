@@ -1,4 +1,3 @@
-// src/app/amigos/retos/[id]/page.tsx
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
@@ -48,7 +47,7 @@ type LeaderRow = {
   apellido: string | null;
 };
 
-// ⬇️ Asegúrate de que coincide EXACTAMENTE con el nombre en Supabase Storage
+// ⬇️ Debe coincidir EXACTAMENTE con el nombre en Supabase Storage
 const PHOTOS_BUCKET = 'challenge-photos';
 const COVERS_BUCKET = 'challenge-covers';
 
@@ -98,6 +97,10 @@ export default function RetoDetallePage() {
   // Ranking
   const [leaders, setLeaders] = useState<LeaderRow[]>([]);
   const [leaderPhotos, setLeaderPhotos] = useState<Record<string, string | null>>({});
+
+  // Participantes y labels
+  const [membersCount, setMembersCount] = useState<number>(0);
+  const [dayLabels, setDayLabels] = useState<Record<number, string>>({});
 
   // Cover change
   const coverInputRef = useRef<HTMLInputElement | null>(null);
@@ -164,9 +167,7 @@ export default function RetoDetallePage() {
           .in('user_id', ids);
         if (pErr) console.error(pErr);
         const map: Record<string, string | null> = {};
-        (profs ?? []).forEach((p) => {
-          map[p.user_id] = p.foto ?? null;
-        });
+        (profs ?? []).forEach((p) => { map[p.user_id] = p.foto ?? null; });
         setLeaderPhotos(map);
       } else {
         setLeaderPhotos({});
@@ -175,9 +176,40 @@ export default function RetoDetallePage() {
       setLoading(false);
     })();
 
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
+  }, [id]);
+
+  // Cargar miembros reales (RPC) y labels por día
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!id) return;
+
+      // 1) miembros (RPC security definer)
+      const { data: cnt, error: cntErr } = await supabase.rpc('get_members_count', { p_challenge: id });
+      if (!alive) return;
+      if (cntErr) console.error(cntErr);
+      setMembersCount(Number(cnt ?? 0));
+
+      // 2) labels por día (si hay)
+      const { data: rows, error: dlErr } = await supabase
+        .from('challenge_days')
+        .select('day_index, label')
+        .eq('challenge_id', id)
+        .order('day_index', { ascending: true });
+
+      if (!alive) return;
+      if (dlErr) {
+        console.warn('challenge_days RLS/empty:', dlErr.message);
+        setDayLabels({});
+      } else {
+        const map: Record<number, string> = {};
+        (rows ?? []).forEach((r: any) => { if (r.label) map[r.day_index] = r.label; });
+        setDayLabels(map);
+      }
+    })();
+
+    return () => { alive = false; };
   }, [id]);
 
   // Calcular índice del día actual y cargar mi check de hoy
@@ -258,9 +290,7 @@ export default function RetoDetallePage() {
       setReviewables(withSignedR as any);
     })();
 
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, [id, uploading, activeTab]);
 
   async function signPath(path: string | null) {
@@ -296,16 +326,14 @@ export default function RetoDetallePage() {
     setDescEdit((challenge.rules ?? challenge.description ?? metaDescription ?? '') || '');
     setIsEditing(true);
   }
-  function cancelEdit() {
-    setIsEditing(false);
-  }
+  function cancelEdit() { setIsEditing(false); }
   async function saveEdit() {
     if (!challenge) return;
     setSavingEdit(true);
     try {
       const payload: Partial<Challenge> = {
         title: titleEdit.trim() || challenge.title,
-        rules: descEdit.trim() || null, // ✅ guardamos en rules
+        rules: descEdit.trim() || null,
       };
       const { error } = await supabase.from('challenges').update(payload).eq('id', challenge.id);
       if (error) throw error;
@@ -339,9 +367,7 @@ export default function RetoDetallePage() {
   }
 
   // === Subida del check del día ===
-  function triggerPick() {
-    fileRef.current?.click();
-  }
+  function triggerPick() { fileRef.current?.click(); }
 
   async function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -363,16 +389,14 @@ export default function RetoDetallePage() {
       const expiresAt = new Date(Date.now() + 48 * 3600 * 1000).toISOString();
       const { data, error: insErr } = await supabase
         .from('challenge_checks')
-        .insert([
-          {
-            challenge_id: challenge.id,
-            user_id: uid,
-            day_index: todayIdx,
-            photo_path: path,
-            photo_expires_at: expiresAt,
-            status: 'pending',
-          },
-        ])
+        .insert([{
+          challenge_id: challenge.id,
+          user_id: uid,
+          day_index: todayIdx,
+          photo_path: path,
+          photo_expires_at: expiresAt,
+          status: 'pending',
+        }])
         .select('id, challenge_id, user_id, day_index, photo_path, status, created_at, photo_expires_at')
         .single();
       if (insErr) throw insErr;
@@ -399,9 +423,7 @@ export default function RetoDetallePage() {
   }
 
   // === Cambiar portada ===
-  function triggerCoverPick() {
-    coverInputRef.current?.click();
-  }
+  function triggerCoverPick() { coverInputRef.current?.click(); }
 
   async function onPickCover(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -429,7 +451,7 @@ export default function RetoDetallePage() {
       if (updErr) throw updErr;
 
       setChallenge((prev) => (prev ? { ...prev, cover_url: coverUrl } : prev));
-      setMetaCoverUrl(null); // ya no usamos el fallback
+      setMetaCoverUrl(null);
     } catch (err) {
       console.error(err);
       alert('No se pudo actualizar la imagen de portada.');
@@ -465,26 +487,19 @@ export default function RetoDetallePage() {
   function fmtDate(d: string) {
     try {
       return new Date(d).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' });
-    } catch {
-      return d;
-    }
+    } catch { return d; }
   }
-  function pct(n?: number) {
-    return Math.max(0, Math.min(100, Math.round(n ?? 0)));
-  }
-  function sanitizeFileName(n: string) {
-    return n.replace(/[^\w.\-]+/g, '_');
-  }
+  function pct(n?: number) { return Math.max(0, Math.min(100, Math.round(n ?? 0))); }
+  function sanitizeFileName(n: string) { return n.replace(/[^\w.\-]+/g, '_'); }
 
-  // ===== labels por día (fallback = título del reto) =====
+  // ===== labels por día (lee tabla y fallback = título del reto) =====
   function getDayLabel(dayIndex?: number | null) {
     if (!dayIndex || !challenge) return '';
-    // Si añades tabla de labels por día al detalle, léela aquí.
-    return challenge.title;
+    const lbl = dayLabels[dayIndex];
+    return (lbl && lbl.trim()) ? lbl.trim() : challenge.title;
   }
 
   const resolvedCover = challenge.cover_url || metaCoverUrl || null;
-
   const resolvedDescription =
     (challenge.rules && challenge.rules.trim()) ||
     (challenge.description && challenge.description.trim()) ||
@@ -568,7 +583,7 @@ export default function RetoDetallePage() {
               )}
 
               <div className="text-sm text-neutral-500">
-                👥 {summary?.members_count ?? 0} participantes
+                👥 {membersCount} participantes
               </div>
             </div>
 
@@ -632,7 +647,7 @@ export default function RetoDetallePage() {
               <div className="flex gap-2">
                 {!isEditing ? (
                   <button
-                    className="rounded-xl border px-4 py-2 text-sm hover:bg-black/5 transition"
+                    className="rounded-xl border px-4 py-2 text-sm hover:bg:black/5 transition"
                     style={{ borderColor: 'var(--line)' }}
                     onClick={startEdit}
                   >
@@ -965,13 +980,9 @@ export default function RetoDetallePage() {
 
 function labelStatus(s: QueueItem['status']) {
   switch (s) {
-    case 'pending':
-      return 'Pendiente';
-    case 'valid':
-      return 'Válido';
-    case 'invalid':
-      return 'No válido';
-    case 'auto_valid':
-      return 'Válido (auto)';
+    case 'pending': return 'Pendiente';
+    case 'valid': return 'Válido';
+    case 'invalid': return 'No válido';
+    case 'auto_valid': return 'Válido (auto)';
   }
 }
