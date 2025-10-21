@@ -14,8 +14,8 @@ type Challenge = {
   start: string; // 'YYYY-MM-DD'
   end: string;   // 'YYYY-MM-DD'
   cover_url?: string | null;
-  description?: string | null; // compat
-  rules?: string | null;       // fuente principal de normas
+  description?: string | null;
+  rules?: string | null;
 };
 
 type Summary = {
@@ -48,7 +48,7 @@ type LeaderRow = {
   apellido: string | null;
 };
 
-// ⬇️ Debe coincidir EXACTAMENTE con el nombre en Supabase Storage
+// ⬇️ Nombres EXACTOS de los buckets
 const PHOTOS_BUCKET = 'challenge-photos';
 const COVERS_BUCKET = 'challenge-covers';
 
@@ -75,7 +75,7 @@ export default function RetoDetallePage() {
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState<'delete' | 'leave' | null>(null);
 
-  // Fallbacks desde meta
+  // Fallbacks meta
   const [metaDescription, setMetaDescription] = useState<string | null>(null);
   const [metaCoverUrl, setMetaCoverUrl] = useState<string | null>(null);
 
@@ -103,9 +103,12 @@ export default function RetoDetallePage() {
   const [membersCount, setMembersCount] = useState<number>(0);
   const [dayLabels, setDayLabels] = useState<Record<number, string>>({});
 
-  // Cover change
-  const coverInputRef = useRef<HTMLInputElement | null>(null);
+  // Cover change (modal + inputs)
+  const coverCameraInputRef = useRef<HTMLInputElement | null>(null);
+  const coverFileInputRef = useRef<HTMLInputElement | null>(null);
   const [coverUploading, setCoverUploading] = useState(false);
+  const [coverModalOpen, setCoverModalOpen] = useState(false);
+  const [coverModalStep, setCoverModalStep] = useState<'pick' | 'success'>('pick');
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUid(data.user?.id ?? null));
@@ -159,8 +162,10 @@ export default function RetoDetallePage() {
       setMetaDescription(descMeta);
       setMetaCoverUrl(coverMeta);
 
-      // Avatares ranking
-      const ids = ((lb.data ?? []) as LeaderRow[]).map((r) => r.user_id);
+      // Avatares ranking — filtra uuids válidos para evitar 400
+      const idsRaw = ((lb.data ?? []) as LeaderRow[]).map((r) => r.user_id).filter(Boolean);
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const ids = idsRaw.filter((v) => UUID_RE.test(v));
       if (ids.length) {
         const { data: profs, error: pErr } = await supabase
           .from('public_profiles')
@@ -254,7 +259,7 @@ export default function RetoDetallePage() {
     })();
   }, [challenge, summary, uid]);
 
-  // Re-fetch del check de hoy al volver a la pestaña (sincroniza entre dispositivos)
+  // Re-fetch del check de hoy al volver a la pestaña
   useEffect(() => {
     function onVis() {
       if (document.visibilityState === 'visible') {
@@ -266,7 +271,7 @@ export default function RetoDetallePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [challenge?.id, uid, todayIdx]);
 
-  // Cargar cola de validaciones + reviewables
+  // Cargar colas de validación
   useEffect(() => {
     if (!id) return;
     let alive = true;
@@ -428,7 +433,7 @@ export default function RetoDetallePage() {
       if (upErr) throw upErr;
 
       const expiresAt = new Date(Date.now() + 48 * 3600 * 1000).toISOString();
-      const { data, error: insErr } = await supabase
+      const { error: insErr } = await supabase
         .from('challenge_checks')
         .insert([{
           challenge_id: challenge.id,
@@ -437,12 +442,9 @@ export default function RetoDetallePage() {
           photo_path: path,
           photo_expires_at: expiresAt,
           status: 'pending',
-        }])
-        .select('id, challenge_id, user_id, day_index, photo_path, status, created_at, photo_expires_at')
-        .single();
+        }]);
       if (insErr) throw insErr;
 
-      // Re‐fetch por si hay triggers que actualizan el registro
       await refreshMyTodayCheck();
     } catch (err: any) {
       console.error(err);
@@ -454,10 +456,15 @@ export default function RetoDetallePage() {
   }
 
   // === Cambiar portada ===
-  function triggerCoverPick() { coverInputRef.current?.click(); }
+  function openCoverModal() {
+    if (!isOwner) return;
+    setCoverModalStep('pick');
+    setCoverModalOpen(true);
+  }
+  function triggerCoverCamera() { coverCameraInputRef.current?.click(); }
+  function triggerCoverFile() { coverFileInputRef.current?.click(); }
 
-  async function onPickCover(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
+  async function onPickCoverFile(file: File) {
     if (!file || !challenge) return;
     setCoverUploading(true);
     try {
@@ -483,47 +490,35 @@ export default function RetoDetallePage() {
 
       setChallenge((prev) => (prev ? { ...prev, cover_url: coverUrl } : prev));
       setMetaCoverUrl(null);
+      setCoverModalStep('success'); // ✅ mensaje de éxito
     } catch (err) {
       console.error(err);
       alert('No se pudo actualizar la imagen de portada.');
     } finally {
       setCoverUploading(false);
-      if (coverInputRef.current) coverInputRef.current.value = '';
+      if (coverCameraInputRef.current) coverCameraInputRef.current.value = '';
+      if (coverFileInputRef.current) coverFileInputRef.current.value = '';
     }
   }
 
-  // === Votar ===
-  async function vote(checkId: string, kind: 'valid' | 'invalid') {
-    const { error } = await supabase.rpc('vote_on_check', { p_check_id: checkId, p_vote: kind });
-    if (error) {
-      console.error(error);
-      alert('No se pudo registrar el voto.');
-    } else {
-      setQueue((prev) => prev.filter((q) => q.check_id !== checkId));
-    }
+  function onPickCoverCamera(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) onPickCoverFile(file);
   }
-
-  // === Pedir revisión ===
-  async function requestReview(checkId: string) {
-    const { error } = await supabase.rpc('request_reconsideration', { p_check_id: checkId });
-    if (error) {
-      console.error(error);
-      alert('No se pudo pedir revisión.');
-    } else {
-      setReviewables((prev) => prev.filter((r) => r.check_id !== checkId));
-    }
+  function onPickCoverFromFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) onPickCoverFile(file);
   }
 
   // Helpers UI
   function fmtDate(d: string) {
-    try {
-      return new Date(d).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' });
-    } catch { return d; }
+    try { return new Date(d).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' }); }
+    catch { return d; }
   }
   function pct(n?: number) { return Math.max(0, Math.min(100, Math.round(n ?? 0))); }
   function sanitizeFileName(n: string) { return n.replace(/[^\w.\-]+/g, '_'); }
 
-  // ===== labels por día (lee tabla y fallback = título del reto) =====
+  // Labels por día
   function getDayLabel(dayIndex?: number | null) {
     if (!dayIndex || !challenge) return '';
     const lbl = dayLabels[dayIndex];
@@ -559,20 +554,31 @@ export default function RetoDetallePage() {
 
         {isOwner && (
           <>
+            {/* Botón flotante con icono de cámara */}
+            <button
+              aria-label="Cambiar imagen de portada"
+              onClick={openCoverModal}
+              className="absolute top-3 right-3 h-10 w-10 rounded-full bg-black/60 text-white grid place-items-center backdrop-blur hover:bg-black/70 active:scale-95 transition"
+            >
+              <Camera className="h-5 w-5" />
+            </button>
+
+            {/* Inputs ocultos para cámara / archivos */}
             <input
-              ref={coverInputRef}
+              ref={coverCameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={onPickCoverCamera}
+            />
+            <input
+              ref={coverFileInputRef}
               type="file"
               accept="image/*"
               className="hidden"
-              onChange={onPickCover}
+              onChange={onPickCoverFromFiles}
             />
-            <button
-              className="absolute top-3 right-3 rounded-full bg-white/80 backdrop-blur px-3 py-1.5 text-[13px] font-medium hover:bg-white transition"
-              onClick={triggerCoverPick}
-              disabled={coverUploading}
-            >
-              {coverUploading ? 'Subiendo…' : 'Cambiar imagen'}
-            </button>
           </>
         )}
       </section>
@@ -1003,8 +1009,60 @@ export default function RetoDetallePage() {
         </div>
       )}
 
-      {/* Inputs ocultos */}
-      <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={onPickCover} />
+      {/* ===== MODAL DE PORTADA ===== */}
+      {coverModalOpen && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 grid place-items-center">
+          <div className="bg-white rounded-2xl p-5 w-[92%] max-w-sm relative">
+            <button
+              className="absolute top-3 right-3 text-neutral-400 hover:text-black"
+              onClick={() => setCoverModalOpen(false)}
+              aria-label="Cerrar"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            {coverModalStep === 'pick' ? (
+              <>
+                <h3 className="text-lg font-semibold mb-1">Cambiar imagen de portada</h3>
+                <p className="text-sm text-neutral-600 mb-4">Elige una opción para subir tu imagen.</p>
+                <div className="flex flex-col gap-2">
+                  <button
+                    onClick={triggerCoverCamera}
+                    disabled={coverUploading}
+                    className="rounded-xl border px-4 py-2 text-sm hover:bg-black/5 transition"
+                    style={{ borderColor: 'var(--line)' }}
+                  >
+                    Hacer foto
+                  </button>
+                  <button
+                    onClick={triggerCoverFile}
+                    disabled={coverUploading}
+                    className="rounded-xl border px-4 py-2 text-sm hover:bg-black/5 transition"
+                    style={{ borderColor: 'var(--line)' }}
+                  >
+                    Subir foto de la galería
+                  </button>
+                </div>
+                {coverUploading && <p className="text-xs mt-3 text-neutral-500">Subiendo…</p>}
+              </>
+            ) : (
+              <>
+                <h3 className="text-lg font-semibold mb-1">¡Listo!</h3>
+                <p className="text-sm text-neutral-700">Su imagen se ha subido con éxito.</p>
+                <div className="mt-4 flex justify-end">
+                  <button
+                    className="rounded-xl border px-4 py-2 text-sm hover:bg-black/5 transition"
+                    style={{ borderColor: 'var(--line)' }}
+                    onClick={() => setCoverModalOpen(false)}
+                  >
+                    Cerrar
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </main>
   );
 }
