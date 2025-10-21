@@ -603,7 +603,7 @@ export default function RetoDetallePage() {
               {isEditing ? (
                 <textarea
                   value={descEdit}
-                  onChange={(e) => setDescEdit(e.target value)}
+                  onChange={(e) => setDescEdit(e.target.value)}
                   rows={5}
                   className="w-full rounded-xl border px-3 py-2"
                   style={{ borderColor: 'var(--line)' }}
