@@ -348,6 +348,34 @@ export default function RetoDetallePage() {
     }
   }
 
+  // === Votar ===
+  async function vote(checkId: string, kind: 'valid' | 'invalid') {
+    const { error } = await supabase.rpc('vote_on_check', {
+      p_check_id: checkId,
+      p_vote: kind,
+    });
+    if (error) {
+      console.error(error);
+      alert('No se pudo registrar el voto.');
+      return;
+    }
+    setQueue((prev) => prev.filter((q) => q.check_id !== checkId));
+    await refreshMyTodayCheck();
+  }
+
+  // === Pedir revisión ===
+  async function requestReview(checkId: string) {
+    const { error } = await supabase.rpc('request_reconsideration', {
+      p_check_id: checkId,
+    });
+    if (error) {
+      console.error(error);
+      alert('No se pudo pedir revisión.');
+      return;
+    }
+    setReviewables((prev) => prev.filter((r) => r.check_id !== checkId));
+  }
+
   if (loading)
     return (
       <main className="container mx-auto px-4 py-8">
