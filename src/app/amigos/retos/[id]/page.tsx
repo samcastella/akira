@@ -1,3 +1,4 @@
+// src/app/amigos/retos/[id]/page.tsx
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
@@ -149,7 +150,7 @@ export default function RetoDetallePage() {
       setSummary(resumen.data ?? null);
       setLeaders(lb.data ?? []);
 
-      // Fallbacks desde meta: description/normas/rules y cover_url
+      // Fallbacks desde meta
       const metaRows: Array<{ key: string; value: string }> = (meta as any).data ?? [];
       const metaMap = Object.fromEntries(metaRows.map((r) => [r.key, r.value]));
       const descMeta =
@@ -158,7 +159,7 @@ export default function RetoDetallePage() {
       setMetaDescription(descMeta);
       setMetaCoverUrl(coverMeta);
 
-      // Traer fotos de perfil para ranking
+      // Avatares ranking
       const ids = ((lb.data ?? []) as LeaderRow[]).map((r) => r.user_id);
       if (ids.length) {
         const { data: profs, error: pErr } = await supabase
@@ -191,7 +192,7 @@ export default function RetoDetallePage() {
       if (cntErr) console.error(cntErr);
       setMembersCount(Number(cnt ?? 0));
 
-      // 2) labels por día (si hay)
+      // 2) labels por día
       const { data: rows, error: dlErr } = await supabase
         .from('challenge_days')
         .select('day_index, label')
@@ -253,6 +254,18 @@ export default function RetoDetallePage() {
     })();
   }, [challenge, summary, uid]);
 
+  // Re-fetch del check de hoy al volver a la pestaña (sincroniza entre dispositivos)
+  useEffect(() => {
+    function onVis() {
+      if (document.visibilityState === 'visible') {
+        refreshMyTodayCheck();
+      }
+    }
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [challenge?.id, uid, todayIdx]);
+
   // Cargar cola de validaciones + reviewables
   useEffect(() => {
     if (!id) return;
@@ -300,6 +313,34 @@ export default function RetoDetallePage() {
       .createSignedUrl(path, 60 * 60 * 6); // 6h
     if (error) console.error(error);
     return data?.signedUrl ?? null;
+  }
+
+  async function refreshMyTodayCheck() {
+    if (!challenge || !uid || !todayIdx) return;
+    const { data, error } = await supabase
+      .from('challenge_checks')
+      .select('id, challenge_id, user_id, day_index, photo_path, status, created_at, photo_expires_at')
+      .eq('challenge_id', challenge.id)
+      .eq('user_id', uid)
+      .eq('day_index', todayIdx)
+      .maybeSingle();
+    if (error && error.code !== 'PGRST116') { console.error(error); return; }
+    if (data) {
+      const signed = await signPath(data.photo_path);
+      setMyTodayCheck({
+        check_id: data.id,
+        challenge_id: data.challenge_id,
+        author_id: data.user_id,
+        day_index: data.day_index,
+        photo_path: data.photo_path,
+        status: data.status as any,
+        created_at: data.created_at,
+        photo_expires_at: data.photo_expires_at,
+        signed_url: signed ?? undefined,
+      });
+    } else {
+      setMyTodayCheck(null);
+    }
   }
 
   if (loading)
@@ -401,18 +442,8 @@ export default function RetoDetallePage() {
         .single();
       if (insErr) throw insErr;
 
-      const signed = await signPath(path);
-      setMyTodayCheck({
-        check_id: data.id,
-        challenge_id: data.challenge_id,
-        author_id: data.user_id,
-        day_index: data.day_index,
-        photo_path: path,
-        status: data.status,
-        created_at: data.created_at,
-        photo_expires_at: data.photo_expires_at,
-        signed_url: signed ?? undefined,
-      } as any);
+      // Re‐fetch por si hay triggers que actualizan el registro
+      await refreshMyTodayCheck();
     } catch (err: any) {
       console.error(err);
       alert(`No se pudo subir la foto. ${err?.message || 'Intenta de nuevo.'}`);
@@ -647,7 +678,7 @@ export default function RetoDetallePage() {
               <div className="flex gap-2">
                 {!isEditing ? (
                   <button
-                    className="rounded-xl border px-4 py-2 text-sm hover:bg:black/5 transition"
+                    className="rounded-xl border px-4 py-2 text-sm hover:bg-black/5 transition"
                     style={{ borderColor: 'var(--line)' }}
                     onClick={startEdit}
                   >
