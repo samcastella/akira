@@ -93,7 +93,8 @@ export default function RetoDetallePage() {
   // Validaciones
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [reviewables, setReviewables] = useState<QueueItem[]>([]);
-  const [authorNames, setAuthorNames] = useState<Record<string, string>>({}); // user_id -> display
+  const [authorNames, setAuthorNames] = useState<Record<string, string>>({});
+  const [myVotes, setMyVotes] = useState<Set<string>>(new Set()); // checks ya votados por mí
 
   // Ranking
   const [leaders, setLeaders] = useState<LeaderRow[]>([]);
@@ -255,7 +256,7 @@ export default function RetoDetallePage() {
     }
   }
 
-  // ===== Carga colas + nombres (reutilizable) =====
+  // ===== Carga colas + nombres + mis votos (reutilizable) =====
   const loadQueues = async () => {
     if (!id) return;
     const [q, r] = await Promise.all([
@@ -285,24 +286,44 @@ export default function RetoDetallePage() {
     setQueue(withSigned as any);
     setReviewables(withSignedR as any);
 
+    // Mis votos para ocultar/bloquear la tarjeta si ya voté
+    const pendingIds = (withSigned as any[]).map(x => x.check_id);
+    if (pendingIds.length && uid) {
+      const { data: votes, error: vErr } = await supabase
+        .from('challenge_votes')
+        .select('check_id')
+        .in('check_id', pendingIds)
+        .eq('voter_id', uid);
+      if (vErr) console.error(vErr);
+      setMyVotes(new Set((votes ?? []).map(v => v.check_id)));
+    } else {
+      setMyVotes(new Set());
+    }
+
+    // nombres de autores
     const authorIds = Array.from(new Set([
       ...(withSigned as any[]).map((x) => x.author_id),
       ...(withSignedR as any[]).map((x) => x.author_id),
     ])).filter(Boolean);
 
     if (authorIds.length) {
-      // 🔎 Traemos más campos posibles para el nombre visible
       const { data: profs, error: pErr } = await supabase
         .from('public_profiles')
-        .select('user_id, handle, username, display_name, nombre, apellido')
+        .select('*')
         .in('user_id', authorIds);
 
       if (pErr) console.error(pErr);
       const map: Record<string, string> = {};
       (profs ?? []).forEach((p: any) => {
         const composed = `${(p.nombre ?? '').trim()} ${(p.apellido ?? '').trim()}`.trim();
-        const base = (p.handle || p.username || p.display_name || composed || '').trim();
-        map[p.user_id] = base || p.user_id.slice(0, 6);
+        const best =
+          p.handle?.trim?.() ||
+          p.username?.trim?.() ||
+          p.display_name?.trim?.() ||
+          p.full_name?.trim?.() ||
+          composed ||
+          '';
+        map[p.user_id] = (best || '').trim() || p.user_id.slice(0, 6);
       });
       setAuthorNames(map);
     } else {
@@ -314,7 +335,7 @@ export default function RetoDetallePage() {
   useEffect(() => {
     loadQueues();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, uploading, activeTab]);
+  }, [id, uploading, activeTab, uid]);
 
   async function signPath(path: string | null) {
     if (!path) return null;
@@ -335,7 +356,7 @@ export default function RetoDetallePage() {
       alert(`No se pudo registrar el voto: ${error.message ?? ''}`);
       return;
     }
-    // Quita localmente y vuelve a cargar desde el servidor para reflejar estado final
+    // optimista + recarga real
     setQueue((prev) => prev.filter((q) => q.check_id !== checkId));
     await loadQueues();
   }
@@ -582,7 +603,7 @@ export default function RetoDetallePage() {
               {isEditing ? (
                 <textarea
                   value={descEdit}
-                  onChange={(e) => setDescEdit(e.target.value)}
+                  onChange={(e) => setDescEdit(e.target value)}
                   rows={5}
                   className="w-full rounded-xl border px-3 py-2"
                   style={{ borderColor: 'var(--line)' }}
@@ -725,29 +746,47 @@ export default function RetoDetallePage() {
               <h3 className="text-base font-semibold mb-2">Pendiente de validación</h3>
               {!queue.length && <p className="text-sm text-neutral-500">No hay fotos pendientes ahora mismo.</p>}
               <ul className="space-y-3">
-                {queue.filter((q) => q.author_id !== uid).map((q) => (
-                  <li key={q.check_id} className="rounded-2xl overflow-hidden border" style={{ borderColor: 'var(--line)' }}>
-                    {q.signed_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={q.signed_url} alt="Foto para validar" className="w-full object-cover max-h-[360px]" />
-                    ) : (
-                      <div className="h-40 grid place-items-center text-neutral-400">Sin imagen</div>
-                    )}
-                    <div className="p-3 flex items-center justify-between text-sm">
-                      <div className="truncate">
-                        Día {q.day_index} – {getDayLabel(q.day_index)} · subido {fmtDate(q.created_at)} — <span className="italic">{displayName(q.author_id)}</span>
-                      </div>
-                      <div className="flex gap-2">
-                        <button onClick={() => vote(q.check_id, 'invalid')} className="rounded-xl border px-3 py-1.5 text-sm hover:bg-black/5" style={{ borderColor: 'var(--line)' }}>
-                          No válido
-                        </button>
-                        <button onClick={() => vote(q.check_id, 'valid')} className="rounded-xl bg-green-600 text-white px-3 py-1.5 text-sm hover:opacity-90">
-                          Validar
-                        </button>
-                      </div>
-                    </div>
-                  </li>
-                ))}
+                {queue
+                  .filter((q) => q.author_id !== uid)
+                  .map((q) => {
+                    const alreadyVoted = myVotes.has(q.check_id);
+                    return (
+                      <li key={q.check_id} className="rounded-2xl overflow-hidden border" style={{ borderColor: 'var(--line)' }}>
+                        {q.signed_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={q.signed_url} alt="Foto para validar" className="w-full object-cover max-h-[360px]" />
+                        ) : (
+                          <div className="h-40 grid place-items-center text-neutral-400">Sin imagen</div>
+                        )}
+                        <div className="p-3 flex items-center justify-between text-sm">
+                          <div className="truncate">
+                            Día {q.day_index} – {getDayLabel(q.day_index)} · subido {fmtDate(q.created_at)} — <span className="italic">{displayName(q.author_id)}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {alreadyVoted ? (
+                              <span className="px-3 py-1.5 text-xs rounded-xl bg-neutral-100 text-neutral-600">Votado</span>
+                            ) : (
+                              <>
+                                <button
+                                  onClick={() => vote(q.check_id, 'invalid')}
+                                  className="rounded-xl border px-3 py-1.5 text-sm hover:bg-black/5"
+                                  style={{ borderColor: 'var(--line)' }}
+                                >
+                                  No válido
+                                </button>
+                                <button
+                                  onClick={() => vote(q.check_id, 'valid')}
+                                  className="rounded-xl bg-green-600 text-white px-3 py-1.5 text-sm hover:opacity-90"
+                                >
+                                  Validar
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
               </ul>
             </section>
 
