@@ -255,72 +255,65 @@ export default function RetoDetallePage() {
     }
   }
 
-  // Re-fetch al volver a pestaña
-  useEffect(() => {
-    function onVis() {
-      if (document.visibilityState === 'visible' && todayIdx) fetchMyTodayCheck(todayIdx);
-    }
-    document.addEventListener('visibilitychange', onVis);
-    return () => document.removeEventListener('visibilitychange', onVis);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [todayIdx, challenge?.id, uid]);
-
-  // Colas de validación
-  useEffect(() => {
+  // ===== Carga colas + nombres (reutilizable) =====
+  const loadQueues = async () => {
     if (!id) return;
-    let alive = true;
-    (async () => {
-      const [q, r] = await Promise.all([
-        supabase
-          .from('challenge_validations_queue')
-          .select('*')
-          .eq('challenge_id', id)
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('challenge_reviewables')
-          .select('*')
-          .eq('challenge_id', id)
-          .order('created_at', { ascending: false }),
-      ]);
-      if (!alive) return;
-      if (q.error) console.error(q.error);
-      if (r.error) console.error(r.error);
+    const [q, r] = await Promise.all([
+      supabase
+        .from('challenge_validations_queue')
+        .select('*')
+        .eq('challenge_id', id)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('challenge_reviewables')
+        .select('*')
+        .eq('challenge_id', id)
+        .order('created_at', { ascending: false }),
+    ]);
+    if (q.error) console.error(q.error);
+    if (r.error) console.error(r.error);
 
-      const withSigned = await Promise.all((q.data ?? []).map(async (row) => ({
-        ...row,
-        signed_url: await signPath(row.photo_path),
-      })));
-      const withSignedR = await Promise.all((r.data ?? []).map(async (row) => ({
-        ...row,
-        signed_url: await signPath(row.photo_path),
-      })));
+    const withSigned = await Promise.all((q.data ?? []).map(async (row: any) => ({
+      ...row,
+      signed_url: await signPath(row.photo_path),
+    })));
+    const withSignedR = await Promise.all((r.data ?? []).map(async (row: any) => ({
+      ...row,
+      signed_url: await signPath(row.photo_path),
+    })));
 
-      setQueue(withSigned as any);
-      setReviewables(withSignedR as any);
+    setQueue(withSigned as any);
+    setReviewables(withSignedR as any);
 
-      // nombres de autores
-      const authorIds = Array.from(new Set([
-        ...(withSigned as any[]).map((x) => x.author_id),
-        ...(withSignedR as any[]).map((x) => x.author_id),
-      ])).filter(Boolean);
+    const authorIds = Array.from(new Set([
+      ...(withSigned as any[]).map((x) => x.author_id),
+      ...(withSignedR as any[]).map((x) => x.author_id),
+    ])).filter(Boolean);
 
-      if (authorIds.length) {
-        const { data: profs } = await supabase
-          .from('public_profiles')
-          .select('user_id, handle, nombre, apellido')
-          .in('user_id', authorIds);
-        const map: Record<string, string> = {};
-        (profs ?? []).forEach((p) => {
-          const base = p.handle || `${(p.nombre ?? '').trim()} ${(p.apellido ?? '').trim()}`.trim();
-          map[p.user_id] = base || p.user_id.slice(0, 6);
-        });
-        setAuthorNames(map);
-      } else {
-        setAuthorNames({});
-      }
-    })();
+    if (authorIds.length) {
+      // 🔎 Traemos más campos posibles para el nombre visible
+      const { data: profs, error: pErr } = await supabase
+        .from('public_profiles')
+        .select('user_id, handle, username, display_name, nombre, apellido')
+        .in('user_id', authorIds);
 
-    return () => { alive = false; };
+      if (pErr) console.error(pErr);
+      const map: Record<string, string> = {};
+      (profs ?? []).forEach((p: any) => {
+        const composed = `${(p.nombre ?? '').trim()} ${(p.apellido ?? '').trim()}`.trim();
+        const base = (p.handle || p.username || p.display_name || composed || '').trim();
+        map[p.user_id] = base || p.user_id.slice(0, 6);
+      });
+      setAuthorNames(map);
+    } else {
+      setAuthorNames({});
+    }
+  };
+
+  // Colas de validación (carga inicial y cuando cambian dependencias)
+  useEffect(() => {
+    loadQueues();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, uploading, activeTab]);
 
   async function signPath(path: string | null) {
@@ -339,13 +332,12 @@ export default function RetoDetallePage() {
     const { error } = await supabase.rpc('vote_on_check', { p_check_id: checkId, p_vote: kind });
     if (error) {
       console.error(error);
-      alert('No se pudo registrar el voto.');
+      alert(`No se pudo registrar el voto: ${error.message ?? ''}`);
       return;
     }
-    // optimista
+    // Quita localmente y vuelve a cargar desde el servidor para reflejar estado final
     setQueue((prev) => prev.filter((q) => q.check_id !== checkId));
-    // re-fetch para cuadrar vistas/contadores
-    setTimeout(() => setActiveTab('Validaciones'), 0);
+    await loadQueues();
   }
 
   async function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -377,6 +369,7 @@ export default function RetoDetallePage() {
       if (insErr) throw insErr;
 
       await refreshMyTodayCheck();
+      await loadQueues();
     } catch (err: any) {
       console.error(err);
       alert(`No se pudo subir la foto. ${err?.message || 'Intenta de nuevo.'}`);
@@ -438,7 +431,11 @@ export default function RetoDetallePage() {
   }
   function pct(n?: number) { return Math.max(0, Math.min(100, Math.round(n ?? 0))); }
   function sanitizeFileName(n: string) { return n.replace(/[^\w.\-]+/g, '_'); }
-  function displayName(uid: string) { return authorNames[uid] || uid.slice(0, 6); }
+
+  function displayName(userId: string) {
+    const name = (authorNames[userId] ?? '').trim();
+    return name || userId.slice(0, 6);
+  }
 
   function getDayLabel(dayIndex?: number | null) {
     if (!dayIndex || !challenge) return '';
@@ -738,7 +735,7 @@ export default function RetoDetallePage() {
                     )}
                     <div className="p-3 flex items-center justify-between text-sm">
                       <div className="truncate">
-                        Día {q.day_index} – {getDayLabel(q.day_index)} · subido {fmtDate(q.created_at)} — <span className="italic">- {displayName(q.author_id)}</span>
+                        Día {q.day_index} – {getDayLabel(q.day_index)} · subido {fmtDate(q.created_at)} — <span className="italic">{displayName(q.author_id)}</span>
                       </div>
                       <div className="flex gap-2">
                         <button onClick={() => vote(q.check_id, 'invalid')} className="rounded-xl border px-3 py-1.5 text-sm hover:bg-black/5" style={{ borderColor: 'var(--line)' }}>
@@ -771,7 +768,7 @@ export default function RetoDetallePage() {
                     )}
                     <div className="p-3 flex items-center justify-between text-sm">
                       <div className="truncate">
-                        Día {q.day_index} – {getDayLabel(q.day_index)} · estado: <b>{labelStatus(q.status)}</b> · vence {fmtDate(q.photo_expires_at)} — <span className="italic">- {displayName(q.author_id)}</span>
+                        Día {q.day_index} – {getDayLabel(q.day_index)} · estado: <b>{labelStatus(q.status)}</b> · vence {fmtDate(q.photo_expires_at)} — <span className="italic">{displayName(q.author_id)}</span>
                       </div>
                       <button
                         onClick={async () => {
@@ -807,7 +804,7 @@ export default function RetoDetallePage() {
                     )}
                     <div className="p-3 flex items-center justify-between text-sm">
                       <div className="truncate">
-                        Día {q.day_index} – {getDayLabel(q.day_index)} · estado: <b>{labelStatus(q.status)}</b> · vence {fmtDate(q.photo_expires_at)} — <span className="italic">- {displayName(q.author_id)}</span>
+                        Día {q.day_index} – {getDayLabel(q.day_index)} · estado: <b>{labelStatus(q.status)}</b> · vence {fmtDate(q.photo_expires_at)} — <span className="italic">{displayName(q.author_id)}</span>
                       </div>
                     </div>
                   </li>
