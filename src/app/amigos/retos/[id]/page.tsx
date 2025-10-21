@@ -209,15 +209,22 @@ export default function RetoDetallePage() {
     return () => { alive = false; };
   }, [id]);
 
-  // Índice del día + mi check
+  // ====== Días totales del reto (desde fechas) ======
+  const totalDays = useMemo(() => {
+    if (!challenge) return 1;
+    const d = diffDays(challenge.start, challenge.end) + 1;
+    return Math.max(1, d || 1);
+  }, [challenge]);
+
+  // Índice del día + mi check (independiente de `summary`)
   useEffect(() => {
-    if (!challenge || !summary || !uid) return;
+    if (!challenge || !uid) return;
     const todayISO = new Date().toISOString().slice(0, 10);
-    const idx = clamp(diffDays(challenge.start, todayISO) + 1, 1, Math.max(1, summary.total_days || 1));
+    const idx = clamp(diffDays(challenge.start, todayISO) + 1, 1, totalDays);
     setTodayIdx(idx);
     fetchMyTodayCheck(idx);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [challenge, summary, uid]);
+  }, [challenge, uid, totalDays]);
 
   async function fetchMyTodayCheck(idx: number) {
     if (!challenge || !uid) return;
@@ -447,12 +454,11 @@ export default function RetoDetallePage() {
     (metaDescription && metaDescription.trim()) ||
     '';
 
-  // progreso basado en día actual / total
+  // progreso basado en día actual / total (sin summary)
   const computedProgressPct = useMemo(() => {
-    if (!summary || !todayIdx) return 0;
-    const total = Math.max(1, summary.total_days || 1);
-    return Math.min(100, Math.round((todayIdx / total) * 100));
-  }, [summary, todayIdx]);
+    if (!todayIdx) return 0;
+    return Math.min(100, Math.round((todayIdx / totalDays) * 100));
+  }, [todayIdx, totalDays]);
 
   // estado UI check
   const statusIcon = useMemo(() => {
@@ -610,7 +616,7 @@ export default function RetoDetallePage() {
             <div>
               <div className="flex items-center justify-between text-sm mb-1">
                 <span>Progreso</span>
-                {summary && <span className="text-neutral-500">{todayIdx ?? 0}/{summary.total_days} días</span>}
+                <span className="text-neutral-500">{todayIdx ?? 0}/{totalDays} días</span>
               </div>
               <div className="w-full h-3 rounded-full bg-neutral-200 overflow-hidden">
                 <div className="h-3 transition-all duration-300" style={{ width: `${computedProgressPct}%`, background: '#22c55e' }} />
@@ -680,7 +686,7 @@ export default function RetoDetallePage() {
             </div>
 
             <div className="flex items-center justify-between">
-              <div className="text-sm">Día <b>{todayIdx ?? '-'}</b> / {summary?.total_days ?? '-'}</div>
+              <div className="text-sm">Día <b>{todayIdx ?? '-'}</b> / {totalDays}</div>
               <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onPickFile} />
               <button
                 onClick={() => fileRef.current?.click()}
