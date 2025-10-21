@@ -48,7 +48,6 @@ type LeaderRow = {
   apellido: string | null;
 };
 
-// ⬇️ Nombres EXACTOS de los buckets
 const PHOTOS_BUCKET = 'challenge-photos';
 const COVERS_BUCKET = 'challenge-covers';
 
@@ -71,7 +70,7 @@ export default function RetoDetallePage() {
 
   const [challenge, setChallenge] = useState<Challenge | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
-  const [activeTab, setActiveTab] = useState<Tab>('Resumen');
+  const [activeTab, setActiveTab] = useState<Tab>('Check del día');
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState<'delete' | 'leave' | null>(null);
 
@@ -191,13 +190,11 @@ export default function RetoDetallePage() {
     (async () => {
       if (!id) return;
 
-      // 1) miembros (RPC security definer)
       const { data: cnt, error: cntErr } = await supabase.rpc('get_members_count', { p_challenge: id });
       if (!alive) return;
       if (cntErr) console.error(cntErr);
       setMembersCount(Number(cnt ?? 0));
 
-      // 2) labels por día
       const { data: rows, error: dlErr } = await supabase
         .from('challenge_days')
         .select('day_index, label')
@@ -218,25 +215,26 @@ export default function RetoDetallePage() {
     return () => { alive = false; };
   }, [id]);
 
-  // Calcular índice del día actual y cargar mi check de hoy
+  // Calcular índice del día actual (independiente de summary)
   useEffect(() => {
-    if (!challenge || !summary || !uid) return;
-    const today = new Date();
-    const todayISO = today.toISOString().slice(0, 10);
-    const idx = clamp(
-      diffDays(challenge.start, todayISO) + 1,
-      1,
-      Math.max(1, summary.total_days || 1),
-    );
+    if (!challenge) return;
+    const todayISO = new Date().toISOString().slice(0, 10);
+    const totalDays = Math.max(1, diffDays(challenge.start, challenge.end) + 1);
+    const idxRaw = diffDays(challenge.start, todayISO) + 1;
+    const idx = clamp(idxRaw, 1, totalDays);
     setTodayIdx(idx);
+  }, [challenge]);
 
+  // Cargar mi check de hoy
+  useEffect(() => {
+    if (!challenge || !uid || !todayIdx) return;
     (async () => {
       const { data, error } = await supabase
         .from('challenge_checks')
         .select('id, challenge_id, user_id, day_index, photo_path, status, created_at, photo_expires_at')
         .eq('challenge_id', challenge.id)
         .eq('user_id', uid)
-        .eq('day_index', idx)
+        .eq('day_index', todayIdx)
         .maybeSingle();
 
       if (error && error.code !== 'PGRST116') console.error(error);
@@ -257,7 +255,7 @@ export default function RetoDetallePage() {
         setMyTodayCheck(null);
       }
     })();
-  }, [challenge, summary, uid]);
+  }, [challenge, uid, todayIdx]);
 
   // Re-fetch del check de hoy al volver a la pestaña
   useEffect(() => {
@@ -315,7 +313,7 @@ export default function RetoDetallePage() {
     if (!path) return null;
     const { data, error } = await supabase.storage
       .from(PHOTOS_BUCKET)
-      .createSignedUrl(path, 60 * 60 * 6); // 6h
+      .createSignedUrl(path, 60 * 60 * 6);
     if (error) console.error(error);
     return data?.signedUrl ?? null;
   }
@@ -350,13 +348,10 @@ export default function RetoDetallePage() {
 
   // === Votar ===
   async function vote(checkId: string, kind: 'valid' | 'invalid') {
-    const { error } = await supabase.rpc('vote_on_check', {
-      p_check_id: checkId,
-      p_vote: kind,
-    });
+    const { error } = await supabase.rpc('vote_on_check', { p_check_id: checkId, p_vote: kind });
     if (error) {
       console.error(error);
-      alert('No se pudo registrar el voto.');
+      alert('No se pudo registrar el voto. ' + (error.message ?? ''));
       return;
     }
     setQueue((prev) => prev.filter((q) => q.check_id !== checkId));
@@ -365,12 +360,10 @@ export default function RetoDetallePage() {
 
   // === Pedir revisión ===
   async function requestReview(checkId: string) {
-    const { error } = await supabase.rpc('request_reconsideration', {
-      p_check_id: checkId,
-    });
+    const { error } = await supabase.rpc('request_reconsideration', { p_check_id: checkId });
     if (error) {
       console.error(error);
-      alert('No se pudo pedir revisión.');
+      alert('No se pudo pedir revisión. ' + (error.message ?? ''));
       return;
     }
     setReviewables((prev) => prev.filter((r) => r.check_id !== checkId));
@@ -476,7 +469,7 @@ export default function RetoDetallePage() {
       await refreshMyTodayCheck();
     } catch (err: any) {
       console.error(err);
-      alert(`No se pudo subir la foto. ${err?.message || 'Intenta de nuevo.'}`);
+      alert(`No se pudo subir la foto. ${err?.message || ''}`);
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = '';
@@ -518,10 +511,10 @@ export default function RetoDetallePage() {
 
       setChallenge((prev) => (prev ? { ...prev, cover_url: coverUrl } : prev));
       setMetaCoverUrl(null);
-      setCoverModalStep('success'); // ✅ mensaje de éxito
-    } catch (err) {
+      setCoverModalStep('success');
+    } catch (err: any) {
       console.error(err);
-      alert('No se pudo actualizar la imagen de portada.');
+      alert('No se pudo actualizar la imagen de portada. ' + (err?.message ?? ''));
     } finally {
       setCoverUploading(false);
       if (coverCameraInputRef.current) coverCameraInputRef.current.value = '';
@@ -564,55 +557,57 @@ export default function RetoDetallePage() {
   return (
     <main className="min-h-screen bg-white relative">
       {/* ===== HERO ===== */}
-      <section className="relative w-full overflow-hidden bg-neutral-100">
-        {resolvedCover ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={resolvedCover}
-            alt={challenge.title}
-            className="block w-full h-auto aspect-[16/9] object-cover"
-            draggable={false}
-          />
-        ) : (
-          <div className="aspect-[16/9] w-full flex items-center justify-center text-neutral-400">
-            <ImagePlus className="h-10 w-10" />
-            <span className="ml-2 text-sm">Sin imagen</span>
-          </div>
-        )}
-
-        {isOwner && (
-          <>
-            {/* Botón flotante con icono de cámara */}
-            <button
-              aria-label="Cambiar imagen de portada"
-              onClick={openCoverModal}
-              className="absolute top-3 right-3 h-10 w-10 rounded-full bg-black/60 text-white grid place-items-center backdrop-blur hover:bg-black/70 active:scale-95 transition"
-            >
-              <Camera className="h-5 w-5" />
-            </button>
-
-            {/* Inputs ocultos para cámara / archivos */}
-            <input
-              ref={coverCameraInputRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className="hidden"
-              onChange={onPickCoverCamera}
+      <section className="relative w-full overflow-hidden bg-neutral-100 -mt-px">
+        <div className="relative aspect-[16/9] w-full">
+          {resolvedCover ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={resolvedCover}
+              alt={challenge.title}
+              className="absolute inset-0 block w-full h-full object-cover"
+              draggable={false}
             />
-            <input
-              ref={coverFileInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={onPickCoverFromFiles}
-            />
-          </>
-        )}
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center text-neutral-400">
+              <ImagePlus className="h-10 w-10" />
+              <span className="ml-2 text-sm">Sin imagen</span>
+            </div>
+          )}
+
+          {isOwner && (
+            <>
+              {/* Botón flotante con icono de cámara, DENTRO de la imagen */}
+              <button
+                aria-label="Cambiar imagen de portada"
+                onClick={openCoverModal}
+                className="absolute top-2 right-2 h-10 w-10 rounded-full bg-black/55 text-white grid place-items-center backdrop-blur-sm hover:bg-black/65 active:scale-95 transition shadow"
+              >
+                <Camera className="h-5 w-5" />
+              </button>
+
+              {/* Inputs ocultos para cámara / archivos */}
+              <input
+                ref={coverCameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={onPickCoverCamera}
+              />
+              <input
+                ref={coverFileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={onPickCoverFromFiles}
+              />
+            </>
+          )}
+        </div>
       </section>
 
       {/* ===== SUBMENÚ ===== */}
-      <nav className="border-b bg-white sticky top-[48px] z-10">
+      <nav className="bg-white sticky top-[48px] z-10 shadow-sm">
         <div className="container mx-auto flex justify-between px-4 overflow-x-auto">
           {TABS.map((tab) => (
             <button
@@ -680,13 +675,13 @@ export default function RetoDetallePage() {
                 <Info className="h-4 w-4" /> ¿Cómo funcionan los retos con amigos?
               </summary>
               <div className="mt-2 text-neutral-700 leading-relaxed text-[13px] space-y-2">
-                <p>Los retos con amigos están para cumplirlos, por eso hemos establecido ciertas normas a la hora de validar las participaciones en los retos:</p>
+                <p>Los retos con amigos están para cumplirlos…</p>
                 <ul className="list-disc pl-5 space-y-1">
                   <li>Cada día subes una foto cumpliendo el reto.</li>
                   <li>Necesitas que otro participante valide tu participación diaria (con sólo 1 validación de otro usuario es suficiente).</li>
                   <li>Cada validación suma 1 punto.</li>
-                  <li>Tu participación diaria puede quedar invalidada si el 50% de participantes deciden que tu foto no muestra que hayas cumplido con el reto diario.</li>
-                  <li>Si nadie valida en 4 horas, se valida automáticamente.</li>
+                  <li>Puede quedar invalidada si ≥50% vota “no válido”.</li>
+                  <li>Si nadie valida en 4h, se valida automáticamente.</li>
                 </ul>
               </div>
             </details>
@@ -779,7 +774,7 @@ export default function RetoDetallePage() {
 
             <div className="flex items-center justify-between">
               <div className="text-sm">
-                Día <b>{todayIdx ?? '-'}</b> / {summary?.total_days ?? '-'}
+                Día <b>{todayIdx ?? '-'}</b> / {summary?.total_days ?? Math.max(1, challenge ? diffDays(challenge.start, challenge.end) + 1 : 1)}
               </div>
               <input
                 ref={fileRef}
