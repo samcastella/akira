@@ -111,6 +111,12 @@ export default function RetoDetallePage() {
   const [coverModalOpen, setCoverModalOpen] = useState(false);
   const [coverModalStep, setCoverModalStep] = useState<'pick' | 'success'>('pick');
 
+  // Popup genérico
+  const [popup, setPopup] = useState<null | { title: string; message: string }>(null);
+  function showPopup(title: string, message: string) {
+    setPopup({ title, message });
+  }
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUid(data.user?.id ?? null));
   }, []);
@@ -359,6 +365,13 @@ export default function RetoDetallePage() {
     // optimista + recarga real
     setQueue((prev) => prev.filter((q) => q.check_id !== checkId));
     await loadQueues();
+
+    showPopup(
+      kind === 'valid' ? '¡Validación registrada!' : 'Voto registrado',
+      kind === 'valid'
+        ? 'Has validado este reto con éxito.'
+        : 'Has marcado este check como no válido.'
+    );
   }
 
   async function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -391,6 +404,8 @@ export default function RetoDetallePage() {
 
       await refreshMyTodayCheck();
       await loadQueues();
+
+      showPopup('¡Fotografía subida con éxito!', 'Toca esperar a que se valide.');
     } catch (err: any) {
       console.error(err);
       alert(`No se pudo subir la foto. ${err?.message || 'Intenta de nuevo.'}`);
@@ -712,7 +727,13 @@ export default function RetoDetallePage() {
                 className="inline-flex items-center gap-2 rounded-full bg-black text-white px-4 py-2 text-sm font-semibold transition active:scale-95 disabled:opacity-60"
               >
                 <Camera className="h-4 w-4" />
-                {uploading ? 'Subiendo…' : myTodayCheck ? 'Subido' : 'Subir foto'}
+                Subir foto
+                {uploading && (
+                  <span
+                    aria-label="Cargando"
+                    className="ml-1 inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/60 border-t-transparent"
+                  />
+                )}
               </button>
             </div>
 
@@ -865,10 +886,16 @@ export default function RetoDetallePage() {
                 return (
                   <li key={r.user_id} className="flex items-center justify-between rounded-[28px] px-3 py-2 shadow-sm" style={{ background: 'linear-gradient(180deg, #F8E68A 0%, #F2D767 100%)' }}>
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="h-10 w-10 shrink-0 rounded-full overflow-hidden bg-neutral-100 aspect-square [clip-path:circle()]">
+                      <div className="h-10 w-10 shrink-0 rounded-full overflow-hidden bg-neutral-100">
                         {avatar ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={avatar} alt="Avatar" className="block h-full w-full object-cover object-center align-middle" draggable={false} referrerPolicy="no-referrer" />
+                          <img
+                            src={avatar}
+                            alt="Avatar"
+                            className="block h-full w-full object-cover object-center align-middle"
+                            draggable={false}
+                            referrerPolicy="no-referrer"
+                          />
                         ) : (
                           <div className="h-full w-full grid place-items-center text-[12px] text-neutral-600">🙂</div>
                         )}
@@ -962,6 +989,31 @@ export default function RetoDetallePage() {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ===== POPUP GENÉRICO ===== */}
+      {popup && (
+        <div className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm grid place-items-center">
+          <div className="bg-white w-[90%] max-w-sm rounded-2xl p-5 relative shadow-xl">
+            <button
+              aria-label="Cerrar"
+              className="absolute top-3 right-3 text-neutral-400 hover:text-black"
+              onClick={() => setPopup(null)}
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <h3 className="text-lg font-semibold mb-1">{popup.title}</h3>
+            <p className="text-sm text-neutral-700">{popup.message}</p>
+            <div className="mt-5 flex justify-end">
+              <button
+                onClick={() => setPopup(null)}
+                className="rounded-xl bg-black text-white px-4 py-2 text-sm font-semibold hover:opacity-90"
+              >
+                OK
+              </button>
+            </div>
           </div>
         </div>
       )}
