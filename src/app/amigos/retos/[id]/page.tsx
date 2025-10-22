@@ -156,21 +156,22 @@ export default function RetoDetallePage() {
       setMetaDescription(metaMap['description'] || metaMap['normas'] || metaMap['rules'] || null);
       setMetaCoverUrl(metaMap['cover_url'] || null);
 
-      // Avatares ranking
+      // Avatares ranking (usar avatar_url)
       try {
         const ids = ((lb.data ?? []) as LeaderRow[]).map((r) => r.user_id).filter(Boolean);
         if (ids.length) {
           const { data: profs, error: pErr } = await supabase
             .from('public_profiles')
-            .select('user_id, foto')
+            .select('user_id, avatar_url')
             .in('user_id', ids);
           if (pErr) {
-            console.warn('[public_profiles] no disponible, continuo sin fotos:', pErr);
+            console.warn('[public_profiles] no disponible, continúo sin fotos:', pErr);
             setLeaderPhotos({});
           } else {
             const map: Record<string, string | null> = {};
             (profs ?? []).forEach((p) => {
-              map[p.user_id] = p.foto ?? null;
+              // @ts-ignore - estructura simple
+              map[p.user_id] = (p as any).avatar_url ?? null;
             });
             setLeaderPhotos(map);
           }
@@ -178,7 +179,7 @@ export default function RetoDetallePage() {
           setLeaderPhotos({});
         }
       } catch (e) {
-        console.warn('[public_profiles] excepción, continuo sin fotos:', e);
+        console.warn('[public_profiles] excepción, continúo sin fotos:', e);
         setLeaderPhotos({});
       }
 
@@ -351,10 +352,19 @@ export default function RetoDetallePage() {
   }
 
   async function vote(checkId: string, kind: 'valid' | 'invalid') {
+    if (!uid) {
+      alert('No se pudo identificar al usuario.');
+      return;
+    }
+
     // guardamos la tarjeta para UX optimista
     const card = queue.find(q => q.check_id === checkId) || null;
 
-    const { error } = await supabase.rpc('vote_on_check', { p_check_id: checkId, p_vote: kind });
+    const { error } = await supabase.rpc('vote_on_check', {
+      p_check_id: checkId,
+      p_vote: kind,
+      p_voter: uid, // <-- necesario por tu función vote_on_check(uuid,text,uuid)
+    });
     if (error) {
       console.error(error);
       alert(`No se pudo registrar el voto: ${error.message ?? ''}`);
