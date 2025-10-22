@@ -10,8 +10,8 @@ type Challenge = {
   id: string;
   owner_id: string;
   title: string;
-  start: string; // 'YYYY-MM-DD'
-  end: string;   // 'YYYY-MM-DD'
+  start: string;
+  end: string;
   cover_url?: string | null;
   description?: string | null;
   rules?: string | null;
@@ -47,7 +47,6 @@ type LeaderRow = {
   apellido: string | null;
 };
 
-// buckets
 const PHOTOS_BUCKET = 'challenge-photos';
 const COVERS_BUCKET = 'challenge-covers';
 
@@ -78,7 +77,7 @@ export default function RetoDetallePage() {
   const [metaDescription, setMetaDescription] = useState<string | null>(null);
   const [metaCoverUrl, setMetaCoverUrl] = useState<string | null>(null);
 
-  // Edición inline
+  // Edición
   const [isEditing, setIsEditing] = useState(false);
   const [titleEdit, setTitleEdit] = useState('');
   const [descEdit, setDescEdit] = useState('');
@@ -94,7 +93,10 @@ export default function RetoDetallePage() {
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [reviewables, setReviewables] = useState<QueueItem[]>([]);
   const [authorNames, setAuthorNames] = useState<Record<string, string>>({});
-  const [myVotes, setMyVotes] = useState<Set<string>>(new Set()); // checks ya votados por mí
+
+  // Pop-ups
+  const [showVoteOk, setShowVoteOk] = useState(false);
+  const [showUploadOk, setShowUploadOk] = useState(false);
 
   // Ranking
   const [leaders, setLeaders] = useState<LeaderRow[]>([]);
@@ -104,18 +106,12 @@ export default function RetoDetallePage() {
   const [membersCount, setMembersCount] = useState<number>(0);
   const [dayLabels, setDayLabels] = useState<Record<number, string>>({});
 
-  // Cover change (modal + inputs)
+  // Cover
   const coverCameraInputRef = useRef<HTMLInputElement | null>(null);
   const coverFileInputRef = useRef<HTMLInputElement | null>(null);
   const [coverUploading, setCoverUploading] = useState(false);
   const [coverModalOpen, setCoverModalOpen] = useState(false);
   const [coverModalStep, setCoverModalStep] = useState<'pick' | 'success'>('pick');
-
-  // Popup genérico
-  const [popup, setPopup] = useState<null | { title: string; message: string }>(null);
-  function showPopup(title: string, message: string) {
-    setPopup({ title, message });
-  }
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUid(data.user?.id ?? null));
@@ -125,29 +121,22 @@ export default function RetoDetallePage() {
   useEffect(() => {
     if (!id) return;
     let alive = true;
+
     (async () => {
       setLoading(true);
-
       const [retos, resumen, lb, meta] = await Promise.all([
         supabase
           .from('challenges')
           .select('id, owner_id, title, start, end, cover_url, description, rules')
           .eq('id', id)
           .single(),
-        supabase
-          .from('challenge_card_user_summary')
-          .select('*')
-          .eq('challenge_id', id)
-          .maybeSingle(),
+        supabase.from('challenge_card_user_summary').select('*').eq('challenge_id', id).maybeSingle(),
         supabase
           .from('challenge_leaderboard')
           .select('user_id, score, rank_position, handle, nombre, apellido')
           .eq('challenge_id', id)
           .order('rank_position', { ascending: true }),
-        supabase
-          .from('challenge_meta')
-          .select('key, value')
-          .eq('challenge_id', id),
+        supabase.from('challenge_meta').select('key, value').eq('challenge_id', id),
       ]);
 
       if (!alive) return;
@@ -175,7 +164,9 @@ export default function RetoDetallePage() {
           .in('user_id', ids);
         if (pErr) console.error(pErr);
         const map: Record<string, string | null> = {};
-        (profs ?? []).forEach((p) => { map[p.user_id] = p.foto ?? null; });
+        (profs ?? []).forEach((p) => {
+          map[p.user_id] = p.foto ?? null;
+        });
         setLeaderPhotos(map);
       } else {
         setLeaderPhotos({});
@@ -184,7 +175,9 @@ export default function RetoDetallePage() {
       setLoading(false);
     })();
 
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [id]);
 
   // Cargar miembros y labels
@@ -208,22 +201,26 @@ export default function RetoDetallePage() {
       if (dlErr) setDayLabels({});
       else {
         const map: Record<number, string> = {};
-        (rows ?? []).forEach((r: any) => { if (r.label) map[r.day_index] = r.label; });
+        (rows ?? []).forEach((r: any) => {
+          if (r.label) map[r.day_index] = r.label;
+        });
         setDayLabels(map);
       }
     })();
 
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [id]);
 
-  // ====== Días totales del reto (desde fechas) ======
+  // Días totales
   const totalDays = useMemo(() => {
     if (!challenge) return 1;
     const d = diffDays(challenge.start, challenge.end) + 1;
     return Math.max(1, d || 1);
   }, [challenge]);
 
-  // Índice del día + mi check (independiente de `summary`)
+  // Índice del día + mi check
   useEffect(() => {
     if (!challenge || !uid) return;
     const todayISO = new Date().toISOString().slice(0, 10);
@@ -243,7 +240,10 @@ export default function RetoDetallePage() {
       .eq('day_index', idx)
       .maybeSingle();
 
-    if (error && error.code !== 'PGRST116') { console.error(error); return; }
+    if (error && error.code !== 'PGRST116') {
+      console.error(error);
+      return;
+    }
     if (data) {
       const signed = await signPath(data.photo_path);
       setMyTodayCheck({
@@ -262,7 +262,7 @@ export default function RetoDetallePage() {
     }
   }
 
-  // ===== Carga colas + nombres + mis votos (reutilizable) =====
+  // Cargar colas + nombres (sin mirar tabla de votos que no existe)
   const loadQueues = async () => {
     if (!id) return;
     const [q, r] = await Promise.all([
@@ -277,47 +277,33 @@ export default function RetoDetallePage() {
         .eq('challenge_id', id)
         .order('created_at', { ascending: false }),
     ]);
+
     if (q.error) console.error(q.error);
     if (r.error) console.error(r.error);
 
-    const withSigned = await Promise.all((q.data ?? []).map(async (row: any) => ({
-      ...row,
-      signed_url: await signPath(row.photo_path),
-    })));
-    const withSignedR = await Promise.all((r.data ?? []).map(async (row: any) => ({
-      ...row,
-      signed_url: await signPath(row.photo_path),
-    })));
+    const withSigned = await Promise.all(
+      (q.data ?? []).map(async (row: any) => ({
+        ...row,
+        signed_url: await signPath(row.photo_path),
+      }))
+    );
+    const withSignedR = await Promise.all(
+      (r.data ?? []).map(async (row: any) => ({
+        ...row,
+        signed_url: await signPath(row.photo_path),
+      }))
+    );
 
     setQueue(withSigned as any);
     setReviewables(withSignedR as any);
 
-    // Mis votos para ocultar/bloquear la tarjeta si ya voté
-    const pendingIds = (withSigned as any[]).map(x => x.check_id);
-    if (pendingIds.length && uid) {
-      const { data: votes, error: vErr } = await supabase
-        .from('challenge_votes')
-        .select('check_id')
-        .in('check_id', pendingIds)
-        .eq('voter_id', uid);
-      if (vErr) console.error(vErr);
-      setMyVotes(new Set((votes ?? []).map(v => v.check_id)));
-    } else {
-      setMyVotes(new Set());
-    }
-
     // nombres de autores
-    const authorIds = Array.from(new Set([
-      ...(withSigned as any[]).map((x) => x.author_id),
-      ...(withSignedR as any[]).map((x) => x.author_id),
-    ])).filter(Boolean);
+    const authorIds = Array.from(
+      new Set([...(withSigned as any[]).map((x) => x.author_id), ...(withSignedR as any[]).map((x) => x.author_id)]).values()
+    ).filter(Boolean);
 
     if (authorIds.length) {
-      const { data: profs, error: pErr } = await supabase
-        .from('public_profiles')
-        .select('*')
-        .in('user_id', authorIds);
-
+      const { data: profs, error: pErr } = await supabase.from('public_profiles').select('*').in('user_id', authorIds);
       if (pErr) console.error(pErr);
       const map: Record<string, string> = {};
       (profs ?? []).forEach((p: any) => {
@@ -337,7 +323,6 @@ export default function RetoDetallePage() {
     }
   };
 
-  // Colas de validación (carga inicial y cuando cambian dependencias)
   useEffect(() => {
     loadQueues();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -350,7 +335,7 @@ export default function RetoDetallePage() {
     return data?.signedUrl ?? null;
   }
 
-  // ======== acciones ========
+  // ===== Acciones =====
   async function refreshMyTodayCheck() {
     if (todayIdx) await fetchMyTodayCheck(todayIdx);
   }
@@ -362,16 +347,10 @@ export default function RetoDetallePage() {
       alert(`No se pudo registrar el voto: ${error.message ?? ''}`);
       return;
     }
-    // optimista + recarga real
+    setShowVoteOk(true);
+    // optimista + recarga
     setQueue((prev) => prev.filter((q) => q.check_id !== checkId));
     await loadQueues();
-
-    showPopup(
-      kind === 'valid' ? '¡Validación registrada!' : 'Voto registrado',
-      kind === 'valid'
-        ? 'Has validado este reto con éxito.'
-        : 'Has marcado este check como no válido.'
-    );
   }
 
   async function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -382,30 +361,29 @@ export default function RetoDetallePage() {
       const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
       const path = `${challenge.id}/${todayIdx}/${uid}/${crypto.randomUUID()}.${ext}`;
 
-      const { error: upErr } = await supabase.storage
-        .from(PHOTOS_BUCKET)
-        .upload(path, file, {
-          cacheControl: '3600',
-          upsert: false,
-          contentType: file.type || 'application/octet-stream',
-        });
+      const { error: upErr } = await supabase.storage.from(PHOTOS_BUCKET).upload(path, file, {
+        cacheControl: '3600',
+        upsert: false,
+        contentType: file.type || 'application/octet-stream',
+      });
       if (upErr) throw upErr;
 
       const expiresAt = new Date(Date.now() + 48 * 3600 * 1000).toISOString();
-      const { error: insErr } = await supabase.from('challenge_checks').insert([{
-        challenge_id: challenge.id,
-        user_id: uid,
-        day_index: todayIdx,
-        photo_path: path,
-        photo_expires_at: expiresAt,
-        status: 'pending',
-      }]);
+      const { error: insErr } = await supabase.from('challenge_checks').insert([
+        {
+          challenge_id: challenge.id,
+          user_id: uid,
+          day_index: todayIdx,
+          photo_path: path,
+          photo_expires_at: expiresAt,
+          status: 'pending',
+        },
+      ]);
       if (insErr) throw insErr;
 
+      setShowUploadOk(true);
       await refreshMyTodayCheck();
       await loadQueues();
-
-      showPopup('¡Fotografía subida con éxito!', 'Toca esperar a que se valide.');
     } catch (err: any) {
       console.error(err);
       alert(`No se pudo subir la foto. ${err?.message || 'Intenta de nuevo.'}`);
@@ -420,8 +398,12 @@ export default function RetoDetallePage() {
     setCoverModalStep('pick');
     setCoverModalOpen(true);
   }
-  function triggerCoverCamera() { coverCameraInputRef.current?.click(); }
-  function triggerCoverFile() { coverFileInputRef.current?.click(); }
+  function triggerCoverCamera() {
+    coverCameraInputRef.current?.click();
+  }
+  function triggerCoverFile() {
+    coverFileInputRef.current?.click();
+  }
 
   async function onPickCoverFile(file: File) {
     if (!file || !challenge) return;
@@ -454,29 +436,33 @@ export default function RetoDetallePage() {
     }
   }
   function onPickCoverCamera(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]; if (file) onPickCoverFile(file);
+    const file = e.target.files?.[0];
+    if (file) onPickCoverFile(file);
   }
   function onPickCoverFromFiles(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]; if (file) onPickCoverFile(file);
+    const file = e.target.files?.[0];
+    if (file) onPickCoverFile(file);
   }
 
   // helpers
   function fmtDate(d: string) {
-    try { return new Date(d).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' }); }
-    catch { return d; }
+    try {
+      return new Date(d).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' });
+    } catch {
+      return d;
+    }
   }
-  function pct(n?: number) { return Math.max(0, Math.min(100, Math.round(n ?? 0))); }
-  function sanitizeFileName(n: string) { return n.replace(/[^\w.\-]+/g, '_'); }
-
+  function sanitizeFileName(n: string) {
+    return n.replace(/[^\w.\-]+/g, '_');
+  }
   function displayName(userId: string) {
     const name = (authorNames[userId] ?? '').trim();
     return name || userId.slice(0, 6);
   }
-
   function getDayLabel(dayIndex?: number | null) {
     if (!dayIndex || !challenge) return '';
     const lbl = dayLabels[dayIndex];
-    return (lbl && lbl.trim()) ? lbl.trim() : challenge.title;
+    return lbl?.trim() ? lbl.trim() : challenge.title;
   }
 
   const isOwner = uid === challenge?.owner_id;
@@ -487,13 +473,11 @@ export default function RetoDetallePage() {
     (metaDescription && metaDescription.trim()) ||
     '';
 
-  // progreso basado en día actual / total (sin summary)
   const computedProgressPct = useMemo(() => {
     if (!todayIdx) return 0;
-    return Math.min(100, Math.round((todayIdx / totalDays) * 100));
-  }, [todayIdx, totalDays]);
+    return Math.min(100, Math.round((todayIdx / (summary?.total_days || totalDays)) * 100));
+  }, [todayIdx, summary?.total_days, totalDays]);
 
-  // estado UI check
   const statusIcon = useMemo(() => {
     const s = myTodayCheck?.status;
     if (!s) return null;
@@ -507,8 +491,8 @@ export default function RetoDetallePage() {
     ? myTodayCheck.status === 'pending'
       ? 'Pendiente de validación'
       : myTodayCheck.status === 'valid' || myTodayCheck.status === 'auto_valid'
-        ? 'Validado'
-        : 'No válido'
+      ? 'Validado'
+      : 'No válido'
     : 'Aún no has subido tu check de hoy.';
 
   // ======= RENDER =======
@@ -529,16 +513,11 @@ export default function RetoDetallePage() {
 
   return (
     <main className="min-h-screen bg-white relative">
-      {/* ===== HERO (pegado al menú, sin doble línea) ===== */}
+      {/* ===== HERO ===== */}
       <section className="relative w-full overflow-hidden bg-neutral-100 -mt-px">
         {resolvedCover ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={resolvedCover}
-            alt={challenge.title}
-            className="block w-full h-auto aspect-[16/9] object-cover"
-            draggable={false}
-          />
+          <img src={resolvedCover} alt={challenge.title} className="block w-full h-auto aspect-[16/9] object-cover" draggable={false} />
         ) : (
           <div className="aspect-[16/9] w-full flex items-center justify-center text-neutral-400">
             <ImagePlus className="h-10 w-10" />
@@ -555,27 +534,13 @@ export default function RetoDetallePage() {
             >
               <Camera className="h-5 w-5" />
             </button>
-
-            <input
-              ref={coverCameraInputRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className="hidden"
-              onChange={onPickCoverCamera}
-            />
-            <input
-              ref={coverFileInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={onPickCoverFromFiles}
-            />
+            <input ref={coverCameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onPickCoverCamera} />
+            <input ref={coverFileInputRef} type="file" accept="image/*" className="hidden" onChange={onPickCoverFromFiles} />
           </>
         )}
       </section>
 
-      {/* ===== SUBMENÚ (pegado a la imagen) ===== */}
+      {/* ===== SUBMENÚ ===== */}
       <nav className="border-b bg-white sticky top-[48px] z-10 -mt-px">
         <div className="container mx-auto flex justify-between px-4 overflow-x-auto">
           {TABS.map((tab) => (
@@ -649,7 +614,9 @@ export default function RetoDetallePage() {
             <div>
               <div className="flex items-center justify-between text-sm mb-1">
                 <span>Progreso</span>
-                <span className="text-neutral-500">{todayIdx ?? 0}/{totalDays} días</span>
+                <span className="text-neutral-500">
+                  {todayIdx ?? 0}/{summary?.total_days || totalDays} días
+                </span>
               </div>
               <div className="w-full h-3 rounded-full bg-neutral-200 overflow-hidden">
                 <div className="h-3 transition-all duration-300" style={{ width: `${computedProgressPct}%`, background: '#22c55e' }} />
@@ -659,34 +626,57 @@ export default function RetoDetallePage() {
             {isOwner && (
               <div className="flex gap-2">
                 {!isEditing ? (
-                  <button className="rounded-xl border px-4 py-2 text-sm hover:bg-black/5 transition" style={{ borderColor: 'var(--line)' }} onClick={() => {
-                    setTitleEdit(challenge.title);
-                    setDescEdit((challenge.rules ?? challenge.description ?? metaDescription ?? '') || '');
-                    setIsEditing(true);
-                  }}>
+                  <button
+                    className="rounded-xl border px-4 py-2 text-sm hover:bg-black/5 transition"
+                    style={{ borderColor: 'var(--line)' }}
+                    onClick={() => {
+                      setTitleEdit(challenge.title);
+                      setDescEdit((challenge.rules ?? challenge.description ?? metaDescription ?? '') || '');
+                      setIsEditing(true);
+                    }}
+                  >
                     Editar reto
                   </button>
                 ) : (
                   <>
-                    <button className="rounded-xl border px-4 py-2 text-sm hover:bg-black/5 transition" style={{ borderColor: 'var(--line)' }} onClick={() => setIsEditing(false)} disabled={savingEdit}>Cancelar</button>
-                    <button className="rounded-xl bg-black text-white px-4 py-2 text-sm hover:opacity-90 transition disabled:opacity-60" onClick={async () => {
-                      setSavingEdit(true);
-                      try {
-                        const payload: Partial<Challenge> = { title: titleEdit.trim() || challenge.title, rules: descEdit.trim() || null };
-                        const { error } = await supabase.from('challenges').update(payload).eq('id', challenge.id);
-                        if (error) throw error;
-                        setChallenge((prev) => (prev ? { ...prev, ...payload } as Challenge : prev));
-                        setIsEditing(false);
-                      } catch (e) { console.error(e); alert('No se pudo guardar los cambios.'); }
-                      finally { setSavingEdit(false); }
-                    }} disabled={savingEdit}>
+                    <button
+                      className="rounded-xl border px-4 py-2 text-sm hover:bg-black/5 transition"
+                      style={{ borderColor: 'var(--line)' }}
+                      onClick={() => setIsEditing(false)}
+                      disabled={savingEdit}
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      className="rounded-xl bg-black text-white px-4 py-2 text-sm hover:opacity-90 transition disabled:opacity-60"
+                      onClick={async () => {
+                        setSavingEdit(true);
+                        try {
+                          const payload: Partial<Challenge> = { title: titleEdit.trim() || challenge.title, rules: descEdit.trim() || null };
+                          const { error } = await supabase.from('challenges').update(payload).eq('id', challenge.id);
+                          if (error) throw error;
+                          setChallenge((prev) => (prev ? ({ ...prev, ...payload } as Challenge) : prev));
+                          setIsEditing(false);
+                        } catch (e) {
+                          console.error(e);
+                          alert('No se pudo guardar los cambios.');
+                        } finally {
+                          setSavingEdit(false);
+                        }
+                      }}
+                      disabled={savingEdit}
+                    >
                       {savingEdit ? 'Guardando…' : 'Guardar'}
                     </button>
                   </>
                 )}
 
                 {!isEditing && (
-                  <button className="rounded-xl border px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition" style={{ borderColor: 'var(--line)' }} onClick={() => setModal('delete')}>
+                  <button
+                    className="rounded-xl border px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition"
+                    style={{ borderColor: 'var(--line)' }}
+                    onClick={() => setModal('delete')}
+                  >
                     Borrar reto
                   </button>
                 )}
@@ -704,14 +694,15 @@ export default function RetoDetallePage() {
         {/* CHECK DEL DÍA */}
         {activeTab === 'Check del día' && (
           <div className="space-y-4">
-            {/* CreateHabitBar + icono de estado a la derecha */}
             <div className="mt-1 flex items-center justify-between gap-3">
               <CreateHabitBar
                 variant="task"
                 checked={!!myTodayCheck && (myTodayCheck.status === 'valid' || myTodayCheck.status === 'auto_valid')}
                 label={`Día ${todayIdx ?? '-'} – ${getDayLabel(todayIdx)}`}
                 onToggle={() => {}}
-                onInfo={() => { document.getElementById('my-today-check')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
+                onInfo={() => {
+                  document.getElementById('my-today-check')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }}
                 color="#F8E68A"
                 className="flex-1"
               />
@@ -719,20 +710,26 @@ export default function RetoDetallePage() {
             </div>
 
             <div className="flex items-center justify-between">
-              <div className="text-sm">Día <b>{todayIdx ?? '-'}</b> / {totalDays}</div>
+              <div className="text-sm">
+                Día <b>{todayIdx ?? '-'}</b> / {summary?.total_days || totalDays}
+              </div>
               <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onPickFile} />
               <button
                 onClick={() => fileRef.current?.click()}
                 disabled={uploading}
-                className="inline-flex items-center gap-2 rounded-full bg-black text-white px-4 py-2 text-sm font-semibold transition active:scale-95 disabled:opacity-60"
+                className="inline-flex items-center justify-center gap-2 rounded-full bg-black text-white px-4 py-2 text-sm font-semibold transition active:scale-95 disabled:opacity-60"
+                style={{ minWidth: 128 }}
               >
-                <Camera className="h-4 w-4" />
-                Subir foto
-                {uploading && (
-                  <span
-                    aria-label="Cargando"
-                    className="ml-1 inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/60 border-t-transparent"
-                  />
+                {uploading ? (
+                  <>
+                    <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/60 border-t-transparent" />
+                    Subiendo…
+                  </>
+                ) : (
+                  <>
+                    <Camera className="h-4 w-4" />
+                    {myTodayCheck ? 'Subido' : 'Subir foto'}
+                  </>
                 )}
               </button>
             </div>
@@ -769,45 +766,33 @@ export default function RetoDetallePage() {
               <ul className="space-y-3">
                 {queue
                   .filter((q) => q.author_id !== uid)
-                  .map((q) => {
-                    const alreadyVoted = myVotes.has(q.check_id);
-                    return (
-                      <li key={q.check_id} className="rounded-2xl overflow-hidden border" style={{ borderColor: 'var(--line)' }}>
-                        {q.signed_url ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={q.signed_url} alt="Foto para validar" className="w-full object-cover max-h-[360px]" />
-                        ) : (
-                          <div className="h-40 grid place-items-center text-neutral-400">Sin imagen</div>
-                        )}
-                        <div className="p-3 flex items-center justify-between text-sm">
-                          <div className="truncate">
-                            Día {q.day_index} – {getDayLabel(q.day_index)} · subido {fmtDate(q.created_at)} — <span className="italic">{displayName(q.author_id)}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {alreadyVoted ? (
-                              <span className="px-3 py-1.5 text-xs rounded-xl bg-neutral-100 text-neutral-600">Votado</span>
-                            ) : (
-                              <>
-                                <button
-                                  onClick={() => vote(q.check_id, 'invalid')}
-                                  className="rounded-xl border px-3 py-1.5 text-sm hover:bg-black/5"
-                                  style={{ borderColor: 'var(--line)' }}
-                                >
-                                  No válido
-                                </button>
-                                <button
-                                  onClick={() => vote(q.check_id, 'valid')}
-                                  className="rounded-xl bg-green-600 text-white px-3 py-1.5 text-sm hover:opacity-90"
-                                >
-                                  Validar
-                                </button>
-                              </>
-                            )}
-                          </div>
+                  .map((q) => (
+                    <li key={q.check_id} className="rounded-2xl overflow-hidden border" style={{ borderColor: 'var(--line)' }}>
+                      {q.signed_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={q.signed_url} alt="Foto para validar" className="w-full object-cover max-h-[360px]" />
+                      ) : (
+                        <div className="h-40 grid place-items-center text-neutral-400">Sin imagen</div>
+                      )}
+                      <div className="p-3 flex items-center justify-between text-sm">
+                        <div className="truncate">
+                          Día {q.day_index} – {getDayLabel(q.day_index)} · subido {fmtDate(q.created_at)} — <span className="italic">{displayName(q.author_id)}</span>
                         </div>
-                      </li>
-                    );
-                  })}
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => vote(q.check_id, 'invalid')}
+                            className="rounded-xl border px-3 py-1.5 text-sm hover:bg-black/5"
+                            style={{ borderColor: 'var(--line)' }}
+                          >
+                            No válido
+                          </button>
+                          <button onClick={() => vote(q.check_id, 'valid')} className="rounded-xl bg-green-600 text-white px-3 py-1.5 text-sm hover:opacity-90">
+                            Validar
+                          </button>
+                        </div>
+                      </div>
+                    </li>
+                  ))}
               </ul>
             </section>
 
@@ -818,57 +803,63 @@ export default function RetoDetallePage() {
                 <p className="text-sm text-neutral-500">No hay elementos validados aún.</p>
               )}
               <ul className="space-y-3">
-                {reviewables.filter((r) => r.status === 'valid' || r.status === 'auto_valid').map((q) => (
-                  <li key={q.check_id} className="rounded-2xl overflow-hidden border" style={{ borderColor: 'var(--line)' }}>
-                    {q.signed_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={q.signed_url} alt="Foto validada" className="w-full object-cover max-h-[360px]" />
-                    ) : (
-                      <div className="h-40 grid place-items-center text-neutral-400">Sin imagen</div>
-                    )}
-                    <div className="p-3 flex items-center justify-between text-sm">
-                      <div className="truncate">
-                        Día {q.day_index} – {getDayLabel(q.day_index)} · estado: <b>{labelStatus(q.status)}</b> · vence {fmtDate(q.photo_expires_at)} — <span className="italic">{displayName(q.author_id)}</span>
+                {reviewables
+                  .filter((r) => r.status === 'valid' || r.status === 'auto_valid')
+                  .map((q) => (
+                    <li key={q.check_id} className="rounded-2xl overflow-hidden border" style={{ borderColor: 'var(--line)' }}>
+                      {q.signed_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={q.signed_url} alt="Foto validada" className="w-full object-cover max-h-[360px]" />
+                      ) : (
+                        <div className="h-40 grid place-items-center text-neutral-400">Sin imagen</div>
+                      )}
+                      <div className="p-3 flex items-center justify-between text-sm">
+                        <div className="truncate">
+                          Día {q.day_index} – {getDayLabel(q.day_index)} · estado: <b>{labelStatus(q.status)}</b> · vence {fmtDate(q.photo_expires_at)} —{' '}
+                          <span className="italic">{displayName(q.author_id)}</span>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            const { error } = await supabase.rpc('request_reconsideration', { p_check_id: q.check_id });
+                            if (error) {
+                              console.error(error);
+                              alert('No se pudo pedir revisión.');
+                            } else setReviewables((prev) => prev.filter((r) => r.check_id !== q.check_id));
+                          }}
+                          className="rounded-xl border px-3 py-1.5 text-sm hover:bg-black/5"
+                          style={{ borderColor: 'var(--line)' }}
+                        >
+                          Pedir revisión (24 h)
+                        </button>
                       </div>
-                      <button
-                        onClick={async () => {
-                          const { error } = await supabase.rpc('request_reconsideration', { p_check_id: q.check_id });
-                          if (error) { console.error(error); alert('No se pudo pedir revisión.'); }
-                          else setReviewables((prev) => prev.filter((r) => r.check_id !== q.check_id));
-                        }}
-                        className="rounded-xl border px-3 py-1.5 text-sm hover:bg-black/5"
-                        style={{ borderColor: 'var(--line)' }}
-                      >
-                        Pedir revisión (24 h)
-                      </button>
-                    </div>
-                  </li>
-                ))}
+                    </li>
+                  ))}
               </ul>
             </section>
 
             {/* No validados */}
             <section>
               <h3 className="text-base font-semibold mb-2">No validados</h3>
-              {reviewables.filter((r) => r.status === 'invalid').length === 0 && (
-                <p className="text-sm text-neutral-500">No hay elementos no validados.</p>
-              )}
+              {reviewables.filter((r) => r.status === 'invalid').length === 0 && <p className="text-sm text-neutral-500">No hay elementos no validados.</p>}
               <ul className="space-y-3">
-                {reviewables.filter((r) => r.status === 'invalid').map((q) => (
-                  <li key={q.check_id} className="rounded-2xl overflow-hidden border" style={{ borderColor: 'var(--line)' }}>
-                    {q.signed_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={q.signed_url} alt="Foto no validada" className="w-full object-cover max-h-[360px]" />
-                    ) : (
-                      <div className="h-40 grid place-items-center text-neutral-400">Sin imagen</div>
-                    )}
-                    <div className="p-3 flex items-center justify-between text-sm">
-                      <div className="truncate">
-                        Día {q.day_index} – {getDayLabel(q.day_index)} · estado: <b>{labelStatus(q.status)}</b> · vence {fmtDate(q.photo_expires_at)} — <span className="italic">{displayName(q.author_id)}</span>
+                {reviewables
+                  .filter((r) => r.status === 'invalid')
+                  .map((q) => (
+                    <li key={q.check_id} className="rounded-2xl overflow-hidden border" style={{ borderColor: 'var(--line)' }}>
+                      {q.signed_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={q.signed_url} alt="Foto no validada" className="w-full object-cover max-h-[360px]" />
+                      ) : (
+                        <div className="h-40 grid place-items-center text-neutral-400">Sin imagen</div>
+                      )}
+                      <div className="p-3 flex items-center justify-between text-sm">
+                        <div className="truncate">
+                          Día {q.day_index} – {getDayLabel(q.day_index)} · estado: <b>{labelStatus(q.status)}</b> · vence {fmtDate(q.photo_expires_at)} —{' '}
+                          <span className="italic">{displayName(q.author_id)}</span>
+                        </div>
                       </div>
-                    </div>
-                  </li>
-                ))}
+                    </li>
+                  ))}
               </ul>
               <p className="text-xs text-neutral-500 mt-2">Nota: las imágenes se conservan durante 48 h.</p>
             </section>
@@ -884,18 +875,16 @@ export default function RetoDetallePage() {
                 const name = r.handle || `${(r.nombre ?? '').trim()} ${(r.apellido ?? '').trim()}`.trim() || r.user_id.slice(0, 6);
                 const avatar = leaderPhotos[r.user_id] || null;
                 return (
-                  <li key={r.user_id} className="flex items-center justify-between rounded-[28px] px-3 py-2 shadow-sm" style={{ background: 'linear-gradient(180deg, #F8E68A 0%, #F2D767 100%)' }}>
+                  <li
+                    key={r.user_id}
+                    className="flex items-center justify-between rounded-[28px] px-3 py-2 shadow-sm"
+                    style={{ background: 'linear-gradient(180deg, #F8E68A 0%, #F2D767 100%)' }}
+                  >
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="h-10 w-10 shrink-0 rounded-full overflow-hidden bg-neutral-100">
+                      <div className="h-12 w-12 shrink-0 rounded-full overflow-hidden bg-neutral-100">
                         {avatar ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={avatar}
-                            alt="Avatar"
-                            className="block h-full w-full object-cover object-center align-middle"
-                            draggable={false}
-                            referrerPolicy="no-referrer"
-                          />
+                          <img src={avatar} alt="Avatar" className="h-full w-full object-cover object-center" draggable={false} referrerPolicy="no-referrer" />
                         ) : (
                           <div className="h-full w-full grid place-items-center text-[12px] text-neutral-600">🙂</div>
                         )}
@@ -927,13 +916,20 @@ export default function RetoDetallePage() {
                 <h2 className="text-lg font-semibold mb-2">¿Eliminar reto?</h2>
                 <p className="text-sm text-neutral-600 mb-4">Esto borrará todos los datos conseguidos hasta ahora.</p>
                 <div className="flex justify-end gap-2">
-                  <button className="px-4 py-2 text-sm rounded-xl border" onClick={() => setModal(null)}>Cancelar</button>
-                  <button className="px-4 py-2 text-sm rounded-xl bg-red-600 text-white" onClick={async () => {
-                    setModal(null);
-                    const { error } = await supabase.from('challenges').delete().eq('id', id);
-                    if (error) alert('Error al borrar el reto.');
-                    else router.push('/amigos/retos');
-                  }}>Confirmar</button>
+                  <button className="px-4 py-2 text-sm rounded-xl border" onClick={() => setModal(null)}>
+                    Cancelar
+                  </button>
+                  <button
+                    className="px-4 py-2 text-sm rounded-xl bg-red-600 text-white"
+                    onClick={async () => {
+                      setModal(null);
+                      const { error } = await supabase.from('challenges').delete().eq('id', id);
+                      if (error) alert('Error al borrar el reto.');
+                      else router.push('/amigos/retos');
+                    }}
+                  >
+                    Confirmar
+                  </button>
                 </div>
               </>
             ) : (
@@ -941,19 +937,38 @@ export default function RetoDetallePage() {
                 <h2 className="text-lg font-semibold mb-2">¿Dejar el reto?</h2>
                 <p className="text-sm text-neutral-600 mb-4">Esto borrará tus datos y progreso en este reto.</p>
                 <div className="flex justify-end gap-2">
-                  <button className="px-4 py-2 text-sm rounded-xl border" onClick={() => setModal(null)}>Cancelar</button>
-                  <button className="px-4 py-2 text-sm rounded-xl bg-red-600 text-white" onClick={async () => {
-                    setModal(null);
-                    if (!uid) return;
-                    const { error } = await supabase.from('challenge_members').delete().eq('challenge_id', id).eq('user_id', uid);
-                    if (error) alert('Error al dejar el reto.');
-                    else router.push('/amigos/retos');
-                  }}>Confirmar</button>
+                  <button className="px-4 py-2 text-sm rounded-xl border" onClick={() => setModal(null)}>
+                    Cancelar
+                  </button>
+                  <button
+                    className="px-4 py-2 text-sm rounded-xl bg-red-600 text-white"
+                    onClick={async () => {
+                      setModal(null);
+                      if (!uid) return;
+                      const { error } = await supabase.from('challenge_members').delete().eq('challenge_id', id).eq('user_id', uid);
+                      if (error) alert('Error al dejar el reto.');
+                      else router.push('/amigos/retos');
+                    }}
+                  >
+                    Confirmar
+                  </button>
                 </div>
               </>
             )}
           </div>
         </div>
+      )}
+
+      {/* ===== MODALES DE ÉXITO ===== */}
+      {showVoteOk && (
+        <ToastModal title="¡Validación registrada!" body="Has validado este reto con éxito." onClose={() => setShowVoteOk(false)} />
+      )}
+      {showUploadOk && (
+        <ToastModal
+          title="¡Foto subida!"
+          body="Fotografía subida con éxito. Toca esperar a que se valide."
+          onClose={() => setShowUploadOk(false)}
+        />
       )}
 
       {/* ===== MODAL DE PORTADA ===== */}
@@ -992,40 +1007,40 @@ export default function RetoDetallePage() {
           </div>
         </div>
       )}
-
-      {/* ===== POPUP GENÉRICO ===== */}
-      {popup && (
-        <div className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm grid place-items-center">
-          <div className="bg-white w-[90%] max-w-sm rounded-2xl p-5 relative shadow-xl">
-            <button
-              aria-label="Cerrar"
-              className="absolute top-3 right-3 text-neutral-400 hover:text-black"
-              onClick={() => setPopup(null)}
-            >
-              <X className="h-5 w-5" />
-            </button>
-            <h3 className="text-lg font-semibold mb-1">{popup.title}</h3>
-            <p className="text-sm text-neutral-700">{popup.message}</p>
-            <div className="mt-5 flex justify-end">
-              <button
-                onClick={() => setPopup(null)}
-                className="rounded-xl bg-black text-white px-4 py-2 text-sm font-semibold hover:opacity-90"
-              >
-                OK
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </main>
   );
 }
 
 function labelStatus(s: QueueItem['status']) {
   switch (s) {
-    case 'pending': return 'Pendiente';
-    case 'valid': return 'Válido';
-    case 'invalid': return 'No válido';
-    case 'auto_valid': return 'Válido (auto)';
+    case 'pending':
+      return 'Pendiente';
+    case 'valid':
+      return 'Válido';
+    case 'invalid':
+      return 'No válido';
+    case 'auto_valid':
+      return 'Válido (auto)';
   }
+}
+
+// ——— Modal reutilizable (éxitos) ———
+function ToastModal({ title, body, onClose }: { title: string; body: string; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl p-5 w-[92%] max-w-md shadow-xl">
+        <button className="absolute top-3 right-3 text-neutral-400 hover:text-black" onClick={onClose} aria-label="Cerrar">
+          <X className="h-5 w-5" />
+        </button>
+        <h3 className="text-xl font-semibold mb-2">{title}</h3>
+        <p className="text-neutral-700 mb-4">{body}</p>
+        <div className="flex justify-end">
+          <button onClick={onClose} className="rounded-xl bg-black text-white px-4 py-2 text-sm hover:opacity-90">
+            OK
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
