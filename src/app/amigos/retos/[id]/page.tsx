@@ -101,6 +101,7 @@ export default function RetoDetallePage() {
   // Ranking
   const [leaders, setLeaders] = useState<LeaderRow[]>([]);
   const [leaderPhotos, setLeaderPhotos] = useState<Record<string, string | null>>({});
+  const [leaderImgOk, setLeaderImgOk] = useState<Record<string, boolean>>({});
 
   // Participantes y labels
   const [membersCount, setMembersCount] = useState<number>(0);
@@ -156,19 +157,28 @@ export default function RetoDetallePage() {
       setMetaCoverUrl(metaMap['cover_url'] || null);
 
       // Avatares ranking
-      const ids = ((lb.data ?? []) as LeaderRow[]).map((r) => r.user_id).filter(Boolean);
-      if (ids.length) {
-        const { data: profs, error: pErr } = await supabase
-          .from('public_profiles')
-          .select('user_id, foto')
-          .in('user_id', ids);
-        if (pErr) console.error(pErr);
-        const map: Record<string, string | null> = {};
-        (profs ?? []).forEach((p) => {
-          map[p.user_id] = p.foto ?? null;
-        });
-        setLeaderPhotos(map);
-      } else {
+      try {
+        const ids = ((lb.data ?? []) as LeaderRow[]).map((r) => r.user_id).filter(Boolean);
+        if (ids.length) {
+          const { data: profs, error: pErr } = await supabase
+            .from('public_profiles')
+            .select('user_id, foto')
+            .in('user_id', ids);
+          if (pErr) {
+            console.warn('[public_profiles] no disponible, continuo sin fotos:', pErr);
+            setLeaderPhotos({});
+          } else {
+            const map: Record<string, string | null> = {};
+            (profs ?? []).forEach((p) => {
+              map[p.user_id] = p.foto ?? null;
+            });
+            setLeaderPhotos(map);
+          }
+        } else {
+          setLeaderPhotos({});
+        }
+      } catch (e) {
+        console.warn('[public_profiles] excepción, continuo sin fotos:', e);
         setLeaderPhotos({});
       }
 
@@ -262,7 +272,7 @@ export default function RetoDetallePage() {
     }
   }
 
-  // Cargar colas + nombres (sin mirar tabla de votos que no existe)
+  // Cargar colas + nombres
   const loadQueues = async () => {
     if (!id) return;
     const [q, r] = await Promise.all([
@@ -341,16 +351,25 @@ export default function RetoDetallePage() {
   }
 
   async function vote(checkId: string, kind: 'valid' | 'invalid') {
+    // guardamos la tarjeta para UX optimista
+    const card = queue.find(q => q.check_id === checkId) || null;
+
     const { error } = await supabase.rpc('vote_on_check', { p_check_id: checkId, p_vote: kind });
     if (error) {
       console.error(error);
       alert(`No se pudo registrar el voto: ${error.message ?? ''}`);
       return;
     }
+
+    // UX optimista: quitar de pendientes y mover a la lista correspondiente
+    setQueue(prev => prev.filter(q => q.check_id !== checkId));
+    if (card) {
+      const newItem: QueueItem = { ...card, status: kind === 'valid' ? 'valid' : 'invalid' };
+      setReviewables(prev => [newItem, ...prev]);
+    }
+
     setShowVoteOk(true);
-    // optimista + recarga
-    setQueue((prev) => prev.filter((q) => q.check_id !== checkId));
-    await loadQueues();
+    await loadQueues(); // sincroniza con servidor
   }
 
   async function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -398,12 +417,8 @@ export default function RetoDetallePage() {
     setCoverModalStep('pick');
     setCoverModalOpen(true);
   }
-  function triggerCoverCamera() {
-    coverCameraInputRef.current?.click();
-  }
-  function triggerCoverFile() {
-    coverFileInputRef.current?.click();
-  }
+  function triggerCoverCamera() { coverCameraInputRef.current?.click(); }
+  function triggerCoverFile() { coverFileInputRef.current?.click(); }
 
   async function onPickCoverFile(file: File) {
     if (!file || !challenge) return;
@@ -436,25 +451,18 @@ export default function RetoDetallePage() {
     }
   }
   function onPickCoverCamera(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (file) onPickCoverFile(file);
+    const file = e.target.files?.[0]; if (file) onPickCoverFile(file);
   }
   function onPickCoverFromFiles(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (file) onPickCoverFile(file);
+    const file = e.target.files?.[0]; if (file) onPickCoverFile(file);
   }
 
   // helpers
   function fmtDate(d: string) {
-    try {
-      return new Date(d).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' });
-    } catch {
-      return d;
-    }
+    try { return new Date(d).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' }); }
+    catch { return d; }
   }
-  function sanitizeFileName(n: string) {
-    return n.replace(/[^\w.\-]+/g, '_');
-  }
+  function sanitizeFileName(n: string) { return n.replace(/[^\w.\-]+/g, '_'); }
   function displayName(userId: string) {
     const name = (authorNames[userId] ?? '').trim();
     return name || userId.slice(0, 6);
@@ -491,8 +499,8 @@ export default function RetoDetallePage() {
     ? myTodayCheck.status === 'pending'
       ? 'Pendiente de validación'
       : myTodayCheck.status === 'valid' || myTodayCheck.status === 'auto_valid'
-      ? 'Validado'
-      : 'No válido'
+        ? 'Validado'
+        : 'No válido'
     : 'Aún no has subido tu check de hoy.';
 
   // ======= RENDER =======
@@ -882,9 +890,17 @@ export default function RetoDetallePage() {
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="h-12 w-12 shrink-0 rounded-full overflow-hidden bg-neutral-100">
-                        {avatar ? (
+                        {avatar && leaderImgOk[r.user_id] !== false ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={avatar} alt="Avatar" className="h-full w-full object-cover object-center" draggable={false} referrerPolicy="no-referrer" />
+                          <img
+                            src={avatar}
+                            alt="Avatar"
+                            className="h-full w-full object-cover object-center"
+                            draggable={false}
+                            referrerPolicy="no-referrer"
+                            onError={() => setLeaderImgOk(s => ({ ...s, [r.user_id]: false }))}
+                            onLoad={() => setLeaderImgOk(s => ({ ...s, [r.user_id]: true }))}
+                          />
                         ) : (
                           <div className="h-full w-full grid place-items-center text-[12px] text-neutral-600">🙂</div>
                         )}
@@ -1013,14 +1029,10 @@ export default function RetoDetallePage() {
 
 function labelStatus(s: QueueItem['status']) {
   switch (s) {
-    case 'pending':
-      return 'Pendiente';
-    case 'valid':
-      return 'Válido';
-    case 'invalid':
-      return 'No válido';
-    case 'auto_valid':
-      return 'Válido (auto)';
+    case 'pending': return 'Pendiente';
+    case 'valid': return 'Válido';
+    case 'invalid': return 'No válido';
+    case 'auto_valid': return 'Válido (auto)';
   }
 }
 
