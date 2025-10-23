@@ -238,7 +238,6 @@ export default function RetoDetallePage() {
     const idx = clamp(diffDays(challenge.start, todayISO) + 1, 1, totalDays);
     setTodayIdx(idx);
     fetchMyTodayCheck(idx);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [challenge, uid, totalDays]);
 
   async function fetchMyTodayCheck(idx: number) {
@@ -336,7 +335,6 @@ export default function RetoDetallePage() {
 
   useEffect(() => {
     loadQueues();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, uploading, activeTab, uid]);
 
   async function signPath(path: string | null) {
@@ -363,7 +361,7 @@ export default function RetoDetallePage() {
     const { error } = await supabase.rpc('vote_on_check', {
       p_check_id: checkId,
       p_vote: kind,
-      p_voter: uid, // <-- necesario por tu función vote_on_check(uuid,text,uuid)
+      p_voter: uid,
     });
     if (error) {
       console.error(error);
@@ -371,7 +369,7 @@ export default function RetoDetallePage() {
       return;
     }
 
-    // UX optimista: quitar de pendientes y mover a la lista correspondiente
+    // UX optimista
     setQueue(prev => prev.filter(q => q.check_id !== checkId));
     if (card) {
       const newItem: QueueItem = { ...card, status: kind === 'valid' ? 'valid' : 'invalid' };
@@ -379,7 +377,7 @@ export default function RetoDetallePage() {
     }
 
     setShowVoteOk(true);
-    await loadQueues(); // sincroniza con servidor
+    await loadQueues();
   }
 
   async function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -709,70 +707,91 @@ export default function RetoDetallePage() {
           </div>
         )}
 
-        {/* CHECK DEL DÍA */}
-        {activeTab === 'Check del día' && (
-          <div className="space-y-4">
-            <div className="mt-1 flex items-center justify-between gap-3">
-              <CreateHabitBar
-                variant="task"
-                checked={!!myTodayCheck && (myTodayCheck.status === 'valid' || myTodayCheck.status === 'auto_valid')}
-                label={`Día ${todayIdx ?? '-'} – ${getDayLabel(todayIdx)}`}
-                onToggle={() => {}}
-                onInfo={() => {
-                  document.getElementById('my-today-check')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                }}
-                color="#F8E68A"
-                className="flex-1"
-              />
-              {statusIcon ? <div className="shrink-0">{statusIcon}</div> : null}
-            </div>
+{/* CHECK DEL DÍA */}
+{activeTab === 'Check del día' && (
+  <div className="space-y-4">
+    {/* Barra con subida integrada (overlay clicable) */}
+    <div className="mt-1 flex items-center gap-3">
+      <div className="relative flex-1">
+        <CreateHabitBar
+          variant="task"
+          checked={!!myTodayCheck && (myTodayCheck.status === 'valid' || myTodayCheck.status === 'auto_valid')}
+          label={`Día ${todayIdx ?? '-'} – ${getDayLabel(todayIdx)}`}
+          onToggle={() => {}}
+          onInfo={() => {
+            document.getElementById('my-today-check')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }}
+          color="#F8E68A"
+          className="pr-28"
+        />
 
-            <div className="flex items-center justify-between">
-              <div className="text-sm">
-                Día <b>{todayIdx ?? '-'}</b> / {summary?.total_days || totalDays}
-              </div>
-              <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onPickFile} />
-              <button
-                onClick={() => fileRef.current?.click()}
-                disabled={uploading}
-                className="inline-flex items-center justify-center gap-2 rounded-full bg-black text-white px-4 py-2 text-sm font-semibold transition active:scale-95 disabled:opacity-60"
-                style={{ minWidth: 128 }}
-              >
-                {uploading ? (
-                  <>
-                    <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/60 border-t-transparent" />
-                    Subiendo…
-                  </>
-                ) : (
-                  <>
-                    <Camera className="h-4 w-4" />
-                    {myTodayCheck ? 'Subido' : 'Subir foto'}
-                  </>
-                )}
-              </button>
-            </div>
+        {/* Overlay clicable para que toda la barra (excepto la zona del pill) dispare la subida */}
+        <button
+          type="button"
+          aria-label="Subir foto del día"
+          onClick={() => fileRef.current?.click()}
+          className="absolute top-0 bottom-0 left-0 right-28 rounded-xl focus:outline-none focus:ring-2 focus:ring-black/40"
+        />
 
-            {myTodayCheck ? (
-              <div id="my-today-check" className="rounded-2xl overflow-hidden border" style={{ borderColor: 'var(--line)' }}>
-                {myTodayCheck.signed_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={myTodayCheck.signed_url} alt="Mi check" className="w-full object-cover max-h-[360px]" />
-                ) : (
-                  <div className="h-40 grid place-items-center text-neutral-400">Sin imagen</div>
-                )}
-                <div className="p-3 text-sm flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    {statusIcon}
-                    <span>{statusText}</span>
-                  </div>
-                  <div className="text-xs text-neutral-500">{fmtDate(myTodayCheck.created_at)}</div>
-                </div>
-              </div>
+        {/* Botón PILL integrado */}
+        <div className="absolute right-2 top-1/2 -translate-y-1/2">
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={onPickFile}
+          />
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+            className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold transition active:scale-95 disabled:opacity-60 border"
+            style={{ borderColor: 'var(--line)' }}
+          >
+            {uploading ? (
+              <>
+                <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-black/50 border-t-transparent" />
+                Subiendo…
+              </>
             ) : (
-              <p className="text-sm text-neutral-600">{statusText}</p>
+              <>
+                <Camera className="h-3 w-3" />
+                {myTodayCheck ? 'Subido' : 'Subir foto'}
+              </>
             )}
-          </div>
+          </button>
+        </div>
+      </div>
+
+      {statusIcon ? <div className="shrink-0">{statusIcon}</div> : null}
+    </div>
+
+    <div className="text-sm">
+      Día <b>{todayIdx ?? '-'}</b> / {summary?.total_days || totalDays}
+    </div>
+
+    {myTodayCheck ? (
+      <div id="my-today-check" className="rounded-2xl overflow-hidden border" style={{ borderColor: 'var(--line)' }}>
+        {myTodayCheck.signed_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={myTodayCheck.signed_url} alt="Mi check" className="w-full object-cover max-h-[360px]" />
+        ) : (
+          <div className="h-40 grid place-items-center text-neutral-400">Sin imagen</div>
         )}
+        <div className="p-3 text-sm flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            {statusIcon}
+            <span>{statusText}</span>
+          </div>
+          <div className="text-xs text-neutral-500">{fmtDate(myTodayCheck.created_at)}</div>
+        </div>
+      </div>
+    ) : (
+      <p className="text-sm text-neutral-600">{statusText}</p>
+    )}
+  </div>
+)}
 
         {/* VALIDACIONES */}
         {activeTab === 'Validaciones' && (
@@ -792,19 +811,22 @@ export default function RetoDetallePage() {
                       ) : (
                         <div className="h-40 grid place-items-center text-neutral-400">Sin imagen</div>
                       )}
-                      <div className="p-3 flex items-center justify-between text-sm">
-                        <div className="truncate">
-                          Día {q.day_index} – {getDayLabel(q.day_index)} · subido {fmtDate(q.created_at)} — <span className="italic">{displayName(q.author_id)}</span>
+                      <div className="p-3 grid gap-2 sm:flex sm:items-center sm:justify-between text-sm">
+                        <div className="min-w-0">
+                          <div className="font-medium truncate">Día {q.day_index} – {getDayLabel(q.day_index)}</div>
+                          <div className="text-[13px] text-neutral-600 truncate">
+                            Subido {fmtDate(q.created_at)} — <b>{displayName(q.author_id)}</b>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 sm:shrink-0">
                           <button
                             onClick={() => vote(q.check_id, 'invalid')}
-                            className="rounded-xl border px-3 py-1.5 text-sm hover:bg-black/5"
+                            className="rounded-full border px-3 py-1 text-[13px] hover:bg-black/5"
                             style={{ borderColor: 'var(--line)' }}
                           >
                             No válido
                           </button>
-                          <button onClick={() => vote(q.check_id, 'valid')} className="rounded-xl bg-green-600 text-white px-3 py-1.5 text-sm hover:opacity-90">
+                          <button onClick={() => vote(q.check_id, 'valid')} className="rounded-full bg-green-600 text-white px-3 py-1 text-[13px] hover:opacity-90">
                             Validar
                           </button>
                         </div>
@@ -831,10 +853,12 @@ export default function RetoDetallePage() {
                       ) : (
                         <div className="h-40 grid place-items-center text-neutral-400">Sin imagen</div>
                       )}
-                      <div className="p-3 flex items-center justify-between text-sm">
-                        <div className="truncate">
-                          Día {q.day_index} – {getDayLabel(q.day_index)} · estado: <b>{labelStatus(q.status)}</b> · vence {fmtDate(q.photo_expires_at)} —{' '}
-                          <span className="italic">{displayName(q.author_id)}</span>
+                      <div className="p-3 grid gap-2 sm:flex sm:items-center sm:justify-between text-sm">
+                        <div className="min-w-0">
+                          <div className="font-medium truncate">Día {q.day_index} – {getDayLabel(q.day_index)}</div>
+                          <div className="text-[13px] text-neutral-600 truncate">
+                            Estado: <b>{labelStatus(q.status)}</b> · Vence {fmtDate(q.photo_expires_at)} — <b>{displayName(q.author_id)}</b>
+                          </div>
                         </div>
                         <button
                           onClick={async () => {
@@ -844,10 +868,10 @@ export default function RetoDetallePage() {
                               alert('No se pudo pedir revisión.');
                             } else setReviewables((prev) => prev.filter((r) => r.check_id !== q.check_id));
                           }}
-                          className="rounded-xl border px-3 py-1.5 text-sm hover:bg-black/5"
+                          className="rounded-full border px-3 py-1 text-[13px] hover:bg-black/5"
                           style={{ borderColor: 'var(--line)' }}
                         >
-                          Pedir revisión (24 h)
+                          Pedir revisión
                         </button>
                       </div>
                     </li>
@@ -870,10 +894,10 @@ export default function RetoDetallePage() {
                       ) : (
                         <div className="h-40 grid place-items-center text-neutral-400">Sin imagen</div>
                       )}
-                      <div className="p-3 flex items-center justify-between text-sm">
-                        <div className="truncate">
-                          Día {q.day_index} – {getDayLabel(q.day_index)} · estado: <b>{labelStatus(q.status)}</b> · vence {fmtDate(q.photo_expires_at)} —{' '}
-                          <span className="italic">{displayName(q.author_id)}</span>
+                      <div className="p-3 text-sm">
+                        <div className="font-medium truncate">Día {q.day_index} – {getDayLabel(q.day_index)}</div>
+                        <div className="text-[13px] text-neutral-600 truncate">
+                          Estado: <b>{labelStatus(q.status)}</b> · Vence {fmtDate(q.photo_expires_at)} — <b>{displayName(q.author_id)}</b>
                         </div>
                       </div>
                     </li>
@@ -899,7 +923,7 @@ export default function RetoDetallePage() {
                     style={{ background: 'linear-gradient(180deg, #F8E68A 0%, #F2D767 100%)' }}
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="h-12 w-12 shrink-0 rounded-full overflow-hidden bg-neutral-100">
+                      <div className="h-12 w-12 shrink-0 rounded-full overflow-hidden bg-neutral-200 aspect-square">
                         {avatar && leaderImgOk[r.user_id] !== false ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
