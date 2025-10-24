@@ -3,7 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
-import { ImagePlus, Info, X, Camera, Check, XCircle, AlertTriangle } from 'lucide-react';
+import {
+  ImagePlus, Info, X, Camera, Check, XCircle, AlertTriangle,
+  Share2, Copy, Trash2
+} from 'lucide-react';
 import CreateHabitBar from '@/components/habits/CreateHabitBar';
 
 type Challenge = {
@@ -114,6 +117,14 @@ export default function RetoDetallePage() {
   const [coverModalOpen, setCoverModalOpen] = useState(false);
   const [coverModalStep, setCoverModalStep] = useState<'pick' | 'success'>('pick');
 
+  // Compartir
+  const [shareOpen, setShareOpen] = useState(false);
+
+  // Expulsar usuario (solo admin)
+  const [kickUser, setKickUser] = useState<LeaderRow | null>(null);
+  const [kicking, setKicking] = useState(false);
+  const [kickDone, setKickDone] = useState(false);
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUid(data.user?.id ?? null));
   }, []);
@@ -156,7 +167,7 @@ export default function RetoDetallePage() {
       setMetaDescription(metaMap['description'] || metaMap['normas'] || metaMap['rules'] || null);
       setMetaCoverUrl(metaMap['cover_url'] || null);
 
-      // Avatares ranking (usar avatar_url)
+      // Avatares ranking
       try {
         const ids = ((lb.data ?? []) as LeaderRow[]).map((r) => r.user_id).filter(Boolean);
         if (ids.length) {
@@ -165,12 +176,11 @@ export default function RetoDetallePage() {
             .select('user_id, avatar_url')
             .in('user_id', ids);
           if (pErr) {
-            console.warn('[public_profiles] no disponible, continúo sin fotos:', pErr);
+            console.warn('[public_profiles] no disponible:', pErr);
             setLeaderPhotos({});
           } else {
             const map: Record<string, string | null> = {};
-            (profs ?? []).forEach((p) => {
-              // @ts-ignore - estructura simple
+            (profs ?? []).forEach((p) => { /* @ts-ignore */
               map[p.user_id] = (p as any).avatar_url ?? null;
             });
             setLeaderPhotos(map);
@@ -179,16 +189,14 @@ export default function RetoDetallePage() {
           setLeaderPhotos({});
         }
       } catch (e) {
-        console.warn('[public_profiles] excepción, continúo sin fotos:', e);
+        console.warn('[public_profiles] excepción:', e);
         setLeaderPhotos({});
       }
 
       setLoading(false);
     })();
 
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, [id]);
 
   // Cargar miembros y labels
@@ -219,9 +227,7 @@ export default function RetoDetallePage() {
       }
     })();
 
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, [id]);
 
   // Días totales
@@ -292,16 +298,10 @@ export default function RetoDetallePage() {
     if (r.error) console.error(r.error);
 
     const withSigned = await Promise.all(
-      (q.data ?? []).map(async (row: any) => ({
-        ...row,
-        signed_url: await signPath(row.photo_path),
-      }))
+      (q.data ?? []).map(async (row: any) => ({ ...row, signed_url: await signPath(row.photo_path) }))
     );
     const withSignedR = await Promise.all(
-      (r.data ?? []).map(async (row: any) => ({
-        ...row,
-        signed_url: await signPath(row.photo_path),
-      }))
+      (r.data ?? []).map(async (row: any) => ({ ...row, signed_url: await signPath(row.photo_path) }))
     );
 
     setQueue(withSigned as any);
@@ -319,12 +319,7 @@ export default function RetoDetallePage() {
       (profs ?? []).forEach((p: any) => {
         const composed = `${(p.nombre ?? '').trim()} ${(p.apellido ?? '').trim()}`.trim();
         const best =
-          p.handle?.trim?.() ||
-          p.username?.trim?.() ||
-          p.display_name?.trim?.() ||
-          p.full_name?.trim?.() ||
-          composed ||
-          '';
+          p.handle?.trim?.() || p.username?.trim?.() || p.display_name?.trim?.() || p.full_name?.trim?.() || composed || '';
         map[p.user_id] = (best || '').trim() || p.user_id.slice(0, 6);
       });
       setAuthorNames(map);
@@ -344,6 +339,42 @@ export default function RetoDetallePage() {
     return data?.signedUrl ?? null;
   }
 
+  // ===== Compartir =====
+  const joinCode = useMemo(() => {
+    return (challenge?.id || '').replace(/-/g, '').slice(-6).toUpperCase();
+  }, [challenge?.id]);
+
+  function makeSharePayload() {
+    const title = challenge?.title ?? 'Mi reto';
+    const code = joinCode;
+    const url = `https://akira-psi.vercel.app`;
+    const text =
+      `Únete al reto “${title}” en la app.\n` +
+      `${url}\n\nComunidad > Retos > Unirse a Reto\nCódigo: ${code}`;
+    return { title: `Reto: ${title}`, text, url, code };
+  }
+
+  async function doNativeShare() {
+    try {
+      const payload = makeSharePayload();
+      if (typeof navigator !== 'undefined' && (navigator as any).share) {
+        await (navigator as any).share({ title: payload.title, text: payload.text, url: payload.url });
+        return;
+      }
+    } catch {}
+    setShareOpen(true); // fallback modal
+  }
+
+  async function copyShareToClipboard() {
+    const { text } = makeSharePayload();
+    try {
+      await navigator.clipboard.writeText(text);
+      alert('Texto copiado al portapapeles');
+    } catch {
+      alert('No se pudo copiar. Copia manualmente desde el recuadro.');
+    }
+  }
+
   // ===== Acciones =====
   async function refreshMyTodayCheck() {
     if (todayIdx) await fetchMyTodayCheck(todayIdx);
@@ -354,8 +385,6 @@ export default function RetoDetallePage() {
       alert('No se pudo identificar al usuario.');
       return;
     }
-
-    // guardamos la tarjeta para UX optimista
     const card = queue.find(q => q.check_id === checkId) || null;
 
     const { error } = await supabase.rpc('vote_on_check', {
@@ -369,7 +398,6 @@ export default function RetoDetallePage() {
       return;
     }
 
-    // UX optimista
     setQueue(prev => prev.filter(q => q.check_id !== checkId));
     if (card) {
       const newItem: QueueItem = { ...card, status: kind === 'valid' ? 'valid' : 'invalid' };
@@ -639,20 +667,30 @@ export default function RetoDetallePage() {
               </div>
             </div>
 
-            {isOwner && (
-              <div className="flex gap-2">
-                {!isEditing ? (
-                  <button
-                    className="rounded-xl border px-4 py-2 text-sm hover:bg-black/5 transition"
-                    style={{ borderColor: 'var(--line)' }}
-                    onClick={() => {
-                      setTitleEdit(challenge.title);
-                      setDescEdit((challenge.rules ?? challenge.description ?? metaDescription ?? '') || '');
-                      setIsEditing(true);
-                    }}
-                  >
-                    Editar reto
-                  </button>
+            {/* Acciones */}
+            <div className="flex flex-wrap gap-2">
+              {isOwner ? (
+                !isEditing ? (
+                  <>
+                    <button
+                      className="rounded-xl border px-4 py-2 text-sm hover:bg-black/5 transition"
+                      style={{ borderColor: 'var(--line)' }}
+                      onClick={() => {
+                        setTitleEdit(challenge!.title);
+                        setDescEdit((challenge!.rules ?? challenge!.description ?? metaDescription ?? '') || '');
+                        setIsEditing(true);
+                      }}
+                    >
+                      Editar reto
+                    </button>
+                    <button
+                      className="rounded-xl border px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition"
+                      style={{ borderColor: 'var(--line)' }}
+                      onClick={() => setModal('delete')}
+                    >
+                      Borrar reto
+                    </button>
+                  </>
                 ) : (
                   <>
                     <button
@@ -668,8 +706,8 @@ export default function RetoDetallePage() {
                       onClick={async () => {
                         setSavingEdit(true);
                         try {
-                          const payload: Partial<Challenge> = { title: titleEdit.trim() || challenge.title, rules: descEdit.trim() || null };
-                          const { error } = await supabase.from('challenges').update(payload).eq('id', challenge.id);
+                          const payload: Partial<Challenge> = { title: titleEdit.trim() || challenge!.title, rules: descEdit.trim() || null };
+                          const { error } = await supabase.from('challenges').update(payload).eq('id', challenge!.id);
                           if (error) throw error;
                           setChallenge((prev) => (prev ? ({ ...prev, ...payload } as Challenge) : prev));
                           setIsEditing(false);
@@ -685,113 +723,114 @@ export default function RetoDetallePage() {
                       {savingEdit ? 'Guardando…' : 'Guardar'}
                     </button>
                   </>
-                )}
+                )
+              ) : (
+                <button
+                  className="rounded-xl border px-4 py-2 text-sm text-neutral-600 hover:bg-black/5 transition"
+                  style={{ borderColor: 'var(--line)' }}
+                  onClick={() => setModal('leave')}
+                >
+                  Dejar reto
+                </button>
+              )}
 
-                {!isEditing && (
-                  <button
-                    className="rounded-xl border px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition"
-                    style={{ borderColor: 'var(--line)' }}
-                    onClick={() => setModal('delete')}
-                  >
-                    Borrar reto
-                  </button>
-                )}
-              </div>
-            )}
-
-            {!isOwner && !isEditing && (
-              <button className="rounded-xl border px-4 py-2 text-sm text-neutral-600 hover:bg-black/5 transition" style={{ borderColor: 'var(--line)' }} onClick={() => setModal('leave')}>
-                Dejar reto
+              {/* Compartir reto (visible para todos) */}
+              <button
+                onClick={doNativeShare}
+                className="rounded-xl border px-4 py-2 text-sm hover:bg-black/5 transition inline-flex items-center gap-2"
+                style={{ borderColor: 'var(--line)' }}
+              >
+                <Share2 className="h-4 w-4" />
+                Compartir reto
               </button>
-            )}
+            </div>
           </div>
         )}
 
-{/* CHECK DEL DÍA */}
-{activeTab === 'Check del día' && (
-  <div className="space-y-4">
-    {/* Barra con subida integrada (overlay clicable) */}
-    <div className="mt-1 flex items-center gap-3">
-      <div className="relative flex-1">
-        <CreateHabitBar
-          variant="task"
-          checked={!!myTodayCheck && (myTodayCheck.status === 'valid' || myTodayCheck.status === 'auto_valid')}
-          label={`Día ${todayIdx ?? '-'} – ${getDayLabel(todayIdx)}`}
-          onToggle={() => {}}
-          onInfo={() => {
-            document.getElementById('my-today-check')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }}
-          color="#F8E68A"
-          className="pr-28"
-        />
+        {/* CHECK DEL DÍA */}
+        {activeTab === 'Check del día' && (
+          <div className="space-y-4">
+            {/* Barra con subida integrada (overlay) */}
+            <div className="mt-1 flex items-center gap-3">
+              <div className="relative flex-1">
+                <CreateHabitBar
+                  variant="task"
+                  checked={!!myTodayCheck && (myTodayCheck.status === 'valid' || myTodayCheck.status === 'auto_valid')}
+                  label={`Día ${todayIdx ?? '-'} – ${getDayLabel(todayIdx)}`}
+                  onToggle={() => {}}
+                  onInfo={() => {
+                    document.getElementById('my-today-check')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }}
+                  color="#F8E68A"
+                  className="pr-36"
+                />
 
-        {/* Overlay clicable para que toda la barra (excepto la zona del pill) dispare la subida */}
-        <button
-          type="button"
-          aria-label="Subir foto del día"
-          onClick={() => fileRef.current?.click()}
-          className="absolute top-0 bottom-0 left-0 right-28 rounded-xl focus:outline-none focus:ring-2 focus:ring-black/40"
-        />
+                {/* Overlay clicable (toda la barra salvo el área del botón negro) */}
+                <button
+                  type="button"
+                  aria-label="Subir foto del día"
+                  onClick={() => fileRef.current?.click()}
+                  className="absolute top-0 bottom-0 left-0 right-32 rounded-xl focus:outline-none focus:ring-2 focus:ring-black/40"
+                />
 
-        {/* Botón PILL integrado */}
-        <div className="absolute right-2 top-1/2 -translate-y-1/2">
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            className="hidden"
-            onChange={onPickFile}
-          />
-          <button
-            onClick={() => fileRef.current?.click()}
-            disabled={uploading}
-            className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold transition active:scale-95 disabled:opacity-60 border"
-            style={{ borderColor: 'var(--line)' }}
-          >
-            {uploading ? (
-              <>
-                <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-black/50 border-t-transparent" />
-                Subiendo…
-              </>
+                {/* Botón negro “Subir foto” */}
+                <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={onPickFile}
+                  />
+                  <button
+                    onClick={() => fileRef.current?.click()}
+                    disabled={uploading}
+                    className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold transition active:scale-95 disabled:opacity-60 bg-black text-white"
+                  >
+                    {uploading ? (
+                      <>
+                        <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white/60 border-t-transparent" />
+                        Subiendo…
+                      </>
+                    ) : (
+                      <>
+                        <Camera className="h-3 w-3" />
+                        {myTodayCheck ? 'Subido' : 'Subir foto'}
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {statusIcon ? <div className="shrink-0">{statusIcon}</div> : null}
+            </div>
+
+            <div className="text-sm">
+              Día <b>{todayIdx ?? '-'}</b> / {summary?.total_days || totalDays}
+            </div>
+
+            {myTodayCheck ? (
+              <div id="my-today-check" className="rounded-2xl overflow-hidden border" style={{ borderColor: 'var(--line)' }}>
+                {myTodayCheck.signed_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={myTodayCheck.signed_url} alt="Mi check" className="w-full object-cover max-h-[360px]" />
+                ) : (
+                  <div className="h-40 grid place-items-center text-neutral-400">Sin imagen</div>
+                )}
+                <div className="p-3 text-sm flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {statusIcon}
+                    <span>{statusText}</span>
+                  </div>
+                  <div className="text-xs text-neutral-500">{fmtDate(myTodayCheck.created_at)}</div>
+                </div>
+              </div>
             ) : (
-              <>
-                <Camera className="h-3 w-3" />
-                {myTodayCheck ? 'Subido' : 'Subir foto'}
-              </>
+              <p className="text-sm text-neutral-600">{statusText}</p>
             )}
-          </button>
-        </div>
-      </div>
-
-      {statusIcon ? <div className="shrink-0">{statusIcon}</div> : null}
-    </div>
-
-    <div className="text-sm">
-      Día <b>{todayIdx ?? '-'}</b> / {summary?.total_days || totalDays}
-    </div>
-
-    {myTodayCheck ? (
-      <div id="my-today-check" className="rounded-2xl overflow-hidden border" style={{ borderColor: 'var(--line)' }}>
-        {myTodayCheck.signed_url ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={myTodayCheck.signed_url} alt="Mi check" className="w-full object-cover max-h-[360px]" />
-        ) : (
-          <div className="h-40 grid place-items-center text-neutral-400">Sin imagen</div>
-        )}
-        <div className="p-3 text-sm flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            {statusIcon}
-            <span>{statusText}</span>
           </div>
-          <div className="text-xs text-neutral-500">{fmtDate(myTodayCheck.created_at)}</div>
-        </div>
-      </div>
-    ) : (
-      <p className="text-sm text-neutral-600">{statusText}</p>
-    )}
-  </div>
-)}
+        )}
 
         {/* VALIDACIONES */}
         {activeTab === 'Validaciones' && (
@@ -923,20 +962,20 @@ export default function RetoDetallePage() {
                     style={{ background: 'linear-gradient(180deg, #F8E68A 0%, #F2D767 100%)' }}
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="h-12 w-12 shrink-0 rounded-full overflow-hidden bg-neutral-200 aspect-square">
+                      <div className="relative h-12 w-12 shrink-0 rounded-full overflow-hidden bg-neutral-200">
                         {avatar && leaderImgOk[r.user_id] !== false ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
                             src={avatar}
                             alt="Avatar"
-                            className="h-full w-full object-cover object-center"
+                            className="absolute inset-0 h-full w-full object-cover object-center"
                             draggable={false}
                             referrerPolicy="no-referrer"
                             onError={() => setLeaderImgOk(s => ({ ...s, [r.user_id]: false }))}
                             onLoad={() => setLeaderImgOk(s => ({ ...s, [r.user_id]: true }))}
                           />
                         ) : (
-                          <div className="h-full w-full grid place-items-center text-[12px] text-neutral-600">🙂</div>
+                          <div className="absolute inset-0 grid place-items-center text-[12px] text-neutral-600">🙂</div>
                         )}
                       </div>
                       <div className="min-w-0">
@@ -944,7 +983,22 @@ export default function RetoDetallePage() {
                         <div className="text-xs opacity-80 truncate">Puntos acumulados</div>
                       </div>
                     </div>
-                    <div className="text-base font-bold tabular-nums shrink-0">{r.score} pts</div>
+
+                    {/* Puntos + papelera (solo owner y no a sí mismo) */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <div className="text-base font-bold tabular-nums">{r.score} pts</div>
+                      {isOwner && r.user_id !== uid && (
+                        <button
+                          onClick={() => setKickUser(r)}
+                          className="h-8 w-8 rounded-full border grid place-items-center hover:bg-red-50 text-red-600"
+                          style={{ borderColor: 'var(--line)' }}
+                          aria-label="Eliminar usuario del reto"
+                          title="Eliminar usuario del reto"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
                   </li>
                 );
               })}
@@ -1057,6 +1111,101 @@ export default function RetoDetallePage() {
           </div>
         </div>
       )}
+
+      {/* ===== MODAL COMPARTIR ===== */}
+      {shareOpen && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 grid place-items-center">
+          <div className="bg-white rounded-2xl p-5 w-[92%] max-w-md relative">
+            <button className="absolute top-3 right-3 text-neutral-400 hover:text-black" onClick={() => setShareOpen(false)} aria-label="Cerrar">
+              <X className="h-5 w-5" />
+            </button>
+            <h3 className="text-lg font-semibold mb-2">Compartir reto</h3>
+            <p className="text-sm text-neutral-700 mb-3">Elige una opción o copia el texto.</p>
+
+            {(() => {
+              const p = makeSharePayload();
+              const wa = `https://wa.me/?text=${encodeURIComponent(p.text)}`;
+              const tg = `https://t.me/share/url?url=${encodeURIComponent(p.url)}&text=${encodeURIComponent(p.text)}`;
+              return (
+                <div className="grid gap-2">
+                  <a href={wa} target="_blank" className="rounded-xl border px-4 py-2 text-sm inline-flex items-center gap-2 hover:bg-black/5" style={{ borderColor: 'var(--line)' }}>
+                    <Share2 className="h-4 w-4" /> WhatsApp
+                  </a>
+                  <a href={tg} target="_blank" className="rounded-xl border px-4 py-2 text-sm inline-flex items-center gap-2 hover:bg-black/5" style={{ borderColor: 'var(--line)' }}>
+                    <Share2 className="h-4 w-4" /> Telegram
+                  </a>
+                  <button onClick={copyShareToClipboard} className="rounded-xl border px-4 py-2 text-sm inline-flex items-center gap-2 hover:bg-black/5" style={{ borderColor: 'var(--line)' }}>
+                    <Copy className="h-4 w-4" /> Copiar texto
+                  </button>
+
+                  <div className="mt-2 rounded-xl bg-neutral-50 border p-3 text-xs whitespace-pre-wrap" style={{ borderColor: 'var(--line)' }}>
+                    {p.text}
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* ===== MODAL EXPULSAR USUARIO ===== */}
+      {kickUser && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 grid place-items-center">
+          <div className="bg-white rounded-2xl p-5 w-[92%] max-w-sm relative">
+            <button className="absolute top-3 right-3 text-neutral-400 hover:text-black" onClick={() => { setKickUser(null); setKickDone(false); }} aria-label="Cerrar">
+              <X className="h-5 w-5" />
+            </button>
+
+            {!kickDone ? (
+              <>
+                <h3 className="text-lg font-semibold mb-2">¿Borrar a este usuario del reto?</h3>
+                <p className="text-sm text-neutral-600 mb-4">
+                  {kickUser.handle || `${(kickUser.nombre ?? '').trim()} ${(kickUser.apellido ?? '').trim()}`.trim() || kickUser.user_id.slice(0,6)}
+                </p>
+                <div className="flex justify-end gap-2">
+                  <button className="px-4 py-2 text-sm rounded-xl border" onClick={() => { setKickUser(null); setKickDone(false); }}>
+                    Cancelar
+                  </button>
+                  <button
+                    className="px-4 py-2 text-sm rounded-xl bg-red-600 text-white disabled:opacity-60"
+                    onClick={async () => {
+                      if (!challenge?.id) return;
+                      setKicking(true);
+                      const { error } = await supabase
+                        .from('challenge_members')
+                        .delete()
+                        .eq('challenge_id', challenge.id)
+                        .eq('user_id', kickUser.user_id);
+                      setKicking(false);
+                      if (error) {
+                        console.error(error);
+                        alert('No se pudo borrar al usuario.');
+                        return;
+                      }
+                      setLeaders(prev => prev.filter(l => l.user_id !== kickUser.user_id));
+                      setKickDone(true);
+                    }}
+                    disabled={kicking}
+                  >
+                    {kicking ? 'Borrando…' : 'Confirmar'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 className="text-lg font-semibold mb-2">Listo</h3>
+                <p className="text-sm text-neutral-700">El usuario ha sido borrado con éxito del reto.</p>
+                <div className="mt-4 flex justify-end">
+                  <button className="rounded-xl border px-4 py-2 text-sm hover:bg-black/5 transition" style={{ borderColor: 'var(--line)' }} onClick={() => { setKickUser(null); setKickDone(false); }}>
+                    Cerrar
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
     </main>
   );
 }
