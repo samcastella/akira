@@ -1,4 +1,3 @@
-// src/app/amigos/retos/page.tsx  (o donde corresponda a “MisRetosPage”)
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
@@ -48,6 +47,17 @@ function progressByDates(startISO?: string, endISO?: string) {
   if (isNaN(start) || isNaN(end) || end <= start) return 0;
   const pct = ((now - start) / (end - start)) * 100;
   return Math.max(0, Math.min(100, pct));
+}
+
+/** Sanitiza URL remota */
+function safeUrl(u?: string | null): string | undefined {
+  if (!u) return undefined;
+  try {
+    const url = new URL(u);
+    return url.href;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Color de fondo del bloque (puedes ajustar a tu paleta) */
@@ -119,7 +129,7 @@ export default function MisRetosPage() {
         (scores ?? []).forEach(s => {
           scoreMap[s.challenge_id] = { score: s.score, rank: s.rank_position };
         });
-      } catch (err) {
+      } catch {
         // vista no existe — seguimos sin romper
       }
 
@@ -172,17 +182,22 @@ export default function MisRetosPage() {
                 >
                   {/* Imagen de portada (opcional) */}
                   <div className="relative h-40 w-full overflow-hidden rounded-t-2xl">
-                    {ch.cover_url ? (
+                    {safeUrl(ch.cover_url) ? (
                       <Image
-                        src={ch.cover_url}
+                        src={safeUrl(ch.cover_url)!}
                         alt={ch.title}
                         fill
                         className="object-cover"
                         sizes="100vw"
                         priority={false}
+                        unoptimized
+                        onError={(e) => {
+                          const el = (e.target as HTMLImageElement)?.parentElement;
+                          if (el) el.innerHTML = '<div class="absolute inset-0 bg-black/30"></div>';
+                        }}
                       />
                     ) : (
-                      <div className="absolute inset-0 opacity-30" />
+                      <div className="absolute inset-0 bg-black/30" />
                     )}
                     {/* Gradiente para legibilidad */}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
@@ -216,9 +231,12 @@ export default function MisRetosPage() {
                       <Metric label="Ranking" value={typeof ch.my_rank === 'number' ? `#${ch.my_rank}` : '—'} />
                     </div>
 
-                    {/* Código (opcional, pequeño) */}
-                    <div className="mt-3 text-[11px] text-white/80">
-                      Código: <b>{ch.code}</b>
+                    {/* Código + Compartir */}
+                    <div className="mt-3 flex items-center justify-between gap-2">
+                      <div className="text-[11px] text-white/80">
+                        Código: <b>{ch.code}</b>
+                      </div>
+                      <ShareButton title={ch.title} code={ch.code} challengeId={ch.id} />
                     </div>
                   </div>
                 </div>
@@ -252,9 +270,67 @@ function ProgressBar({ percent }: { percent: number }) {
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border px-2 py-2" style={{ borderColor: 'var(--line)' }}>
-      <div className="text-[10px] uppercase tracking-wide text-white/70">{label}</div>
-      <div className="text-sm font-semibold text-white">{value}</div>
+    <div
+      className="rounded-xl border px-2 py-2 bg-white"
+      style={{ borderColor: 'var(--line)' }}
+    >
+      <div className="text-[10px] uppercase tracking-wide text-neutral-500">{label}</div>
+      <div className="text-sm font-semibold text-neutral-900">{value}</div>
     </div>
+  );
+}
+
+/** ===== Botón Compartir / Copiar ===== */
+function ShareButton({
+  title,
+  code,
+  challengeId,
+}: {
+  title: string;
+  code: string;
+  challengeId: string;
+}) {
+  const [copied, setCopied] = React.useState(false);
+  const msg =
+    `Únete al reto ${title}. ` +
+    `Descarga la app en https://akira-psi.vercel.app ` +
+    `y ve a Comunidad > Retos > Unirse a reto. ` +
+    `Código: ${code}`;
+
+  async function share(e: React.MouseEvent<HTMLButtonElement>) {
+    // Evita que el click dispare la navegación del <Link> padre
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: `Reto: ${title}`,
+          text: msg,
+          url: `https://akira-psi.vercel.app/amigos/retos/${challengeId}`,
+        });
+        return;
+      }
+      await navigator.clipboard.writeText(msg);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      try {
+        await navigator.clipboard.writeText(msg);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      } catch {}
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={share}
+      className="text-[12px] px-3 py-1.5 rounded-full border bg-white hover:bg-neutral-50 active:bg-neutral-100 transition"
+      style={{ borderColor: 'var(--line)' }}
+      aria-label="Compartir reto"
+    >
+      {copied ? 'Copiado' : 'Compartir'}
+    </button>
   );
 }
