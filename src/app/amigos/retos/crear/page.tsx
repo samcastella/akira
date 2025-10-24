@@ -33,6 +33,7 @@ export default function CrearRetoPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (submitting) return;
     setErrorMsg(null);
 
     if (!uid) return setErrorMsg('Debes iniciar sesión para crear un reto.');
@@ -49,6 +50,7 @@ export default function CrearRetoPage() {
       let code = genJoinCode(6);
       let createdId: string | null = null;
 
+      // Reintenta si el código está ocupado (conflicto unique en challenges)
       for (let attempt = 0; attempt < 6; attempt++) {
         const { data, error } = await supabase
           .from('challenges')
@@ -60,7 +62,6 @@ export default function CrearRetoPage() {
               title: title.trim(),
               start,
               end: endISO,
-              // 👇 quitamos description aquí. Se edita en “personalizar”.
             },
           ])
           .select('id')
@@ -68,8 +69,9 @@ export default function CrearRetoPage() {
 
         if (error) {
           const msg = String(error.message || '');
+          // 23505 = unique_violation
           if ((error as any).code === '23505' || msg.includes('duplicate key')) {
-            code = genJoinCode(7);
+            code = genJoinCode(7); // genera otro y reintenta
             continue;
           }
           throw error;
@@ -78,12 +80,18 @@ export default function CrearRetoPage() {
         break;
       }
 
-      if (!createdId) throw new Error('No se pudo crear el reto (código ocupado). Prueba de nuevo.');
+      if (!createdId) {
+        throw new Error('No se pudo crear el reto (código ocupado). Prueba de nuevo.');
+      }
 
+      // Añadir creador como miembro sin fallar si ya existe (trigger/doble envío)
       const { error: mErr } = await supabase
         .from('challenge_members')
-        .insert([{ challenge_id: createdId, user_id: uid }]);
-      if (mErr) throw mErr;
+        .upsert(
+          { challenge_id: createdId, user_id: uid },
+          { onConflict: 'challenge_id,user_id', ignoreDuplicates: true }
+        );
+      if (mErr && (mErr as any).code !== '23505') throw mErr;
 
       router.push(`/amigos/retos/crear/personalizar?cid=${createdId}&duration=${duration}`);
     } catch (err: any) {
@@ -148,7 +156,7 @@ export default function CrearRetoPage() {
         <button
           type="submit"
           disabled={submitting}
-          className="w-full rounded-2xl border px-4 py-3 flex items-center justify-center gap-2 hover:bg-black/5 transition"
+          className="w-full rounded-2xl border px-4 py-3 flex items-center justify-center gap-2 hover:bg-black/5 transition disabled:opacity-60 disabled:cursor-not-allowed"
           style={{ borderColor: 'var(--line)' }}
         >
           <span>{submitting ? 'Creando…' : 'Crear y continuar'}</span>
