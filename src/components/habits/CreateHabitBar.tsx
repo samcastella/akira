@@ -15,13 +15,14 @@ type CreateVariant = BaseProps & {
   onClick: () => void;
 };
 
-/** Variante de tarea: píldora con check + botón info */
+/** Variante de tarea: píldora con check + (opcional) botón info */
 type TaskVariant = BaseProps & {
   variant: 'task';
   checked: boolean;
-  color?: string;       // color del programa (hex o css var)
-  onToggle: () => void; // click del check (API se mantiene)
-  onInfo?: () => void;  // click del +
+  color?: string;            // color del programa (hex o css var)
+  onToggle: () => void;      // click del check
+  onInfo?: () => void;       // acción al pulsar el botón info (si se muestra)
+  showInfoButton?: boolean;  // <-- NUEVO: mostrar el botón "+" (por defecto false)
 };
 
 type Props = CreateVariant | TaskVariant;
@@ -45,7 +46,6 @@ async function getShooter() {
       width: '100vw',
       height: '100vh',
       pointerEvents: 'none',
-      // 🔒 siempre por encima de navs / overlays
       zIndex: '2147483647',
       background: 'transparent',
     });
@@ -97,6 +97,20 @@ function renderInlineMarkdown(text?: string) {
   return parts;
 }
 
+/* ===== Utils ===== */
+/** Convierte #RRGGBB a rgba con alpha. Si recibe var() o nombres CSS, devuelve un alpha fijo gris. */
+function addAlpha(hexOrCss: string, alpha: number) {
+  if (!/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(hexOrCss)) {
+    return 'rgba(17,17,17,0.25)';
+  }
+  const hex = hexOrCss.replace('#', '');
+  const full = hex.length === 3 ? hex.split('').map((c) => c + c).join('') : hex;
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, alpha))})`;
+}
+
 export default function CreateHabitBar(props: Props) {
   const {
     label = props.variant === 'task' ? 'Tarea' : 'Crear hábito',
@@ -104,21 +118,21 @@ export default function CreateHabitBar(props: Props) {
     ariaLabel = label,
   } = props;
 
+  /* ===== Variante TASK ===== */
   if (props.variant === 'task') {
-    const { checked, onToggle, onInfo, color } = props;
+    const { checked, onToggle, onInfo, color, showInfoButton = false } = props;
 
     // Estilos de la píldora
     const theme = color || '#F5F5F5';
     const bg = checked ? theme : '#ffffff';
-    const border = checked ? '#00000080' : addAlpha(theme, 0.4); // borde suave
+    const border = checked ? '#00000080' : addAlpha(theme, 0.4);
     const text = '#111111';
 
-    // ---- Confeti desde la propia píldora ----
+    // Confeti desde la propia píldora
     const lastXY = useRef<{ x?: number; y?: number }>({});
     const prev = useRef<boolean>(checked);
     useEffect(() => {
       if (!prev.current && checked) {
-        // coords locales o globales (fallback)
         const globalXY =
           (typeof window !== 'undefined' && (window as any).__akiraLastXY) || {};
         const x = lastXY.current.x ?? (globalXY as any).x;
@@ -146,7 +160,6 @@ export default function CreateHabitBar(props: Props) {
         <button
           onMouseDown={(e) => {
             lastXY.current = { x: e.clientX, y: e.clientY };
-            // guardamos coords globales para que las pueda leer el padre si hace falta
             (window as any).__akiraLastXY = { x: e.clientX, y: e.clientY };
           }}
           onClick={onToggle}
@@ -168,21 +181,23 @@ export default function CreateHabitBar(props: Props) {
           <div className="truncate text-base font-medium">{renderInlineMarkdown(label)}</div>
         </div>
 
-        {/* Derecha: info "+" */}
-        <button
-          onClick={onInfo}
-          className="grid h-9 w-9 place-items-center rounded-full border shrink-0"
-          title="Ver detalles"
-          aria-label={`Ver detalles de ${label}`}
-          style={{ background: 'white', borderColor: '#11111140' }}
-        >
-          <Plus size={16} />
-        </button>
+        {/* Derecha: botón info (opcional) */}
+        {showInfoButton && (
+          <button
+            onClick={onInfo}
+            className="grid h-9 w-9 place-items-center rounded-full border shrink-0"
+            title="Ver detalles"
+            aria-label={`Ver detalles de ${label}`}
+            style={{ background: 'white', borderColor: '#11111140' }}
+          >
+            <Plus size={16} />
+          </button>
+        )}
       </div>
     );
   }
 
-  // ===== Variante por defecto: barra de crear hábito =====
+  /* ===== Variante por defecto: barra de crear hábito ===== */
   const { onClick } = props as CreateVariant;
   return (
     <button
@@ -203,20 +218,4 @@ export default function CreateHabitBar(props: Props) {
       <span className="text-base font-medium">{renderInlineMarkdown(label)}</span>
     </button>
   );
-}
-
-/* =========================
-   Utils
-   ========================= */
-/** Convierte #RRGGBB a rgba con alpha. Si recibe var() o nombres CSS, devuelve un alpha fijo gris. */
-function addAlpha(hexOrCss: string, alpha: number) {
-  if (!/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(hexOrCss)) {
-    return 'rgba(17,17,17,0.25)';
-  }
-  const hex = hexOrCss.replace('#', '');
-  const full = hex.length === 3 ? hex.split('').map((c) => c + c).join('') : hex;
-  const r = parseInt(full.slice(0, 2), 16);
-  const g = parseInt(full.slice(2, 4), 16);
-  const b = parseInt(full.slice(4, 6), 16);
-  return `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, alpha))})`;
 }

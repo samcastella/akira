@@ -384,3 +384,40 @@ input[type="password"] { -webkit-text-security: disc; }
     max-width: 100svh; /* ancho = alto del dispositivo → simula portrait */
   }
 }
+/* Color de línea que usas en inline styles */
+:root {
+  --line: rgba(0,0,0,.12);
+}
+
+/* Oculta el botón/ícono de “+” que trae CreateHabitBar
+   (varios selectores por si cambia el markup interno) */
+.habitbar-hide-plus .lucide-plus,
+.habitbar-hide-plus [data-icon="plus"],
+.habitbar-hide-plus [aria-label*="añadir" i],
+.habitbar-hide-plus [aria-label*="add" i],
+.habitbar-hide-plus .add,
+.habitbar-hide-plus .add-btn {
+  display: none !important;
+}
+
+/* Suaviza la interacción en móviles (quita el destello azul) */
+.habitbar-click-overlay,
+.habitbar-hide-plus {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Opcional: iguala la altura mínima de la barra si el layout varía */
+.habitbar-hide-plus {
+  min-height: 56px;
+}
+
+/* Opcional: botón negro redondeado con buen foco (por si lo reutilizas) */
+.btn-pill-black {
+  border-radius: 9999px;
+  background: #000;
+  color: #fff;
+}
+.btn-pill-black:focus-visible {
+  outline: 2px solid #000;
+  outline-offset: 2px;
+}
