@@ -16,12 +16,16 @@ export default function SubHeaderTabs({
   const hCls = size === 'compact' ? 'h-10' : 'h-11';
   const txt = size === 'compact' ? 'text-[13px]' : 'text-sm';
 
-  // Activo si coincide o si estás en una subruta del tab
-  const isActive = (href: string) =>
-    pathname === href || (href !== '/' && pathname.startsWith(href + '/'));
+  // Activo: para '/amigos' exige coincidencia EXACTA; para el resto, exacta o subruta
+  const isActive = (href: string) => {
+    if (href === '/amigos') {
+      return pathname === '/amigos' || pathname === '/amigos/';
+    }
+    return pathname === href || pathname.startsWith(href + '/');
+  };
 
   return (
-    <div className="bg-white border-b" role="navigation" aria-label="Submenú de Programas">
+    <div className="bg-white border-b" role="navigation" aria-label="Submenú de Comunidad">
       <div className="container mx-auto px-4">
         <nav className={`flex gap-5 ${hCls} items-center`}>
           {tabs.map((t) => {
