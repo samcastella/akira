@@ -13,13 +13,12 @@ type ChallengeRow = {
   title: string;
   start: string; // ISO
   end: string;   // ISO
-  cover_url?: string | null; // si guardaste portada en metadata
+  cover_url?: string | null;
 };
 
 type MemberIdRow = { challenge_id: string };
 type MemberRow = { challenge_id: string; user_id: string };
 
-/** (Opcional) si existe una vista o función con puntuaciones/ranking */
 type ScoreRow = {
   challenge_id: string;
   user_id: string;
@@ -38,7 +37,7 @@ function fmtDate(d: string) {
   }
 }
 
-/** Progreso simple por fechas (inspiración visual, sustituible por checks reales) */
+/** Progreso simple por fechas (placeholder visual) */
 function progressByDates(startISO?: string, endISO?: string) {
   if (!startISO || !endISO) return 0;
   const now = Date.now();
@@ -46,7 +45,7 @@ function progressByDates(startISO?: string, endISO?: string) {
   const end = new Date(endISO).getTime();
   if (isNaN(start) || isNaN(end) || end <= start) return 0;
   const pct = ((now - start) / (end - start)) * 100;
-  return Math.max(0, Math.min(100, pct));
+  return Math.max(0, Math.min(100, Math.round(pct)));
 }
 
 /** Sanitiza URL remota */
@@ -60,28 +59,35 @@ function safeUrl(u?: string | null): string | undefined {
   }
 }
 
-/** Color de fondo del bloque (puedes ajustar a tu paleta) */
-const BLOCK_BG = 'linear-gradient(135deg, #111 0%, #2a2a2a 100%)';
-
 export default function MisRetosPage() {
   const [userId, setUserId] = useState<string | undefined>(undefined);
+  const [authReady, setAuthReady] = useState(false); // evita mostrar "Inicia sesión" mientras resolvemos
 
+  // Arranque + suscripción de auth para reaccionar instantáneo
   useEffect(() => {
-    let ok = true;
+    let alive = true;
+
     (async () => {
       const { data } = await supabase.auth.getSession();
-      if (!ok) return;
+      if (!alive) return;
       setUserId(data.session?.user?.id ?? undefined);
+      setAuthReady(true);
     })();
-    return () => { ok = false; };
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!alive) return;
+      setUserId(session?.user?.id ?? undefined);
+      setAuthReady(true);
+    });
+
+    return () => {
+      alive = false;
+      sub?.subscription?.unsubscribe();
+    };
   }, []);
 
   const [list, setList] = useState<
-    (ChallengeRow & {
-      members_count: number;
-      my_score?: number;
-      my_rank?: number;
-    })[]
+    (ChallengeRow & { members_count: number; my_score?: number; my_rank?: number })[]
   >([]);
 
   useEffect(() => {
@@ -94,10 +100,11 @@ export default function MisRetosPage() {
         .eq('user_id', userId)
         .returns<MemberIdRow[]>();
       if (eMems) { console.error(eMems); setList([]); return; }
+
       const ids = (mems ?? []).map((m) => m.challenge_id);
       if (!ids.length) { setList([]); return; }
 
-      // 2) Datos de los retos (añadimos cover_url si existe en la tabla)
+      // 2) Datos de retos
       const { data: challenges, error: eCh } = await supabase
         .from('challenges')
         .select('id, code, owner_id, title, start, end, cover_url')
@@ -115,13 +122,15 @@ export default function MisRetosPage() {
       if (eMembers) { console.error(eMembers); }
 
       const counts: Record<string, number> = {};
-      (members ?? []).forEach((m) => { counts[m.challenge_id] = (counts[m.challenge_id] ?? 0) + 1; });
+      (members ?? []).forEach((m) => {
+        counts[m.challenge_id] = (counts[m.challenge_id] ?? 0) + 1;
+      });
 
-      // 4) (Opcional) puntuación/ranking: intenta leer de una vista si existe
+      // 4) (Opcional) puntuación/ranking
       let scoreMap: Record<string, { score: number; rank: number }> = {};
       try {
         const { data: scores } = await supabase
-          .from('challenge_member_scores') // ⚠️ si no existe, se ignora
+          .from('challenge_member_scores')
           .select('challenge_id, user_id, score, rank_position')
           .eq('user_id', userId)
           .in('challenge_id', ids)
@@ -130,7 +139,7 @@ export default function MisRetosPage() {
           scoreMap[s.challenge_id] = { score: s.score, rank: s.rank_position };
         });
       } catch {
-        // vista no existe — seguimos sin romper
+        /* vista opcional */
       }
 
       setList((challenges ?? []).map((c) => ({
@@ -142,30 +151,50 @@ export default function MisRetosPage() {
     })();
   }, [userId]);
 
+  // ===== Render =====
+
+  // Skeletons mientras resolvemos la sesión
+  if (!authReady) {
+    return (
+      <main className="container mx-auto px-4 py-4 space-y-4 bg-white">
+        <div className="flex items-center justify-between">
+          <h2 className="page-title">Retos con amigos</h2>
+          <span className="inline-block h-9 w-20 rounded-full bg-neutral-100 border" style={{ borderColor: 'var(--line)' }} />
+        </div>
+        <SkeletonCard />
+        <SkeletonCard />
+      </main>
+    );
+  }
+
   if (!userId) {
     return (
-      <main className="container mx-auto px-4 py-4 text-sm space-y-4">
+      <main className="container mx-auto px-4 py-4 text-sm space-y-4 bg-white">
         <div className="flex items-center justify-between">
           <h2 className="page-title">Retos con amigos</h2>
           <Link href="/amigos/retos" className="btn secondary">Volver</Link>
         </div>
-        <section className="rounded-2xl border p-4" style={{ borderColor: 'var(--line)' }}>
-          <p className="text-xs muted">Inicia sesión para ver tus retos.</p>
+        <section className="rounded-2xl border p-4 bg-white" style={{ borderColor: 'var(--line)' }}>
+          <p className="text-xs text-neutral-500">
+            Inicia sesión para ver tus retos.
+          </p>
         </section>
       </main>
     );
   }
 
   return (
-    <main className="container mx-auto px-4 py-4 space-y-4">
+    <main className="container mx-auto px-4 py-4 space-y-4 bg-white">
       <div className="flex items-center justify-between">
         <h2 className="page-title">Retos con amigos</h2>
         <Link href="/amigos/retos" className="btn secondary">Volver</Link>
       </div>
 
       {!list.length ? (
-        <section className="rounded-2xl border p-4" style={{ borderColor: 'var(--line)' }}>
-          <p className="text-xs muted">Aún no tienes retos. Crea uno o únete con un código.</p>
+        <section className="rounded-2xl border p-4 bg-white" style={{ borderColor: 'var(--line)' }}>
+          <p className="text-sm text-neutral-500">
+            Aún no tienes retos. Crea uno o únete con un código.
+          </p>
         </section>
       ) : (
         <ul className="grid grid-cols-1 gap-4">
@@ -175,13 +204,13 @@ export default function MisRetosPage() {
                 href={`/amigos/retos/${ch.id}`}
                 className="block overflow-hidden rounded-2xl focus:outline-none focus:ring-2 focus:ring-black"
               >
-                {/* Card */}
+                {/* Card blanca, limpia */}
                 <div
-                  className="relative rounded-2xl border"
-                  style={{ borderColor: 'var(--line)', background: BLOCK_BG }}
+                  className="relative rounded-2xl border bg-white shadow-sm"
+                  style={{ borderColor: 'var(--line)' }}
                 >
-                  {/* Imagen de portada (opcional) */}
-                  <div className="relative h-40 w-full overflow-hidden rounded-t-2xl">
+                  {/* Imagen de portada */}
+                  <div className="relative h-44 w-full overflow-hidden rounded-t-2xl">
                     {safeUrl(ch.cover_url) ? (
                       <Image
                         src={safeUrl(ch.cover_url)!}
@@ -193,48 +222,41 @@ export default function MisRetosPage() {
                         unoptimized
                         onError={(e) => {
                           const el = (e.target as HTMLImageElement)?.parentElement;
-                          if (el) el.innerHTML = '<div class="absolute inset-0 bg-black/30"></div>';
+                          if (el) el.innerHTML = '<div class="absolute inset-0 bg-neutral-200"></div>';
                         }}
                       />
                     ) : (
-                      <div className="absolute inset-0 bg-black/30" />
+                      <div className="absolute inset-0 bg-neutral-200" />
                     )}
-                    {/* Gradiente para legibilidad */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
-                    {/* Etiqueta “Reto con amigos” */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/15 to-transparent" />
                     <div className="absolute left-3 top-3">
-                      <span className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium bg-white/90">
+                      <span className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium bg-white/95 border" style={{ borderColor: 'var(--line)' }}>
                         Reto con amigos
                       </span>
                     </div>
-                    {/* Fechas arriba derecha */}
                     <div className="absolute right-3 top-3 text-[11px] text-white/90">
                       {fmtDate(ch.start)} — {fmtDate(ch.end)}
                     </div>
-                    {/* Título sobre imagen, bottom */}
                     <div className="absolute bottom-3 left-3 right-3">
-                      <h3 className="text-white text-[15px] font-semibold drop-shadow-sm line-clamp-2">
+                      <h3 className="text-white text-[16px] font-semibold drop-shadow-sm line-clamp-2">
                         {ch.title}
                       </h3>
                     </div>
                   </div>
 
-                  {/* Contenido bajo la imagen */}
-                  <div className="p-3 sm:p-4">
-                    {/* Barra de progreso (sustituible por progreso real de checks) */}
+                  {/* Contenido */}
+                  <div className="p-4">
                     <ProgressBar percent={progressByDates(ch.start, ch.end)} />
 
-                    {/* Métricas dentro del bloque */}
-                    <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                    <div className="mt-3 grid grid-cols-3 gap-3 text-center">
                       <Metric label="Participantes" value={String(ch.members_count)} />
                       <Metric label="Puntuación" value={typeof ch.my_score === 'number' ? String(ch.my_score) : '—'} />
                       <Metric label="Ranking" value={typeof ch.my_rank === 'number' ? `#${ch.my_rank}` : '—'} />
                     </div>
 
-                    {/* Código + Compartir */}
                     <div className="mt-3 flex items-center justify-between gap-2">
-                      <div className="text-[11px] text-white/80">
-                        Código: <b>{ch.code}</b>
+                      <div className="text-[12px] text-neutral-500">
+                        Código: <b className="text-neutral-700">{ch.code}</b>
                       </div>
                       <ShareButton title={ch.title} code={ch.code} challengeId={ch.id} />
                     </div>
@@ -254,13 +276,13 @@ export default function MisRetosPage() {
 function ProgressBar({ percent }: { percent: number }) {
   const pct = Math.max(0, Math.min(100, Math.round(percent)));
   return (
-    <div className="w-full rounded-full h-2 bg-[var(--line)] overflow-hidden">
+    <div className="w-full h-2 rounded-full bg-neutral-200 overflow-hidden">
       <div
         className="h-2 rounded-full"
         style={{
           width: `${pct}%`,
-          background: 'linear-gradient(90deg, #16a34a, #22c55e)', // verde agradable
-          transition: 'width .4s ease',
+          background: 'linear-gradient(90deg, #16a34a, #22c55e)',
+          transition: 'width .35s ease',
         }}
         aria-label={`Progreso ${pct}%`}
       />
@@ -271,11 +293,29 @@ function ProgressBar({ percent }: { percent: number }) {
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div
-      className="rounded-xl border px-2 py-2 bg-white"
+      className="rounded-xl border px-3 py-2 bg-white"
       style={{ borderColor: 'var(--line)' }}
     >
       <div className="text-[10px] uppercase tracking-wide text-neutral-500">{label}</div>
-      <div className="text-sm font-semibold text-neutral-900">{value}</div>
+      <div className="text-base font-semibold text-neutral-900">{value}</div>
+    </div>
+  );
+}
+
+/** ===== Skeleton ===== */
+function SkeletonCard() {
+  return (
+    <div className="rounded-2xl border bg-white shadow-sm" style={{ borderColor: 'var(--line)' }}>
+      <div className="h-44 w-full rounded-t-2xl bg-neutral-200 animate-pulse" />
+      <div className="p-4 space-y-3">
+        <div className="h-2 w-full bg-neutral-200 rounded-full animate-pulse" />
+        <div className="grid grid-cols-3 gap-3">
+          <div className="h-12 bg-neutral-100 rounded-xl border animate-pulse" style={{ borderColor: 'var(--line)' }} />
+          <div className="h-12 bg-neutral-100 rounded-xl border animate-pulse" style={{ borderColor: 'var(--line)' }} />
+          <div className="h-12 bg-neutral-100 rounded-xl border animate-pulse" style={{ borderColor: 'var(--line)' }} />
+        </div>
+        <div className="h-4 w-40 bg-neutral-100 rounded animate-pulse" />
+      </div>
     </div>
   );
 }
@@ -298,7 +338,6 @@ function ShareButton({
     `Código: ${code}`;
 
   async function share(e: React.MouseEvent<HTMLButtonElement>) {
-    // Evita que el click dispare la navegación del <Link> padre
     e.preventDefault();
     e.stopPropagation();
     try {
