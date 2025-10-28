@@ -9,20 +9,20 @@ type BaseProps = {
   ariaLabel?: string;
 };
 
-/** Variante por defecto: barra de creación */
 type CreateVariant = BaseProps & {
   variant?: 'create';
   onClick: () => void;
 };
 
-/** Variante de tarea: píldora con check + (opcional) botón info */
 type TaskVariant = BaseProps & {
   variant: 'task';
   checked: boolean;
-  color?: string;            // color del programa (hex o css var)
-  onToggle: () => void;      // click del check
-  onInfo?: () => void;       // acción al pulsar el botón info (si se muestra)
-  showInfoButton?: boolean;  // <-- NUEVO: mostrar el botón "+" (por defecto false)
+  color?: string;
+  onToggle: () => void;
+  onInfo?: () => void;
+  showInfoButton?: boolean;
+  /** NUEVO: contenido a la derecha (ej: botón “Subir foto”) */
+  rightSlot?: React.ReactNode;
 };
 
 type Props = CreateVariant | TaskVariant;
@@ -31,7 +31,7 @@ function cn(...parts: Array<string | undefined | false | null>) {
   return parts.filter(Boolean).join(' ');
 }
 
-/* ========= confeti (canvas propio) ========= */
+/* ========= confeti ========= */
 let confettiInstance: any | null = null;
 let confettiCanvas: HTMLCanvasElement | null = null;
 
@@ -81,7 +81,7 @@ async function boomAt(x?: number, y?: number) {
   } catch {}
 }
 
-/* ========= markdown inline muy simple (para quitar ** **) ========= */
+/* ========= markdown inline simple ========= */
 function renderInlineMarkdown(text?: string) {
   const t = text ?? '';
   const parts: React.ReactNode[] = [];
@@ -98,7 +98,6 @@ function renderInlineMarkdown(text?: string) {
 }
 
 /* ===== Utils ===== */
-/** Convierte #RRGGBB a rgba con alpha. Si recibe var() o nombres CSS, devuelve un alpha fijo gris. */
 function addAlpha(hexOrCss: string, alpha: number) {
   if (!/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(hexOrCss)) {
     return 'rgba(17,17,17,0.25)';
@@ -118,17 +117,14 @@ export default function CreateHabitBar(props: Props) {
     ariaLabel = label,
   } = props;
 
-  /* ===== Variante TASK ===== */
   if (props.variant === 'task') {
-    const { checked, onToggle, onInfo, color, showInfoButton = false } = props;
+    const { checked, onToggle, onInfo, color, showInfoButton = false, rightSlot } = props;
 
-    // Estilos de la píldora
     const theme = color || '#F5F5F5';
     const bg = checked ? theme : '#ffffff';
     const border = checked ? '#00000080' : addAlpha(theme, 0.4);
     const text = '#111111';
 
-    // Confeti desde la propia píldora
     const lastXY = useRef<{ x?: number; y?: number }>({});
     const prev = useRef<boolean>(checked);
     useEffect(() => {
@@ -137,7 +133,6 @@ export default function CreateHabitBar(props: Props) {
           (typeof window !== 'undefined' && (window as any).__akiraLastXY) || {};
         const x = lastXY.current.x ?? (globalXY as any).x;
         const y = lastXY.current.y ?? (globalXY as any).y;
-
         void boomAt(x, y);
         requestAnimationFrame(() => void boomAt(x, y));
       }
@@ -146,17 +141,12 @@ export default function CreateHabitBar(props: Props) {
 
     return (
       <div
-        className={cn('flex w-full items-center justify-between px-4 py-3 transition', className)}
-        style={{
-          background: bg,
-          color: text,
-          border: `1px solid ${border}`,
-          borderRadius: 9999,
-        }}
+        className={cn('flex w-full items-center gap-3 px-4 py-3 transition rounded-full', className)}
+        style={{ background: bg, color: text, border: `1px solid ${border}` }}
         role="group"
         aria-label={ariaLabel}
       >
-        {/* Izquierda: botón check */}
+        {/* Check */}
         <button
           onMouseDown={(e) => {
             lastXY.current = { x: e.clientX, y: e.clientY };
@@ -176,12 +166,12 @@ export default function CreateHabitBar(props: Props) {
           {checked ? <Check size={16} /> : null}
         </button>
 
-        {/* Centro: label */}
-        <div className="mx-3 min-w-0 flex-1">
-          <div className="truncate text-base font-medium">{renderInlineMarkdown(label)}</div>
+        {/* Texto (truncable) */}
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-base font-medium leading-tight">{renderInlineMarkdown(label)}</div>
         </div>
 
-        {/* Derecha: botón info (opcional) */}
+        {/* Botón info opcional */}
         {showInfoButton && (
           <button
             onClick={onInfo}
@@ -193,11 +183,13 @@ export default function CreateHabitBar(props: Props) {
             <Plus size={16} />
           </button>
         )}
+
+        {/* NUEVO: Slot derecho (ej. botón “Subir foto”) */}
+        {rightSlot ? <div className="shrink-0">{rightSlot}</div> : null}
       </div>
     );
   }
 
-  /* ===== Variante por defecto: barra de crear hábito ===== */
   const { onClick } = props as CreateVariant;
   return (
     <button

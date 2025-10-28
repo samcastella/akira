@@ -752,67 +752,54 @@ export default function RetoDetallePage() {
         {/* CHECK DEL DÍA */}
         {activeTab === 'Check del día' && (
           <div className="space-y-4">
-            {/* Barra con subida integrada (overlay) */}
-            <div className="mt-1 flex items-center gap-3">
-              <div className="relative flex-1">
-                <CreateHabitBar
-                  variant="task"
-                  checked={!!myTodayCheck && (myTodayCheck.status === 'valid' || myTodayCheck.status === 'auto_valid')}
-                  label={`Día ${todayIdx ?? '-'} – ${getDayLabel(todayIdx)}`}
-                  onToggle={() => {}}
-                  onInfo={() => {
-                    document.getElementById('my-today-check')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                  }}
-                  color="#F8E68A"
-                  className="pr-48 sm:pr-56 !leading-tight"
-                />
-
-                {/* 👇 Parche visual para ocultar el “+” que dibuja CreateHabitBar */}
-                <div className="absolute right-40 top-1/2 -translate-y-1/2 h-10 w-10 rounded-full bg-white pointer-events-none" />
-
-                {/* Overlay clicable (toda la barra salvo el área del botón negro) */}
-                <button
-                  type="button"
-                  aria-label="Subir foto del día"
-                  onClick={() => fileRef.current?.click()}
-                  className="absolute top-0 bottom-0 left-0 right-40 rounded-xl focus:outline-none focus:ring-2 focus:ring-black/40"
-                />
-
-                {/* Botón negro “Subir foto” */}
-                <div className="absolute right-2 top-1/2 -translate-y-1/2">
-                  <input
-                    ref={fileRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    className="hidden"
-                    onChange={onPickFile}
-                  />
-                  <button
-                    onClick={() => fileRef.current?.click()}
-                    disabled={uploading}
-                    className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold transition active:scale-95 disabled:opacity-60 bg-black text-white"
-                  >
-                    {uploading ? (
-                      <>
-                        <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white/60 border-t-transparent" />
-                        Subiendo…
-                      </>
-                    ) : (
-                      <>
-                        <Camera className="h-3 w-3" />
-                        {myTodayCheck ? 'Subido' : 'Subir foto'}
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              {statusIcon ? <div className="shrink-0">{statusIcon}</div> : null}
+            <div className="mt-1">
+              <CreateHabitBar
+                variant="task"
+                checked={!!myTodayCheck && (myTodayCheck.status === 'valid' || myTodayCheck.status === 'auto_valid')}
+                label={`Día ${todayIdx ?? '-'} – ${getDayLabel(todayIdx)}`}
+                onToggle={() => {}}
+                onInfo={() => {
+                  document.getElementById('my-today-check')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }}
+                color="#F8E68A"
+                className="habitbar-hide-plus"
+                rightSlot={
+                  <>
+                    <input
+                      ref={fileRef}
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      className="hidden"
+                      onChange={onPickFile}
+                    />
+                    <button
+                      onClick={() => fileRef.current?.click()}
+                      disabled={uploading}
+                      className="btn-pill-black px-4 py-2 text-xs font-semibold inline-flex items-center gap-2 active:scale-95 disabled:opacity-60"
+                    >
+                      {uploading ? (
+                        <>
+                          <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white/60 border-t-transparent" />
+                          Subiendo…
+                        </>
+                      ) : (
+                        <>
+                          <Camera className="h-3 w-3" />
+                          {myTodayCheck ? 'Subido' : 'Subir foto'}
+                        </>
+                      )}
+                    </button>
+                  </>
+                }
+              />
             </div>
 
-            <div className="text-sm">
-              Día <b>{todayIdx ?? '-'}</b> / {summary?.total_days || totalDays}
+            <div className="flex items-center gap-2 text-sm">
+              {statusIcon ? <div className="shrink-0">{statusIcon}</div> : null}
+              <div>
+                Día <b>{todayIdx ?? '-'}</b> / {summary?.total_days || totalDays}
+              </div>
             </div>
 
             {myTodayCheck ? (
