@@ -585,23 +585,24 @@ className="absolute top-3 right-3 h-10 w-10 rounded-full bg-black/60 text-white 
 </section>
 
 {/* ===== SUBMENÚ ===== */}
-<nav className="border-b bg-white sticky top-[48px] z-10 -mt-px">
-<div className="container mx-auto flex justify-between px-4 overflow-x-auto">
-{TABS.map((tab) => (
-<button
-key={tab}
-onClick={() => setActiveTab(tab)}
-className={`relative py-3 px-3 text-sm whitespace-nowrap transition ${
-activeTab === tab
-? 'font-semibold text-black after:absolute after:left-0 after:right-0 after:-bottom-[1px] after:h-[2px] after:bg-black'
-: 'text-neutral-500 hover:text-black'
-}`}
->
-{tab}
-</button>
-))}
-</div>
+<nav className="border-b border-neutral-200 bg-white sticky top-[48px] z-20 shadow-sm">
+  <div className="flex justify-between px-4 overflow-x-auto">
+    {TABS.map((tab) => (
+      <button
+        key={tab}
+        onClick={() => setActiveTab(tab)}
+        className={`relative py-3 px-3 text-sm whitespace-nowrap transition ${
+          activeTab === tab
+            ? 'font-semibold text-black after:absolute after:left-0 after:right-0 after:-bottom-[0px] after:h-[1.5px] after:bg-black'
+            : 'text-neutral-500 hover:text-black'
+        }`}
+      >
+        {tab}
+      </button>
+    ))}
+  </div>
 </nav>
+
 
 {/* ===== CONTENIDO ===== */}
 <section className="container mx-auto px-4 py-6 space-y-6">
@@ -651,6 +652,7 @@ placeholder="Incluye aquí una breve descripción del reto, normas, premio para 
 <li>Cada validación suma 1 punto.</li>
 <li>Si el 50% dice “no válido”, se rechaza.</li>
 <li>Si nadie valida en 4 h (o en revisión en 24 h), se valida automáticamente.</li>
+<li>Puedes pedir revisión si crees que una foto validada automáticamente no es válida y aplicarían las mismas reglas anteriores.</li>
 </ul>
 </div>
 </details>
