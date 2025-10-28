@@ -255,7 +255,7 @@ function ChallengeCompactCard({ card }: { card: ChallengeCard }) {
       style={{ borderColor: 'var(--line)' }}
     >
       <div className="flex items-center gap-4">
-        {/* Imagen circular completa */}
+        {/* Imagen circular centrada y con zoom */}
         <div
           className="h-16 w-16 rounded-full overflow-hidden bg-neutral-100 shrink-0 border flex items-center justify-center"
           style={{ borderColor: 'var(--line)' }}
@@ -265,7 +265,7 @@ function ChallengeCompactCard({ card }: { card: ChallengeCard }) {
             <img
               src={card.cover_url}
               alt={card.title}
-              className="h-full w-full object-contain object-center"
+              className="h-full w-full object-cover object-center scale-[1.8]" // <-- zoom centrado
             />
           ) : (
             <div className="h-full w-full" />
@@ -292,6 +292,7 @@ function ChallengeCompactCard({ card }: { card: ChallengeCard }) {
     </Link>
   );
 }
+
 
 function RankingMe({
   displayName,
