@@ -17,7 +17,6 @@ import { supabase, isSupabaseEnvReady } from '@/lib/supabaseClient';
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import RegistrationModal from '@/components/RegistrationModal';
 import { pullUserPrograms } from '@/lib/programSync';
-import { NAV_HEIGHT } from '@/lib/constants';
 
 const LS_SEEN_AUTH = 'akira_seen_auth_v1';
 const LS_LAST_UID = 'akira_last_uid';
@@ -296,30 +295,15 @@ export default function LayoutClient({
         className="bg-[#FAFAFA] overflow-x-hidden"
         style={{
           minHeight: '100svh',
-          // Reserva fija para el bottom nav (altura constante desde el primer render)
-          paddingBottom: hideNav ? '0px' : `0px`,
+          // El BottomNav es fijo y maneja el safe-area internamente
+          paddingBottom: '0px',
         }}
       >
-        {/* ⛔️ Sin contenedor ni max-width para full-bleed real */}
         <div className="w-full">{children}</div>
       </div>
 
-      {/* 🔻 Bottom nav fijo abajo (wrapper con altura y capa propia) */}
-      {!hideNav && (
-        <div
-          className="fixed bottom-0 left-0 right-0 z-[60]"
-          style={{
-            height: `${NAV_HEIGHT}px`,
-            // Evita “tap-through” del primer toque
-            pointerEvents: 'auto',
-            WebkitTapHighlightColor: 'transparent',
-            touchAction: 'manipulation',
-            // El relleno seguro se maneja dentro del propio componente BottomNav
-          }}
-        >
-          {bottomNav}
-        </div>
-      )}
+      {/* 🔻 Bottom nav fijo abajo (sin wrapper extra) */}
+      {!hideNav && bottomNav}
     </>
   );
 }
