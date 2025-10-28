@@ -249,7 +249,7 @@ export default function MisRetosPage() {
                     <ProgressBar percent={progressByDates(ch.start, ch.end)} />
 
                     <div className="mt-3 grid grid-cols-3 gap-3 text-center">
-                      <Metric label="Participantes" value={String(ch.members_count)} />
+                      <Metric label="Particip." titleLabel="Participantes" value={String(ch.members_count)} />
                       <Metric label="Puntuación" value={typeof ch.my_score === 'number' ? String(ch.my_score) : '—'} />
                       <Metric label="Ranking" value={typeof ch.my_rank === 'number' ? `#${ch.my_rank}` : '—'} />
                     </div>
@@ -290,10 +290,20 @@ function ProgressBar({ percent }: { percent: number }) {
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({
+  label,
+  value,
+  titleLabel,
+}: {
+  label: string;
+  value: string;
+  titleLabel?: string;
+}) {
   return (
     <div
       className="rounded-xl border px-3 py-2 bg-white"
+      title={titleLabel || label}
+      aria-label={titleLabel || label}
       style={{ borderColor: 'var(--line)' }}
     >
       <div className="text-[10px] uppercase tracking-wide text-neutral-500">{label}</div>
