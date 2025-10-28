@@ -1,4 +1,3 @@
-// src/app/amigos/page.tsx
 'use client';
 
 import Link from 'next/link';
@@ -24,26 +23,9 @@ function useDisplayUser() {
   return { displayName, firstSurname, avatarUrl };
 }
 
-// Banner 16:9 sin bordes ni márgenes internos
-function ImageBanner({ src, alt }: { src: string; alt: string }) {
-  return (
-    <div className="relative w-full">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={src}
-        alt={alt}
-        className="block w-full h-auto aspect-[16/9] object-cover"
-        loading="lazy"
-        decoding="async"
-        draggable={false}
-      />
-    </div>
-  );
-}
-
-/* =========================
-   Helpers de fechas/progreso
-========================= */
+/* ==============
+   Helpers
+=============== */
 function diffDays(aISO: string, bISO: string) {
   const a = new Date(aISO + 'T00:00:00');
   const b = new Date(bISO + 'T00:00:00');
@@ -56,17 +38,34 @@ function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
 
-/* ===== Tipos de datos ===== */
+/* ===== Tipos ===== */
 type ChallengeCard = {
   id: string;
   title: string;
   cover_url: string | null;
-  start: string; // ISO fecha
-  end: string;   // ISO fecha
+  start: string;
+  end: string;
   totalDays: number;
-  todayIdx: number; // día actual dentro del reto (clamp 1..totalDays)
+  todayIdx: number;
 };
 
+/* ===== Banner ===== */
+function ImageBanner({ src, alt }: { src: string; alt: string }) {
+  return (
+    <div className="relative w-full">
+      <img
+        src={src}
+        alt={alt}
+        className="block w-full h-auto aspect-[16/9] object-cover"
+        loading="lazy"
+        decoding="async"
+        draggable={false}
+      />
+    </div>
+  );
+}
+
+/* ===== Página principal ===== */
 export default function ComunidadHome() {
   const inscritosMock = 284;
   const videoSrc = '/videos/san-silvestre.mp4';
@@ -75,48 +74,39 @@ export default function ComunidadHome() {
   const { displayName, firstSurname, avatarUrl } = useDisplayUser();
   const [imgOk, setImgOk] = useState(true);
 
-  // ===== Retos en los que participo (para "Tus retos activos")
   const [uid, setUid] = useState<string | null>(null);
   const [myChallenges, setMyChallenges] = useState<ChallengeCard[] | null>(null);
 
+  /* Carga usuario más rápido */
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUid(data.user?.id ?? null));
   }, []);
 
+  /* Carga de retos (paralela para más velocidad) */
   useEffect(() => {
-    if (!uid) { setMyChallenges([]); return; }
+    if (!uid) return;
     let alive = true;
     (async () => {
-      // ids de retos donde soy miembro
-      const { data: memberRows, error: mErr } = await supabase
-        .from('challenge_members')
-        .select('challenge_id')
-        .eq('user_id', uid);
-      if (mErr) { console.error(mErr); if (alive) setMyChallenges([]); return; }
-      const ids = (memberRows ?? []).map(r => r.challenge_id);
-      if (!ids.length) { if (alive) setMyChallenges([]); return; }
+      const [{ data: memberRows, error: mErr }, { data: chRows, error: cErr }] =
+        await Promise.all([
+          supabase.from('challenge_members').select('challenge_id').eq('user_id', uid),
+          supabase.from('challenges').select('id, title, start, end, cover_url'),
+        ]);
 
-      // datos base del reto
-      const { data: chRows, error: cErr } = await supabase
-        .from('challenges')
-        .select('id, title, start, end, cover_url')
-        .in('id', ids)
-        .order('start', { ascending: false });
-      if (cErr) { console.error(cErr); if (alive) setMyChallenges([]); return; }
+      if (mErr || cErr) {
+        console.error(mErr || cErr);
+        if (alive) setMyChallenges([]);
+        return;
+      }
+
+      const memberIds = new Set((memberRows ?? []).map(r => r.challenge_id));
+      const my = (chRows ?? []).filter(c => memberIds.has(c.id));
 
       const tISO = todayISO();
-      const cards: ChallengeCard[] = (chRows ?? []).map((c: any) => {
+      const cards: ChallengeCard[] = my.map((c: any) => {
         const total = Math.max(1, diffDays(c.start, c.end) + 1);
         const idx = clamp(diffDays(c.start, tISO) + 1, 1, total);
-        return {
-          id: c.id,
-          title: c.title,
-          cover_url: c.cover_url ?? null,
-          start: c.start,
-          end: c.end,
-          totalDays: total,
-          todayIdx: idx,
-        };
+        return { ...c, totalDays: total, todayIdx: idx };
       });
       if (alive) setMyChallenges(cards);
     })();
@@ -127,7 +117,7 @@ export default function ComunidadHome() {
 
   return (
     <main className="pb-4">
-      {/* ===== Hero (full-bleed como en Home) ===== */}
+      {/* ===== Hero ===== */}
       <section className="mt-0">
         <div className="relative w-full">
           <video
@@ -166,7 +156,6 @@ export default function ComunidadHome() {
 
       {/* ===== Contenido ===== */}
       <div className="px-4 space-y-8">
-        {/* --- Banner 1: amigos en reto (full-bleed) --- */}
         <section className="-mx-4 overflow-x-hidden">
           <ImageBanner
             src="/images/community/friends-challenge.jpg"
@@ -200,7 +189,6 @@ export default function ComunidadHome() {
               )}
         </section>
 
-        {/* --- Banner 2: rachas compartidas (full-bleed) --- */}
         <section className="-mx-4 overflow-x-hidden">
           <ImageBanner
             src="/images/community/group-streak.jpg"
@@ -219,14 +207,20 @@ export default function ComunidadHome() {
             </Link>
           </div>
 
-          <RankingMe displayName={displayName} firstSurname={firstSurname} avatarUrl={avatarUrl} onImgFail={() => setImgOk(false)} imgOk={imgOk} />
+          <RankingMe
+            displayName={displayName}
+            firstSurname={firstSurname}
+            avatarUrl={avatarUrl}
+            onImgFail={() => setImgOk(false)}
+            imgOk={imgOk}
+          />
         </section>
       </div>
     </main>
   );
 }
 
-/* ====== Subcomponentes UI ====== */
+/* ===== Subcomponentes UI ===== */
 
 function ProgressLine({ percent }: { percent: number }) {
   const pct = Math.max(0, Math.min(100, Math.round(percent)));
@@ -236,10 +230,9 @@ function ProgressLine({ percent }: { percent: number }) {
         className="h-3 rounded-full"
         style={{
           width: `${pct}%`,
-          background: '#f4d24d', // amarillo suave tipo captura
+          background: '#f4d24d',
           transition: 'width .35s ease',
         }}
-        aria-label={`Progreso ${pct}%`}
       />
     </div>
   );
@@ -255,17 +248,18 @@ function ChallengeCompactCard({ card }: { card: ChallengeCard }) {
       style={{ borderColor: 'var(--line)' }}
     >
       <div className="flex items-center gap-4">
-        {/* Imagen circular centrada y con zoom */}
+        {/* Imagen circular con zoom centrado */}
         <div
           className="h-16 w-16 rounded-full overflow-hidden bg-neutral-100 shrink-0 border flex items-center justify-center"
           style={{ borderColor: 'var(--line)' }}
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
           {card.cover_url ? (
             <img
               src={card.cover_url}
               alt={card.title}
-              className="h-full w-full object-cover object-center scale-[1.8]" // <-- zoom centrado
+              className="h-full w-full object-cover object-center scale-[2.2]"
+              loading="eager"
+              decoding="sync"
             />
           ) : (
             <div className="h-full w-full" />
@@ -293,7 +287,6 @@ function ChallengeCompactCard({ card }: { card: ChallengeCard }) {
   );
 }
 
-
 function RankingMe({
   displayName,
   firstSurname,
@@ -313,16 +306,16 @@ function RankingMe({
       style={{ background: 'linear-gradient(180deg, #F8E68A 0%, #F2D767 100%)' }}
     >
       <div className="flex items-center gap-3 min-w-0">
-        <div className="h-10 w-10 shrink-0 rounded-full overflow-hidden bg-neutral-100 aspect-square [clip-path:circle()]">
+        {/* Avatar con zoom igual que los retos */}
+        <div className="h-10 w-10 shrink-0 rounded-full overflow-hidden bg-neutral-100 aspect-square border flex items-center justify-center">
           {avatarUrl && imgOk ? (
-            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={avatarUrl}
               alt="Avatar"
-              className="block h-full w-full object-cover object-center align-middle"
+              className="h-full w-full object-cover object-center scale-[2]"
               onError={onImgFail}
-              draggable={false}
-              referrerPolicy="no-referrer"
+              loading="eager"
+              decoding="sync"
             />
           ) : (
             <div className="h-full w-full grid place-items-center text-[12px] text-neutral-600">
@@ -330,6 +323,7 @@ function RankingMe({
             </div>
           )}
         </div>
+
         <div className="min-w-0">
           <div className="text-sm font-semibold truncate">
             {displayName} {firstSurname}
