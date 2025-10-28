@@ -45,12 +45,26 @@ export default function BottomNav() {
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-30 border-t border-gray-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80"
-      style={{ height: `calc(${NAV_HEIGHT}px + env(safe-area-inset-bottom,0px))` }}
       aria-label="Navegación inferior"
       role="navigation"
+      // Fondo blanco opaco + z-index alto + captura de eventos
+      className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t"
+      style={{
+        // Altura fija estable; el safe-area lo metemos como padding interno
+        height: `${NAV_HEIGHT}px`,
+        // Borde superior sutil acorde a tu token
+        borderColor: 'var(--line)',
+        // Evita comportamientos raros de scroll/tap en iOS
+        WebkitTapHighlightColor: 'transparent',
+        touchAction: 'manipulation',
+        pointerEvents: 'auto',
+      }}
     >
-      <ul className="mx-auto flex h-full w-full max-w-md items-stretch justify-between px-4 pb-[env(safe-area-inset-bottom,0px)]">
+      <ul
+        className="mx-auto flex h-full w-full max-w-md items-stretch justify-between px-4"
+        // Reservamos el safe-area dentro, sin cambiar la altura del nav
+        style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+      >
         {items.map(({ href, label, outline: Outline, solid: Solid }) => {
           const active = isActive(href);
           const Icon = active ? Solid : Outline;

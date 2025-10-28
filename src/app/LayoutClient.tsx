@@ -52,7 +52,8 @@ export default function LayoutClient({
 
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showRegistration, setShowRegistration] = useState(false);
-  const [registrationStartStep, setRegistrationStartStep] = useState<1 | 2 | 3 | 4 | 5>(1);
+  const [registrationStartStep, setRegistrationStartStep] =
+    useState<1 | 2 | 3 | 4 | 5>(1);
 
   const SUPA_READY = isSupabaseEnvReady();
 
@@ -122,7 +123,11 @@ export default function LayoutClient({
         else localStorage.removeItem(LS_LAST_UID);
       } catch {}
       setHasSession(has); setAuthReady(true);
-      try { window.dispatchEvent(new CustomEvent('akira:auth-changed', { detail: { initial: true, has } })); } catch {}
+      try {
+        window.dispatchEvent(new CustomEvent('akira:auth-changed', {
+          detail: { initial: true, has }
+        }));
+      } catch {}
       if (has) await syncAll(); else setBootSynced(true);
     }
     void initAuth();
@@ -132,7 +137,9 @@ export default function LayoutClient({
     const { data: sub } = supabase.auth.onAuthStateChange(
       async (evt: AuthChangeEvent, session: Session | null) => {
         setHasSession(!!session);
-        try { window.dispatchEvent(new CustomEvent('akira:auth-changed', { detail: { evt } })); } catch {}
+        try {
+          window.dispatchEvent(new CustomEvent('akira:auth-changed', { detail: { evt } }));
+        } catch {}
         try {
           const uid = session?.user?.id ?? null;
           if (uid) localStorage.setItem(LS_LAST_UID, uid);
@@ -222,7 +229,10 @@ export default function LayoutClient({
 
   const hideNav = pathname === '/bienvenida' || isAuthRoute;
 
-  function handleCloseRegistration() { setShowRegistration(false); if (canEnter()) setUserOk(true); }
+  function handleCloseRegistration() {
+    setShowRegistration(false);
+    if (canEnter()) setUserOk(true);
+  }
   function handleCloseAuthModal() {
     setShowAuthModal(false);
     try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
@@ -286,25 +296,29 @@ export default function LayoutClient({
         className="bg-[#FAFAFA] overflow-x-hidden"
         style={{
           minHeight: '100svh',
-          // Reserva espacio para el bottom-nav fijo (si está visible)
-          paddingBottom: hideNav ? 0 : `calc(${NAV_HEIGHT}px + env(safe-area-inset-bottom, 0px))`,
+          // Reserva fija para el bottom nav (altura constante desde el primer render)
+          paddingBottom: hideNav ? '0px' : `${NAV_HEIGHT}px`,
         }}
       >
         {/* ⛔️ Sin contenedor ni max-width para full-bleed real */}
         <div className="w-full">{children}</div>
       </div>
 
-      {/* 🔻 Bottom nav fijo abajo */}
-      {!hideNav && bottomNav}
-
-      {isDev && (
-        <button
-          onClick={handleDevReset}
-          title="Reset onboarding (solo dev)"
-          className="fixed bottom-4 right-4 z-[70] rounded-full px-3 py-1.5 text-xs font-semibold border border-black bg-white/90 backdrop-blur"
+      {/* 🔻 Bottom nav fijo abajo (wrapper con altura y capa propia) */}
+      {!hideNav && (
+        <div
+          className="fixed bottom-0 left-0 right-0 z-[60]"
+          style={{
+            height: `${NAV_HEIGHT}px`,
+            // Evita “tap-through” del primer toque
+            pointerEvents: 'auto',
+            WebkitTapHighlightColor: 'transparent',
+            touchAction: 'manipulation',
+            // El relleno seguro se maneja dentro del propio componente BottomNav
+          }}
         >
-          Reset onboarding
-        </button>
+          {bottomNav}
+        </div>
       )}
     </>
   );
