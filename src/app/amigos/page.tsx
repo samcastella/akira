@@ -255,17 +255,28 @@ function ChallengeCompactCard({ card }: { card: ChallengeCard }) {
       style={{ borderColor: 'var(--line)' }}
     >
       <div className="flex items-center gap-4">
-        {/* avatar/portada circular */}
-        <div className="h-16 w-16 rounded-full overflow-hidden bg-neutral-100 shrink-0 border" style={{ borderColor: 'var(--line)' }}>
+        {/* Imagen circular completa */}
+        <div
+          className="h-16 w-16 rounded-full overflow-hidden bg-neutral-100 shrink-0 border flex items-center justify-center"
+          style={{ borderColor: 'var(--line)' }}
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          {card.cover_url
-            ? <img src={card.cover_url} alt="" className="h-full w-full object-cover" />
-            : <div className="h-full w-full" />}
+          {card.cover_url ? (
+            <img
+              src={card.cover_url}
+              alt={card.title}
+              className="h-full w-full object-contain object-center"
+            />
+          ) : (
+            <div className="h-full w-full" />
+          )}
         </div>
 
         <div className="flex-1 min-w-0">
-          <div className="text-sm text-neutral-500">Reto</div>
-          <div className="text-[18px] font-semibold leading-snug line-clamp-2">{card.title}</div>
+          <div className="text-sm text-neutral-500">Reto con amigos</div>
+          <div className="text-[18px] font-semibold leading-snug line-clamp-2">
+            {card.title}
+          </div>
 
           <div className="mt-2 flex items-center gap-3">
             <div className="flex-1">
