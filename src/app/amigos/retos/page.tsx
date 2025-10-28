@@ -41,10 +41,13 @@ export default function RetosIndex() {
   return (
     <main className="container mx-auto px-4">
       {/* Lista */}
-      <nav
-        className="divide-y"
-        style={{ borderColor: 'var(--line)' }}
-      >
+      <nav className="divide-y" style={{ borderColor: 'var(--line)' }}>
+        <ListRow
+          href="/amigos/retos/mis-retos"
+          title="Retos con amigos"
+          desc="Consulta y edita tus retos activos."
+          Icon={UsersRound}
+        />
         <ListRow
           href="/amigos/retos/crear"
           title="Crear reto"
@@ -56,12 +59,6 @@ export default function RetosIndex() {
           title="Unirse con código"
           desc="Pega el código que te han compartido."
           Icon={KeySquare}
-        />
-        <ListRow
-          href="/amigos/retos/mis-retos"
-          title="Retos con amigos"
-          desc="Consulta y edita tus retos activos."
-          Icon={UsersRound}
         />
       </nav>
     </main>
