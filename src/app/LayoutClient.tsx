@@ -297,7 +297,7 @@ export default function LayoutClient({
         style={{
           minHeight: '100svh',
           // Reserva fija para el bottom nav (altura constante desde el primer render)
-          paddingBottom: hideNav ? '0px' : `${NAV_HEIGHT}px`,
+          paddingBottom: hideNav ? '0px' : `0px`,
         }}
       >
         {/* ⛔️ Sin contenedor ni max-width para full-bleed real */}

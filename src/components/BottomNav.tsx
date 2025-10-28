@@ -40,31 +40,25 @@ export default function BottomNav() {
   const ACTIVE = 'text-black';
 
   const isActive = (href: string) =>
-    pathname === href ||
-    (href !== '/' && (pathname?.startsWith(href + '/') ?? false));
+    pathname === href || (href !== '/' && (pathname?.startsWith(href + '/') ?? false));
 
   return (
     <nav
       aria-label="Navegación inferior"
       role="navigation"
-      // Fondo blanco opaco + z-index alto + captura de eventos
       className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t"
       style={{
-        // Altura fija estable; el safe-area lo metemos como padding interno
-        height: `${NAV_HEIGHT}px`,
-        // Borde superior sutil acorde a tu token
+        // Altura = altura base + safe area (evita el “salto” inicial)
+        height: `calc(${NAV_HEIGHT}px + env(safe-area-inset-bottom, 0px))`,
+        // Separación interna para no pegar los iconos al borde curvo
+        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
         borderColor: 'var(--line)',
-        // Evita comportamientos raros de scroll/tap en iOS
         WebkitTapHighlightColor: 'transparent',
         touchAction: 'manipulation',
         pointerEvents: 'auto',
       }}
     >
-      <ul
-        className="mx-auto flex h-full w-full max-w-md items-stretch justify-between px-4"
-        // Reservamos el safe-area dentro, sin cambiar la altura del nav
-        style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
-      >
+      <ul className="mx-auto flex h-full w-full max-w-md items-stretch justify-between px-4">
         {items.map(({ href, label, outline: Outline, solid: Solid }) => {
           const active = isActive(href);
           const Icon = active ? Solid : Outline;
