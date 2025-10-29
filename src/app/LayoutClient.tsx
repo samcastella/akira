@@ -292,27 +292,15 @@ export default function LayoutClient({
         className="bg-[#FAFAFA] overflow-x-hidden"
         style={{
           minHeight: '100svh',
-          // 👇 Reserva SIEMPRE el espacio del nav fijo (alturas estables)
+          // ✅ Reserva estable del espacio del nav (no hay saltos)
           paddingBottom: hideNav ? '0px' : `calc(${NAV_HEIGHT}px + env(safe-area-inset-bottom, 0px))`,
         }}
       >
         <div className="w-full">{children}</div>
       </div>
 
-      {/* Bottom nav */}
-      {!hideNav && (
-        <div
-          className="fixed bottom-0 left-0 right-0 z-[60]"
-          style={{
-            height: `${NAV_HEIGHT}px`,
-            pointerEvents: 'auto',
-            WebkitTapHighlightColor: 'transparent',
-            touchAction: 'manipulation',
-          }}
-        >
-          {bottomNav}
-        </div>
-      )}
+      {/* 🔻 Bottom nav (SIN wrapper extra; ya es fixed dentro del componente) */}
+      {!hideNav && bottomNav}
     </>
   );
 }

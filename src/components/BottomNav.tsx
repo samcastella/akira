@@ -3,15 +3,12 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { NAV_HEIGHT } from '@/lib/constants';
-
-// Heroicons v2
 import {
   HomeIcon as HomeSolid,
   PlayCircleIcon as PlaySolid,
   ChartBarIcon as ChartBarSolid,
   UsersIcon as UsersSolid,
 } from '@heroicons/react/24/solid';
-
 import {
   HomeIcon as HomeOutline,
   PlayCircleIcon as PlayOutline,
@@ -48,17 +45,25 @@ export default function BottomNav() {
       role="navigation"
       className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t"
       style={{
-        // Altura = altura base + safe area (evita el “salto” inicial)
-        height: `calc(${NAV_HEIGHT}px + env(safe-area-inset-bottom, 0px))`,
-        // Separación interna para no pegar los iconos al borde curvo
-        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+        // ✅ Altura fija (sin safe-area). El espacio real se reserva en LayoutClient
+        height: `${NAV_HEIGHT}px`,
         borderColor: 'var(--line)',
+        // Estabiliza en iOS: capa propia y sin tap-highlight
+        transform: 'translateZ(0)',
+        willChange: 'transform',
         WebkitTapHighlightColor: 'transparent',
         touchAction: 'manipulation',
         pointerEvents: 'auto',
       }}
+      // ✅ Evita tap-through del primer toque en iOS
+      onTouchStart={(e) => e.stopPropagation()}
+      onClickCapture={(e) => e.stopPropagation()}
     >
-      <ul className="mx-auto flex h-full w-full max-w-md items-stretch justify-between px-4">
+      <ul
+        className="mx-auto flex h-full w-full max-w-md items-stretch justify-between px-4"
+        // ✅ Padding interno para el safe-area (no cambia la altura)
+        style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+      >
         {items.map(({ href, label, outline: Outline, solid: Solid }) => {
           const active = isActive(href);
           const Icon = active ? Solid : Outline;
