@@ -5,6 +5,7 @@ import BottomNav from "@/components/BottomNav";
 import LayoutClient from "./LayoutClient";
 import SupabaseSessionProvider from "@/components/providers/SupabaseSessionProvider";
 import ProgramsBootstrap from "./ProgramsBootstrap";
+import { NAV_HEIGHT } from "@/lib/constants";
 
 export const metadata: Metadata = {
   title: "Akira - Build Your Habits",
@@ -23,9 +24,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="Akira" />
         <link rel="icon" href="/favicon.ico" />
-        {/* Preload del splash para que pinte ASAP */}
         <link rel="preload" as="image" href="/splash.jpg" />
-        {/* Marca body como 'hydrated' al cargar */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
@@ -54,7 +53,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         className="antialiased preload"
         data-orientation-lock="portrait"
         style={{
-          // Fuentes
           ["--font-geist-sans" as any]:
             'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji"',
           ["--font-geist-mono" as any]:
@@ -62,25 +60,28 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           fontFamily: "var(--font-geist-sans)",
           background: "var(--background)",
           color: "var(--foreground)",
-          // ⚙️ Estabilizadores de layout en iOS
           height: "100%",
-          paddingBottom: "env(safe-area-inset-bottom, 0px)",
           WebkitTextSizeAdjust: "100%",
           WebkitOverflowScrolling: "touch" as any,
           overscrollBehaviorY: "none" as any,
         }}
       >
-        {/* Inyección de datos antes de hidratar */}
         <ProgramsBootstrap />
 
         <SupabaseSessionProvider>
-          {/* ⤵️ BottomNav vive siempre aquí (no se remonta entre páginas) */}
+          {/* El BottomNav se monta SIEMPRE desde aquí, pero lo pinta LayoutClient */}
           <LayoutClient bottomNav={<BottomNav />}>
             <main
               id="app-main"
               className="app-main px-0"
-              // ❗️Sin paddingBottom: lo gestiona LayoutClient para mantener altura constante
-              style={{ paddingLeft: 0, paddingRight: 0 }}
+              style={{
+                paddingLeft: 0,
+                paddingRight: 0,
+                // ✅ ÚNICO sitio que reserva el hueco del nav (altura fija + safe area)
+                paddingBottom: `calc(${NAV_HEIGHT}px + env(safe-area-inset-bottom, 0px))`,
+                minHeight: "100dvh",
+                background: "var(--background)",
+              }}
             >
               {children}
             </main>

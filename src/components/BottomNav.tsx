@@ -3,12 +3,14 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { NAV_HEIGHT } from '@/lib/constants';
+
 import {
   HomeIcon as HomeSolid,
   PlayCircleIcon as PlaySolid,
   ChartBarIcon as ChartBarSolid,
   UsersIcon as UsersSolid,
 } from '@heroicons/react/24/solid';
+
 import {
   HomeIcon as HomeOutline,
   PlayCircleIcon as PlayOutline,
@@ -43,27 +45,17 @@ export default function BottomNav() {
     <nav
       aria-label="Navegación inferior"
       role="navigation"
-      className="fixed bottom-0 left-0 right-0 z-[70] bg-white border-t"
+      className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t"
       style={{
-        // ✅ El nav ocupa SIEMPRE su altura + safe-area. No hay huecos debajo.
-        height: `calc(${NAV_HEIGHT}px + env(safe-area-inset-bottom, 0px))`,
+        height: `${NAV_HEIGHT}px`,         // altura fija
         borderColor: 'var(--line)',
-        // Evita repintados/ghost taps en iOS
-        transform: 'translateZ(0)',
-        contain: 'layout paint',
         WebkitTapHighlightColor: 'transparent',
         touchAction: 'manipulation',
-        pointerEvents: 'auto',
       }}
-      // Bloquea el tap-through al contenido que queda detrás del nav
-      onPointerDownCapture={(e) => e.stopPropagation()}
-      onTouchStartCapture={(e) => e.stopPropagation()}
-      onClickCapture={(e) => e.stopPropagation()}
     >
       <ul
         className="mx-auto flex h-full w-full max-w-md items-stretch justify-between px-4"
-        // ✅ Los iconos no “tocan” el home indicator, pero sin alterar la altura
-        style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+        style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }} // solo padding interno
       >
         {items.map(({ href, label, outline: Outline, solid: Solid }) => {
           const active = isActive(href);
@@ -72,7 +64,6 @@ export default function BottomNav() {
             <li key={href} className="flex-1">
               <Link
                 href={href}
-                prefetch={false}
                 aria-current={active ? 'page' : undefined}
                 className={[
                   'group flex h-full flex-col items-center justify-center gap-1',

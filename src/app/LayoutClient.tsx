@@ -17,7 +17,6 @@ import { supabase, isSupabaseEnvReady } from '@/lib/supabaseClient';
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import RegistrationModal from '@/components/RegistrationModal';
 import { pullUserPrograms } from '@/lib/programSync';
-import { NAV_HEIGHT } from '@/lib/constants';
 
 const LS_SEEN_AUTH = 'akira_seen_auth_v1';
 const LS_LAST_UID = 'akira_last_uid';
@@ -287,19 +286,12 @@ export default function LayoutClient({
         </>
       )}
 
-      {/* App */}
-      <div
-        className="bg-[#FAFAFA] overflow-x-hidden"
-        style={{
-          minHeight: '100svh',
-          // ✅ Reserva estable del espacio del nav
-          paddingBottom: hideNav ? '0px' : `calc(${NAV_HEIGHT}px + env(safe-area-inset-bottom, 0px))`,
-        }}
-      >
+      {/* App (sin reservas aquí: las hace #app-main en layout.tsx) */}
+      <div className="bg-[#FAFAFA] overflow-x-hidden">
         <div className="w-full">{children}</div>
       </div>
 
-      {/* 🔻 Bottom nav (fixed dentro del componente) */}
+      {/* Bottom nav lo pintamos una vez, sin wrappers extra */}
       {!hideNav && bottomNav}
     </>
   );
