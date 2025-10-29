@@ -372,3 +372,24 @@ input[type="password"] { -webkit-text-security: disc; }
     max-width: 100svh; /* ancho = alto del dispositivo → simula portrait */
   }
 }
+/* ====== FIX · altura inicial iOS Safari (100dvh) ====== */
+
+/* 1️⃣  define una variable dinámica con -webkit-fill-available */
+@supports (-webkit-touch-callout: none) {
+  :root {
+    --real-vh: -webkit-fill-available;
+  }
+
+  /* 2️⃣  durante el primer render usa esa altura en vez de 100dvh */
+  body:not(.hydrated) main,
+  body:not(.hydrated) .app-main {
+    min-height: var(--real-vh);
+  }
+
+  /* 3️⃣  tras hidratar (el script del layout añade .hydrated), 
+         se restablece a 100dvh estable */
+  body.hydrated main,
+  body.hydrated .app-main {
+    min-height: 100dvh;
+  }
+}
