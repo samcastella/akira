@@ -59,7 +59,7 @@ function HomeTopBar() {
 }
 
 /* ========= Hero (vídeo + bloque blanco) ========= */
-const SAN_SILVESTRE_HREF = '/programas/san-silvestre'; // ajusta si tu slug es otro
+const SAN_SILVESTRE_HREF = '/programas/san-silvestre';
 
 function SanSilvestreHero() {
   return (
@@ -97,7 +97,7 @@ function SanSilvestreHero() {
   );
 }
 
-/* ========= Card programa: CTA agrupada con texto y margen inferior ========= */
+/* ========= Card programa ========= */
 function ProgramCard({
   title,
   days,
@@ -133,8 +133,6 @@ function ProgramCard({
             <div className="mt-0.5 text-2xl sm:text-3xl font-black leading-tight tracking-[-0.02em]">
               {title}
             </div>
-
-            {/* CTA agrupada */}
             <div className="mt-3">
               <span className="inline-flex items-center gap-3 rounded-full bg-white px-4 py-2 text-sm font-semibold shadow transition active:scale-95 text-black">
                 <span>Ver programa</span>
@@ -150,10 +148,31 @@ function ProgramCard({
   );
 }
 
+/* ========= Spacer constante para BottomNav ========= */
+function BottomNavSpacer() {
+  // Usa --nav-height definida en global.css (64px) + safe area dinámico
+  return (
+    <div
+      aria-hidden="true"
+      style={{
+        height: 'calc(var(--nav-height) + env(safe-area-inset-bottom, 0px))',
+        width: '100%',
+      }}
+    />
+  );
+}
+
 /* ========= Página ========= */
 export default function HomePage() {
   return (
-    <main className="pb-4">
+    <main
+      className="relative z-0"
+      style={{
+        // Reserva desde el PRIMER frame: evita que el nav tape contenido
+        paddingBottom: 'calc(var(--nav-height) + env(safe-area-inset-bottom, 0px))',
+        backgroundColor: '#FAFAFA',
+      }}
+    >
       {/* safe area top para notch/clock */}
       <div style={{ height: 'env(safe-area-inset-top, 0px)' }} />
 
@@ -188,6 +207,9 @@ export default function HomePage() {
           Ver todos los programas
         </Link>
       </section>
+
+      {/* Fallback por si el padding se ignora en el primer frame (Safari) */}
+      <BottomNavSpacer />
     </main>
   );
 }
