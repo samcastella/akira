@@ -17,6 +17,7 @@ import { supabase, isSupabaseEnvReady } from '@/lib/supabaseClient';
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import RegistrationModal from '@/components/RegistrationModal';
 import { pullUserPrograms } from '@/lib/programSync';
+import { NAV_HEIGHT } from '@/lib/constants';
 
 const LS_SEEN_AUTH = 'akira_seen_auth_v1';
 const LS_LAST_UID = 'akira_last_uid';
@@ -167,10 +168,6 @@ export default function LayoutClient({
           setShowRegistration(false);
           setUserOk(false);
           setBootSynced(true);
-          try {
-            localStorage.removeItem(LS_SEEN_AUTH);
-            localStorage.removeItem(LS_LAST_UID);
-          } catch {}
         } else {
           if (canEnter()) setUserOk(true);
         }
@@ -295,15 +292,27 @@ export default function LayoutClient({
         className="bg-[#FAFAFA] overflow-x-hidden"
         style={{
           minHeight: '100svh',
-          // El BottomNav es fijo y maneja el safe-area internamente
-          paddingBottom: '0px',
+          // 👇 Reserva SIEMPRE el espacio del nav fijo (alturas estables)
+          paddingBottom: hideNav ? '0px' : `calc(${NAV_HEIGHT}px + env(safe-area-inset-bottom, 0px))`,
         }}
       >
         <div className="w-full">{children}</div>
       </div>
 
-      {/* 🔻 Bottom nav fijo abajo (sin wrapper extra) */}
-      {!hideNav && bottomNav}
+      {/* Bottom nav */}
+      {!hideNav && (
+        <div
+          className="fixed bottom-0 left-0 right-0 z-[60]"
+          style={{
+            height: `${NAV_HEIGHT}px`,
+            pointerEvents: 'auto',
+            WebkitTapHighlightColor: 'transparent',
+            touchAction: 'manipulation',
+          }}
+        >
+          {bottomNav}
+        </div>
+      )}
     </>
   );
 }
