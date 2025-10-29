@@ -421,3 +421,14 @@ input[type="password"] { -webkit-text-security: disc; }
   outline: 2px solid #000;
   outline-offset: 2px;
 }
+/* En global.css */
+html, body {
+  height: 100%;
+  overscroll-behavior-y: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+body {
+  /* Evita saltos cuando aparece el teclado o barra inferior */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}

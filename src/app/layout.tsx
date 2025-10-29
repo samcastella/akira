@@ -5,7 +5,6 @@ import BottomNav from "@/components/BottomNav";
 import LayoutClient from "./LayoutClient";
 import SupabaseSessionProvider from "@/components/providers/SupabaseSessionProvider";
 import ProgramsBootstrap from "./ProgramsBootstrap";
-import { NAV_HEIGHT } from "@/lib/constants";
 
 export const metadata: Metadata = {
   title: "Akira - Build Your Habits",
@@ -26,7 +25,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="icon" href="/favicon.ico" />
         {/* Preload del splash para que pinte ASAP */}
         <link rel="preload" as="image" href="/splash.jpg" />
-        {/* Pequeño script: marca el body como 'hydrated' (no elimina nodos) */}
+        {/* Marca body como 'hydrated' al cargar */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
@@ -35,10 +34,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     try {
       var b = document.body;
       if (!b) return;
-      // Cambiamos clases: de 'preload' -> 'hydrated' (fade en CSS)
-      if (b.classList.contains('preload')) {
-        b.classList.remove('preload');
-      }
+      if (b.classList.contains('preload')) b.classList.remove('preload');
       b.classList.add('hydrated');
     } catch(_) {}
   };
@@ -47,7 +43,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   } else {
     document.addEventListener('DOMContentLoaded', function(){ requestAnimationFrame(mark); }, { once:true });
   }
-  // respaldo
   window.addEventListener('load', mark, { once:true });
 })();
             `,
@@ -56,9 +51,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
 
       <body
-        className="antialiased preload"  /* 'preload' activa el overlay CSS */
+        className="antialiased preload"
         data-orientation-lock="portrait"
         style={{
+          // Fuentes
           ["--font-geist-sans" as any]:
             'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji"',
           ["--font-geist-mono" as any]:
@@ -66,21 +62,25 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           fontFamily: "var(--font-geist-sans)",
           background: "var(--background)",
           color: "var(--foreground)",
+          // ⚙️ Estabilizadores de layout en iOS
+          height: "100%",
+          paddingBottom: "env(safe-area-inset-bottom, 0px)",
+          WebkitTextSizeAdjust: "100%",
+          WebkitOverflowScrolling: "touch" as any,
+          overscrollBehaviorY: "none" as any,
         }}
       >
         {/* Inyección de datos antes de hidratar */}
         <ProgramsBootstrap />
 
         <SupabaseSessionProvider>
+          {/* ⤵️ BottomNav vive siempre aquí (no se remonta entre páginas) */}
           <LayoutClient bottomNav={<BottomNav />}>
             <main
               id="app-main"
               className="app-main px-0"
-              style={{
-                paddingLeft: 0,
-                paddingRight: 0,
-                paddingBottom: `calc(${NAV_HEIGHT}px + env(safe-area-inset-bottom, 0px))`,
-              }}
+              // ❗️Sin paddingBottom: lo gestiona LayoutClient para mantener altura constante
+              style={{ paddingLeft: 0, paddingRight: 0 }}
             >
               {children}
             </main>
