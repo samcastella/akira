@@ -4,7 +4,7 @@
 import Link from 'next/link';
 import { Settings } from 'lucide-react';
 import { useUserProfile } from '@/lib/user';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 /* ========= Helpers saludo/avatar ========= */
 function useDisplayUser() {
@@ -146,6 +146,23 @@ function ProgramCard({
 
 /* ========= Página ========= */
 export default function HomePage() {
+  // 🔒 Gate de hidratación: evita mostrar HTML prerenderizado antiguo
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => setHydrated(true), []);
+
+  if (!hydrated) {
+    // Esqueleto con misma altura/fondo para que no haya “salto”
+    return (
+      <main
+        className="relative z-0"
+        style={{
+          minHeight: '100dvh',
+          backgroundColor: '#FAFAFA',
+        }}
+      />
+    );
+  }
+
   return (
     <main className="relative z-0" style={{ backgroundColor: '#FAFAFA' }}>
       {/* safe area top para notch/clock */}
