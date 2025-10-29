@@ -292,14 +292,14 @@ export default function LayoutClient({
         className="bg-[#FAFAFA] overflow-x-hidden"
         style={{
           minHeight: '100svh',
-          // ✅ Reserva estable del espacio del nav (no hay saltos)
+          // ✅ Reserva estable del espacio del nav
           paddingBottom: hideNav ? '0px' : `calc(${NAV_HEIGHT}px + env(safe-area-inset-bottom, 0px))`,
         }}
       >
         <div className="w-full">{children}</div>
       </div>
 
-      {/* 🔻 Bottom nav (SIN wrapper extra; ya es fixed dentro del componente) */}
+      {/* 🔻 Bottom nav (fixed dentro del componente) */}
       {!hideNav && bottomNav}
     </>
   );

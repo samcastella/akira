@@ -6,30 +6,25 @@ import { Settings } from 'lucide-react';
 import { useUserProfile } from '@/lib/user';
 import { useState } from 'react';
 
-/* ========= Helpers saludo/avatar ========= */
 function useDisplayUser() {
   const user = useUserProfile();
   const name =
     (user?.nombre && user.nombre.trim()) ||
     (user?.username && user.username.trim()) ||
     undefined;
-
   const displayName = name ? name : 'usuari@';
   const avatarUrl = user?.foto || undefined;
   return { displayName, avatarUrl };
 }
 
-/* ========= Top bar ========= */
 function HomeTopBar() {
   const { displayName, avatarUrl } = useDisplayUser();
   const [imgOk, setImgOk] = useState(true);
-
   return (
     <div className="h-12 bg-white flex items-center justify-between px-4">
       <div className="flex items-center gap-3">
         <div className="h-9 w-9 shrink-0 rounded-full overflow-hidden bg-neutral-100 aspect-square [clip-path:circle()]">
           {avatarUrl && imgOk ? (
-            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={avatarUrl}
               alt="Avatar"
@@ -39,26 +34,18 @@ function HomeTopBar() {
               referrerPolicy="no-referrer"
             />
           ) : (
-            <div className="h-full w-full grid place-items-center text-[12px] text-neutral-500">
-              🙂
-            </div>
+            <div className="h-full w-full grid place-items-center text-[12px] text-neutral-500">🙂</div>
           )}
         </div>
         <span className="text-sm font-medium">Hola {displayName}</span>
       </div>
-
-      <Link
-        href="/mizona/perfil"
-        className="p-1 rounded hover:bg-black/5 transition"
-        aria-label="Abrir perfil"
-      >
+      <Link href="/mizona/perfil" className="p-1 rounded hover:bg-black/5 transition" aria-label="Abrir perfil">
         <Settings size={18} />
       </Link>
     </div>
   );
 }
 
-/* ========= Hero (vídeo + bloque blanco) ========= */
 const SAN_SILVESTRE_HREF = '/programas/san-silvestre';
 
 function SanSilvestreHero() {
@@ -76,20 +63,12 @@ function SanSilvestreHero() {
           preload="metadata"
         />
       </div>
-
       <div className="w-full bg-white py-3 px-4 flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-[12px] uppercase tracking-wide text-neutral-600">
-            Reto de la comunidad
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-black leading-tight tracking-[-0.02em]">
-            Corre 10 km en la San Silvestre
-          </h1>
+          <div className="text-[12px] uppercase tracking-wide text-neutral-600">Reto de la comunidad</div>
+          <h1 className="text-2xl sm:text-3xl font-black leading-tight tracking-[-0.02em]">Corre 10 km en la San Silvestre</h1>
         </div>
-        <Link
-          href={SAN_SILVESTRE_HREF}
-          className="shrink-0 inline-flex items-center rounded-full bg-black text-white px-4 py-2 text-sm font-semibold transition active:scale-95 hover:opacity-90"
-        >
+        <Link href={SAN_SILVESTRE_HREF} className="shrink-0 inline-flex items-center rounded-full bg-black text-white px-4 py-2 text-sm font-semibold transition active:scale-95 hover:opacity-90">
           Unirse
         </Link>
       </div>
@@ -97,22 +76,10 @@ function SanSilvestreHero() {
   );
 }
 
-/* ========= Card programa ========= */
-function ProgramCard({
-  title,
-  days,
-  href,
-  img,
-}: {
-  title: string;
-  days: number;
-  href: string;
-  img: string;
-}) {
+function ProgramCard({ title, days, href, img }: { title: string; days: number; href: string; img: string; }) {
   return (
     <Link href={href} className="block">
       <div className="relative w-full aspect-square">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={img}
           alt={title}
@@ -122,23 +89,15 @@ function ProgramCard({
           decoding="async"
           fetchPriority="low"
         />
-
-        {/* overlay */}
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/10 via-black/30 to-black/60" />
-
-        {/* zona inferior: duración + título + CTA juntos */}
         <div className="absolute inset-x-0 bottom-0 p-4 pb-8 z-10">
           <div className="text-white">
             <div className="text-[12px] opacity-90">Duración: {days} días</div>
-            <div className="mt-0.5 text-2xl sm:text-3xl font-black leading-tight tracking-[-0.02em]">
-              {title}
-            </div>
+            <div className="mt-0.5 text-2xl sm:text-3xl font-black leading-tight tracking-[-0.02em]">{title}</div>
             <div className="mt-3">
               <span className="inline-flex items-center gap-3 rounded-full bg-white px-4 py-2 text-sm font-semibold shadow transition active:scale-95 text-black">
                 <span>Ver programa</span>
-                <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M8 5v14l11-7z" fill="black" />
-                </svg>
+                <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" fill="black" /></svg>
               </span>
             </div>
           </div>
@@ -148,37 +107,12 @@ function ProgramCard({
   );
 }
 
-/* ========= Spacer constante para BottomNav ========= */
-function BottomNavSpacer() {
-  // Usa --nav-height definida en global.css (64px) + safe area dinámico
-  return (
-    <div
-      aria-hidden="true"
-      style={{
-        height: 'calc(var(--nav-height) + env(safe-area-inset-bottom, 0px))',
-        width: '100%',
-      }}
-    />
-  );
-}
-
-/* ========= Página ========= */
 export default function HomePage() {
   return (
-    <main
-      className="relative z-0"
-      style={{
-        // Reserva desde el PRIMER frame: evita que el nav tape contenido
-        paddingBottom: 'calc(var(--nav-height) + env(safe-area-inset-bottom, 0px))',
-        backgroundColor: '#FAFAFA',
-      }}
-    >
-      {/* safe area top para notch/clock */}
+    <main className="relative z-0" style={{ backgroundColor: '#FAFAFA' }}>
       <div style={{ height: 'env(safe-area-inset-top, 0px)' }} />
-
       <HomeTopBar />
       <SanSilvestreHero />
-
       <section className="mt-0 space-y-0">
         <ProgramCard
           title="Aprende a controlar la tecnología"
@@ -193,23 +127,16 @@ export default function HomePage() {
           img="/meditation.jpg"
         />
       </section>
-
       <section className="mt-6 px-4 text-center">
         <h2 className="text-xl font-extrabold leading-tight tracking-[-0.01em]">
           ¿Listo para diseñar tu mejor versión?
           <br />
           Elige un programa y empieza hoy.
         </h2>
-        <Link
-          href="/programas"
-          className="mt-4 inline-block rounded-full px-6 py-3 text-sm font-semibold bg-black text-white transition active:scale-95 hover:opacity-90"
-        >
+        <Link href="/programas" className="mt-4 inline-block rounded-full px-6 py-3 text-sm font-semibold bg-black text-white transition active:scale-95 hover:opacity-90">
           Ver todos los programas
         </Link>
       </section>
-
-      {/* Fallback por si el padding se ignora en el primer frame (Safari) */}
-      <BottomNavSpacer />
     </main>
   );
 }

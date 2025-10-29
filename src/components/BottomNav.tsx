@@ -43,27 +43,26 @@ export default function BottomNav() {
     <nav
       aria-label="Navegación inferior"
       role="navigation"
-      className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t"
+      className="fixed bottom-0 left-0 right-0 z-[70] bg-white border-t"
       style={{
-        // Altura fija (sin safe-area). El espacio real se reserva en LayoutClient
-        height: `${NAV_HEIGHT}px`,
+        // ✅ El nav ocupa SIEMPRE su altura + safe-area. No hay huecos debajo.
+        height: `calc(${NAV_HEIGHT}px + env(safe-area-inset-bottom, 0px))`,
         borderColor: 'var(--line)',
-        // Estabiliza en iOS / evita repintados raros
+        // Evita repintados/ghost taps en iOS
         transform: 'translateZ(0)',
-        contain: 'paint',
-        willChange: 'transform',
+        contain: 'layout paint',
         WebkitTapHighlightColor: 'transparent',
         touchAction: 'manipulation',
         pointerEvents: 'auto',
       }}
-      // Bloquea cualquier tap-through al contenido inferior
+      // Bloquea el tap-through al contenido que queda detrás del nav
       onPointerDownCapture={(e) => e.stopPropagation()}
       onTouchStartCapture={(e) => e.stopPropagation()}
       onClickCapture={(e) => e.stopPropagation()}
     >
       <ul
         className="mx-auto flex h-full w-full max-w-md items-stretch justify-between px-4"
-        // Safe area solo como padding interno (no cambia la altura)
+        // ✅ Los iconos no “tocan” el home indicator, pero sin alterar la altura
         style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
       >
         {items.map(({ href, label, outline: Outline, solid: Solid }) => {
@@ -73,7 +72,7 @@ export default function BottomNav() {
             <li key={href} className="flex-1">
               <Link
                 href={href}
-                prefetch={false} // evita primer click a rutas prefetcheadas (p.ej. detox)
+                prefetch={false}
                 aria-current={active ? 'page' : undefined}
                 className={[
                   'group flex h-full flex-col items-center justify-center gap-1',

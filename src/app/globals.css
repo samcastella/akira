@@ -9,7 +9,7 @@
 
   /* UI tokens adicionales */
   --muted: #6b7280; /* gris texto secundario */
-  --line: #e6e6e6;  /* bordes sutiles */
+  --line: rgba(0,0,0,.12);  /* bordes sutiles */
   --accent: #000000;
 
   --radius-card: 24px;
@@ -56,6 +56,7 @@ body {
   text-rendering: optimizeLegibility;
   -webkit-text-size-adjust: 100%;
   overscroll-behavior-y: none;
+  /* ⛔️ sin padding-bottom: lo reservan LayoutClient + BottomNav */
 }
 
 /* ===== Splash overlay 100% CSS =====
@@ -99,22 +100,15 @@ input, textarea, button, select, a { -webkit-tap-highlight-color: transparent; }
    Layout principal
    ========= */
 
-/* Reserva de espacio para el bottom nav fijo y corrige viewport en iOS */
-main {
-  min-height: 100dvh;
-  padding-bottom: calc(var(--nav-height) + env(safe-area-inset-bottom, 0px));
-  background: var(--background); /* también pinta el “hueco” */
-}
-
-/* Si tu contenedor principal no es <main>, aplica .app-main */
+/* ⛔️ Sin reservas aquí: las hace LayoutClient (padding-bottom global) */
+main,
 .app-main {
   min-height: 100dvh;
-  padding-bottom: calc(var(--nav-height) + env(safe-area-inset-bottom, 0px));
   background: var(--background);
 }
 
 /* Safe area superior para evitar solapes con la hora/notch */
-.safe-top { height: env(safe-area-inset-top); }
+.safe-top { height: env(safe-area-inset-top, 0px); }
 
 /* =====
    Utilidades UI de la app
@@ -309,20 +303,17 @@ details.accordion summary::-webkit-details-marker { display: none; }
 .modal .actions a:hover { background: color-mix(in oklab, var(--foreground) 3%, transparent); }
 
 /* =========
-   BottomNav (fijo)
+   BottomNav (clases legacy si se usan en algún sitio)
    ========= */
 .bottomnav {
-  position: fixed; left: 0; right: 0; bottom: 0;
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
   z-index: 50;
   display: flex; align-items: stretch;
   gap: 0;
   border-top: 1px solid var(--line);
-  background: var(--background); /* siempre blanco */
-  /* opcional blur:
-     backdrop-filter: saturate(180%) blur(8px);
-  */
+  background: var(--background);
 }
-
 .bn-item {
   flex: 1 1 0;
   min-width: 0;
@@ -331,12 +322,10 @@ details.accordion summary::-webkit-details-marker { display: none; }
   text-decoration: none; color: inherit;
   background: transparent;
 }
-
 .bn-item[aria-current="page"]{
   background: var(--background);
   color: var(--foreground);
 }
-
 .bn-pill {
   box-sizing: border-box;
   height: 100%;
@@ -375,60 +364,11 @@ html { scroll-behavior: smooth; }
 body.modal-open { overflow: hidden; width: 100%; }
 input[type="password"] { -webkit-text-security: disc; }
 
-/* 👉 Mantener la UI en “modo retrato” también en landscape (navegador)
-   Solo se aplica si el <body> tiene data-orientation-lock="portrait" */
+/* 👉 Mantener la UI en “modo retrato” también en landscape (navegador) */
 @media (orientation: landscape) {
   html, body { width: 100%; height: 100%; overflow-x: hidden; }
   body[data-orientation-lock="portrait"] #app-main {
     margin: 0 auto;
     max-width: 100svh; /* ancho = alto del dispositivo → simula portrait */
   }
-}
-/* Color de línea que usas en inline styles */
-:root {
-  --line: rgba(0,0,0,.12);
-}
-
-/* Oculta el botón/ícono de “+” que trae CreateHabitBar
-   (varios selectores por si cambia el markup interno) */
-.habitbar-hide-plus .lucide-plus,
-.habitbar-hide-plus [data-icon="plus"],
-.habitbar-hide-plus [aria-label*="añadir" i],
-.habitbar-hide-plus [aria-label*="add" i],
-.habitbar-hide-plus .add,
-.habitbar-hide-plus .add-btn {
-  display: none !important;
-}
-
-/* Suaviza la interacción en móviles (quita el destello azul) */
-.habitbar-click-overlay,
-.habitbar-hide-plus {
-  -webkit-tap-highlight-color: transparent;
-}
-
-/* Opcional: iguala la altura mínima de la barra si el layout varía */
-.habitbar-hide-plus {
-  min-height: 56px;
-}
-
-/* Opcional: botón negro redondeado con buen foco (por si lo reutilizas) */
-.btn-pill-black {
-  border-radius: 9999px;
-  background: #000;
-  color: #fff;
-}
-.btn-pill-black:focus-visible {
-  outline: 2px solid #000;
-  outline-offset: 2px;
-}
-/* En global.css */
-html, body {
-  height: 100%;
-  overscroll-behavior-y: none;
-  -webkit-overflow-scrolling: touch;
-}
-
-body {
-  /* Evita saltos cuando aparece el teclado o barra inferior */
-  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
