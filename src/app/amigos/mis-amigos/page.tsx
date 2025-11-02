@@ -100,7 +100,7 @@ function RequestsModal({ open, onClose, ids, dir, onAccept, onReject, disabled }
               <div className="flex items-center gap-3 min-w-0">
                 <Avatar u={u} />
                 <div className="min-w-0">
-                  <div className="text-sm font-medium truncate">{u.nombre || '—'} {u.apellido || ''}</div>
+                  {(() => { const full = `${(u.nombre || '').trim()} ${(u.apellido || '').trim()}`.trim(); const username = u.username || handleFromUrl(u.instagram) || 'usuario'; const title = full || `@${stripAt(username)}`; return (<div className="text-sm font-medium truncate">{title}</div>); })()}
                   <div className="text-xs text-gray-500 truncate">@{stripAt(username)}</div>
                 </div>
               </div>
@@ -218,7 +218,7 @@ function FriendRow({
       <button className="flex items-center gap-3 min-w-0 text-left" onClick={onUserClick} aria-label={`Abrir ${username}`}>
         <Avatar u={u} />
         <div className="min-w-0">
-          <div className="text-sm font-medium truncate">{u.nombre || '—'} {u.apellido || ''}</div>
+          {(() => { const full = `${(u.nombre || '').trim()} ${(u.apellido || '').trim()}`.trim(); const username = u.username || handleFromUrl(u.instagram) || 'usuario'; const title = full || `@${stripAt(username)}`; return (<div className="text-sm font-medium truncate">{title}</div>); })()}
           <div className="text-xs text-gray-500 truncate">@{stripAt(username)}</div>
         </div>
       </button>
@@ -355,16 +355,10 @@ export default function AmigosPage() {
   const pendingCount = pendingIn.length;
 
   return (
-    <main>
+    <main className="mx-auto max-w-[720px]">
       {/* Top bar estilo Instagram */}
-      <div className="h-12 bg-white flex items-center justify-between px-4 border-b border-[var(--line)]">
-        <Link href="/" className="text-sm">Inicio</Link>
-        <h1 className="text-base font-semibold">Amigos</h1>
-        <div className="w-10" />
-      </div>
-
-      {/* Buscador */}
-      <div className="px-4 py-3 border-b border-[var(--line)] bg-white sticky top-12 z-10">
+            {/* Buscador */}
+      <div className="px-5 py-3 border-b border-[var(--line)] bg-white sticky top-0 z-10">
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
@@ -375,7 +369,7 @@ export default function AmigosPage() {
 
       {/* Banner solicitudes */}
       {pendingCount > 0 && (
-        <div className="px-4 py-2 bg-white border-b border-[var(--line)]">
+        <div className="px-5 py-2 bg-white border-b border-[var(--line)]">
           <button
             className="w-full text-sm text-left px-3 py-2 rounded-xl bg-gray-50 border border-[var(--line)]"
             onClick={() => setShowReqs(true)}
@@ -387,7 +381,7 @@ export default function AmigosPage() {
       )}
 
       {/* Lista de usuarios */}
-      <ul className="divide-y divide-[var(--line)] bg-white">
+      <ul className="divide-y divide-[var(--line)] bg-white px-1">
         {list.map((u) => (
           <FriendRow
             key={u.user_id}
