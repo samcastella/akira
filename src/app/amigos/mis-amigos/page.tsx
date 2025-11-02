@@ -200,16 +200,16 @@ function Avatar({ u, size = 40 }: { u: PublicProfile; size?: number }) {
 function FriendRow({
   u,
   isFriend,
-  canAccept,
   onConnect,
   onUserClick,
+  onRemove,
   disabled,
 }: {
   u: PublicProfile;
   isFriend: boolean;
-  canAccept?: boolean; // no usado en UI principal, reservado
   onConnect: () => void;
   onUserClick: () => void;
+  onRemove: () => void;
   disabled: boolean;
 }) {
   const username = u.username || handleFromUrl(u.instagram) || 'usuario';
@@ -223,7 +223,10 @@ function FriendRow({
         </div>
       </button>
       {isFriend ? (
-        <span className="px-3 py-1.5 rounded-full text-xs bg-gray-100 text-gray-700 border border-[var(--line)]">Amigo ✓</span>
+        <div className="flex items-center gap-2">
+          <span className="px-3 py-1.5 rounded-full text-xs bg-gray-100 text-gray-700 border border-[var(--line)]">Amigo ✓</span>
+          <button className="px-3 py-1.5 rounded-full text-sm border border-[var(--line)]" onClick={onRemove}>Eliminar</button>
+        </div>
       ) : (
         <button
           className="px-3 py-1.5 rounded-full text-sm bg-black text-white disabled:opacity-50"
@@ -337,6 +340,15 @@ export default function AmigosPage() {
     setFriends((prev) => [...prev, fromId]);
   }
 
+  async function removeFriend(targetId: string) {
+    if (!userId) return;
+    await supabase
+      .from('friendships')
+      .delete()
+      .or(`and(requester.eq.${userId},addressee.eq.${targetId}),and(requester.eq.${targetId},addressee.eq.${userId})`);
+    setFriends((prev) => prev.filter((id) => id !== targetId));
+  }
+
   async function rejectRequest(fromId: string) {
     if (!userId) return;
     await supabase.from('friendships').update({ status: 'rejected' }).eq('requester', fromId).eq('addressee', userId);
@@ -389,6 +401,7 @@ export default function AmigosPage() {
             isFriend={friends.includes(u.user_id)}
             onConnect={() => sendRequest(u.user_id)}
             onUserClick={() => openUser(u)}
+            onRemove={() => removeFriend(u.user_id)}
             disabled={disabled}
           />
         ))}
