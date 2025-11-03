@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { Trash2 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import Link from 'next/link';
 
@@ -171,6 +172,19 @@ function InfoGateModal({ open, onClose }: { open: boolean; onClose: () => void; 
   );
 }
 
+function ConfirmModal({ open, onClose, onConfirm }: { open: boolean; onClose: () => void; onConfirm: () => void; }) {
+  if (!open) return null;
+  return (
+    <ModalBase open={open} onClose={onClose} title="Confirmar eliminación">
+      <p className="text-sm">¿Estás seguro de eliminar a este usuario de tus amigos?</p>
+      <div className="mt-4 flex justify-end gap-2">
+        <button className="px-3 py-1.5 rounded-full text-sm border border-[var(--line)]" onClick={onClose}>Cancelar</button>
+        <button className="px-3 py-1.5 rounded-full text-sm bg-black text-white" onClick={onConfirm}>Confirmar</button>
+      </div>
+    </ModalBase>
+  );
+}
+
 /* ========= Subcomponentes ========= */
 function Avatar({ u, size = 40 }: { u: PublicProfile; size?: number }) {
   const label = initials(u.nombre, u.apellido);
@@ -213,19 +227,41 @@ function FriendRow({
   disabled: boolean;
 }) {
   const username = u.username || handleFromUrl(u.instagram) || 'usuario';
+
   return (
     <li className="flex items-center justify-between py-3">
-      <button className="flex items-center gap-3 min-w-0 text-left" onClick={onUserClick} aria-label={`Abrir ${username}`}>
+      <button
+        className="flex items-center gap-3 min-w-0 text-left"
+        onClick={onUserClick}
+        aria-label={`Abrir ${username}`}
+      >
         <Avatar u={u} />
         <div className="min-w-0">
-          {(() => { const full = `${(u.nombre || '').trim()} ${(u.apellido || '').trim()}`.trim(); const username = u.username || handleFromUrl(u.instagram) || 'usuario'; const title = full || `@${stripAt(username)}`; return (<div className="text-sm font-medium truncate">{title}</div>); })()}
-          <div className="text-xs text-gray-500 truncate">@{stripAt(username)}</div>
+          {(() => {
+            const full = `${(u.nombre || '').trim()} ${(u.apellido || '')
+              .trim()}`.trim();
+            const un = u.username || handleFromUrl(u.instagram) || 'usuario';
+            const title = full || `@${stripAt(un)}`;
+            return <div className="text-sm font-medium truncate">{title}</div>;
+          })()}
+          <div className="text-xs text-gray-500 truncate">
+            @{stripAt(username)}
+          </div>
         </div>
       </button>
+
       {isFriend ? (
         <div className="flex items-center gap-2">
-          <span className="px-3 py-1.5 rounded-full text-xs bg-gray-100 text-gray-700 border border-[var(--line)]">Amigo ✓</span>
-          <button className="px-3 py-1.5 rounded-full text-sm border border-[var(--line)]" onClick={onRemove}>Eliminar</button>
+          <span className="px-3 py-1.5 rounded-full text-xs bg-gray-100 text-gray-700 border border-[var(--line)]">
+            Amigo ✓
+          </span>
+          <button
+            aria-label="Eliminar amigo"
+            onClick={onRemove}
+            className="p-1"
+          >
+            <Trash2 size={18} />
+          </button>
         </div>
       ) : (
         <button
@@ -260,6 +296,8 @@ export default function AmigosPage() {
   const [q, setQ] = useState('');
 
   const [showReqs, setShowReqs] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
   const [showProfile, setShowProfile] = useState(false);
   const [showGate, setShowGate] = useState(false);
   const [profileSel, setProfileSel] = useState<PublicProfile | null>(null);
@@ -269,7 +307,9 @@ export default function AmigosPage() {
     async function loadAll() {
       const { data: users } = await supabase
         .from('public_profiles')
-        .select('*')
+        .select('user_id, username, nombre, apellido, instagram, tiktok, avatar_url, fecha_nacimiento, edad, updated_at')
+        .order('updated_at', { ascending: false })
+        .limit(200)
         .returns<PublicProfile[]>();
       if (!alive) return;
       const map: Record<string, PublicProfile> = {};
@@ -401,7 +441,7 @@ export default function AmigosPage() {
             isFriend={friends.includes(u.user_id)}
             onConnect={() => sendRequest(u.user_id)}
             onUserClick={() => openUser(u)}
-            onRemove={() => removeFriend(u.user_id)}
+            onRemove={() => { setConfirmId(u.user_id); setShowConfirm(true); }}
             disabled={disabled}
           />
         ))}
@@ -423,6 +463,11 @@ export default function AmigosPage() {
 
       <ProfileModal open={showProfile} onClose={() => setShowProfile(false)} profile={profileSel} />
       <InfoGateModal open={showGate} onClose={() => setShowGate(false)} />
+      <ConfirmModal
+        open={showConfirm}
+        onClose={() => setShowConfirm(false)}
+        onConfirm={() => { if (confirmId) removeFriend(confirmId); setShowConfirm(false); }}
+      />
     </main>
   );
 }
