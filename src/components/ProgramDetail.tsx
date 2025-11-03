@@ -35,6 +35,14 @@ import { useAuthUserId } from '@/lib/user';
 /* ✅ IMPORT NECESARIO PARA REALTIME */
 import { supabase } from '@/lib/supabaseClient';
 
+/* === Puntuación (RPC helpers) === */
+import {
+  fetchProgramPoints,
+  fetchProgramPointsByDay,
+  type ProgramPointsTotals,
+  type ProgramPointsByDayRow,
+} from '@/lib/programService';
+
 type JsonTask = { id?: string; label: string; detail?: string; tags?: string[] };
 type JsonDay = { day: number; tasks: JsonTask[] };
 type ProgramJson = {
@@ -103,6 +111,10 @@ type Props = {
   howItWorks: string;
 };
 
+/* ===== Tabs (como en Retos) ===== */
+const TABS = ['Resumen', 'Check del día', 'Puntuación'] as const;
+type Tab = typeof TABS[number];
+
 export default function ProgramDetail({
   slug,
   imageSrc,
@@ -131,6 +143,14 @@ export default function ProgramDetail({
   const [starting, setStarting] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Pestaña activa
+  const [activeTab, setActiveTab] = useState<Tab>('Resumen');
+
+  // Puntuación
+  const [pointsTotals, setPointsTotals] = useState<ProgramPointsTotals | null>(null);
+  const [pointsByDay, setPointsByDay] = useState<ProgramPointsByDayRow[]>([]);
+  const [loadingPoints, setLoadingPoints] = useState(false);
 
   // cargar JSON
   useEffect(() => {
@@ -208,8 +228,7 @@ export default function ProgramDetail({
     };
   }, [uid]);
 
-  /* ✅ Realtime: escucha cambios de tareas del usuario y filtra por slug en el callback.
-     Nota: el filtro múltiple con coma no es válido; usamos user_id y filtramos en código. */
+  /* ✅ Realtime: escucha cambios de tareas del usuario y filtra por slug en el callback. */
   useEffect(() => {
     if (!uid) return;
     let cancelled = false;
@@ -243,6 +262,11 @@ export default function ProgramDetail({
 
   const active: LocalProgram | null = activeMap[slug] ?? null;
   const started = Boolean(active?.startedAt);
+
+  // Si el usuario ha iniciado el programa, por UX abrimos "Check del día" por defecto
+  useEffect(() => {
+    setActiveTab(started ? 'Check del día' : 'Resumen');
+  }, [started]);
 
   const totalDays = useMemo(
     () => data?.durationDays ?? data?.days?.length ?? 0,
@@ -368,6 +392,36 @@ export default function ProgramDetail({
       {open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
     </button>
   );
+
+  // ====== Carga de puntuación cuando el programa está iniciado ======
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!uid || !started) {
+        setPointsTotals(null);
+        setPointsByDay([]);
+        return;
+      }
+      setLoadingPoints(true);
+      try {
+        const [tot, byDay] = await Promise.all([
+          fetchProgramPoints(uid, slug),
+          fetchProgramPointsByDay(uid, slug),
+        ]);
+        if (!alive) return;
+        setPointsTotals(tot);
+        setPointsByDay(byDay);
+      } catch (e) {
+        // Silencioso; la sección muestra placeholders
+        if (!alive) return;
+        setPointsTotals(null);
+        setPointsByDay([]);
+      } finally {
+        if (alive) setLoadingPoints(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [uid, slug, started]);
 
   // Fallback si no hay loader/JSON
   if (!loadingData && !data) {
@@ -522,6 +576,226 @@ export default function ProgramDetail({
         )}
       </div>
 
+      {/* ===== SUBMENÚ (Tabs) ===== */}
+      <nav className="border-b bg-white sticky top-[48px] z-10 -mt-px mt-6">
+        <div className="container mx-auto flex justify-between px-0 overflow-x-auto">
+          {TABS.map((tab) => {
+            const locked = (tab === 'Check del día' || tab === 'Puntuación') && !started;
+            const isActive = activeTab === tab;
+            return (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`relative py-3 px-3 text-sm whitespace-nowrap transition ${
+                  isActive
+                    ? 'font-semibold text-black after:absolute after:left-0 after:right-0 after:-bottom-[1px] after:h-[2px] after:bg-black'
+                    : 'text-neutral-500 hover:text-black'
+                } ${locked ? 'opacity-60' : ''}`}
+                title={locked ? 'Bloqueado hasta que empieces el programa' : tab}
+              >
+                {tab}
+                {locked && <Lock className="inline ml-1 h-4 w-4 align-text-bottom" />}
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+
+      {/* ===== CONTENIDO POR TAB ===== */}
+      <section className="container mx-auto px-0 py-6 space-y-6">
+        {/* ========== TAB: RESUMEN ========== */}
+        {activeTab === 'Resumen' && (
+          <>
+            {/* Progreso (si iniciado) */}
+            {started && data && totalDays > 0 && (
+              <div className="mt-2">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-sm font-medium">
+                    Progreso: Día {Math.min(currentDay, totalDays)} / {totalDays}
+                  </div>
+                  <div className="text-sm text-neutral-500">{progressPct}%</div>
+                </div>
+                <div className="h-2 w-full rounded-full bg-neutral-200 overflow-hidden">
+                  <div className="h-full bg-black transition-all" style={{ width: `${progressPct}%` }} />
+                </div>
+              </div>
+            )}
+
+            {/* Texto guía */}
+            <p className="text-xs text-neutral-500">
+              * El plan se revela día a día. Los checks se realizan en <strong>Mi Zona</strong>.
+            </p>
+          </>
+        )}
+
+        {/* ========== TAB: CHECK DEL DÍA ========== */}
+        {activeTab === 'Check del día' && (
+          <>
+            {!started && (
+              <div className="rounded-2xl border p-4 bg-neutral-50 text-neutral-600" style={{ borderColor: 'var(--line)' }}>
+                <div className="flex items-center gap-2 font-medium mb-2">
+                  <Lock className="h-4 w-4" />
+                  Bloqueado hasta empezar el programa
+                </div>
+                <p className="text-sm mb-3">Puedes ver un ejemplo del <strong>Día 1</strong> (lectura en gris):</p>
+
+                {/* Preview Día 1 (gris, sin interacción) */}
+                <div className="opacity-60 pointer-events-none">
+                  <PreviewDayOne data={data} />
+                </div>
+              </div>
+            )}
+
+            {started && data && totalDays > 0 && (
+              <>
+                {/* Progreso del día y navegación */}
+                <div className="mt-2">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="text-sm font-medium">
+                      Día {Math.min(currentDay, totalDays)} / {totalDays}
+                    </div>
+                    <div className="text-sm text-neutral-500">{progressPct}%</div>
+                  </div>
+                  <div className="h-2 w-full rounded-full bg-neutral-200 overflow-hidden">
+                    <div className="h-full bg-black transition-all" style={{ width: `${progressPct}%` }} />
+                  </div>
+                </div>
+
+                <div className="mt-6 flex items-center justify-between">
+                  <button
+                    onClick={() => setViewedDay((d) => Math.max(1, d - 1))}
+                    disabled={viewedDay <= 1}
+                    className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border ${
+                      viewedDay <= 1
+                        ? 'text-neutral-400 border-neutral-200 cursor-not-allowed'
+                        : 'text-neutral-700 border-neutral-300 hover:bg-neutral-50'
+                    }`}
+                    aria-label="Día anterior"
+                  >
+                    <ChevronLeft className="w-4 h-4" /> Anterior
+                  </button>
+
+                  <div className="text-[15px] font-semibold">Día {viewedDay}</div>
+
+                  <button
+                    onClick={() => setViewedDay((d) => Math.min(currentDay, d + 1))}
+                    disabled={viewedDay >= currentDay}
+                    className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border ${
+                      viewedDay >= currentDay
+                        ? 'text-neutral-400 border-neutral-200 cursor-not-allowed'
+                        : 'text-neutral-700 border-neutral-300 hover:bg-neutral-50'
+                    }`}
+                    aria-label="Día siguiente"
+                    title={
+                      viewedDay >= currentDay
+                        ? 'El plan se revela día a día. Se desbloquea mañana.'
+                        : 'Ir al siguiente día'
+                    }
+                  >
+                    {viewedDay >= currentDay ? (
+                      <>Bloqueado <Lock className="w-4 h-4" /></>
+                    ) : (
+                      <>Siguiente <ChevronRight className="w-4 h-4" /></>
+                    )}
+                  </button>
+                </div>
+
+                {/* Lista de tareas del día (informativo; checks reales en Mi Zona) */}
+                <DayTasksList
+                  tasks={tasks}
+                  dayProgressMap={dayProgressMap}
+                  openTasks={openTasks}
+                  toggleTaskOpen={toggleTaskOpen}
+                />
+
+                <p className="text-xs text-neutral-500 mt-2">
+                  * Los checks se hacen en <strong>Mi Zona</strong>. Aquí puedes revisar tu progreso. El plan se revela día a día.
+                </p>
+              </>
+            )}
+          </>
+        )}
+
+        {/* ========== TAB: PUNTUACIÓN ========== */}
+        {activeTab === 'Puntuación' && (
+          <>
+            {!started && (
+              <div className="rounded-2xl border p-4 bg-neutral-50 text-neutral-600" style={{ borderColor: 'var(--line)' }}>
+                <div className="flex items-center gap-2 font-medium">
+                  <Lock className="h-4 w-4" />
+                  Bloqueado hasta empezar el programa
+                </div>
+                <p className="text-sm mt-2">Cuando inicies, verás tus puntos: <b>+5</b> por check y <b>+10</b> por día completo.</p>
+              </div>
+            )}
+
+            {started && (
+              <div className="space-y-4">
+                {/* Totales */}
+                <div className="rounded-2xl border p-4 bg-white" style={{ borderColor: 'var(--line)' }}>
+                  <div className="text-sm font-semibold mb-2">Tus puntos</div>
+                  {loadingPoints ? (
+                    <div className="animate-pulse">
+                      <div className="h-3 w-1/2 bg-neutral-200 rounded mb-2" />
+                      <div className="h-3 w-1/3 bg-neutral-200 rounded" />
+                    </div>
+                  ) : (
+                    <div className="text-[15px]">
+                      <div className="flex items-center justify-between">
+                        <span>Total</span>
+                        <b>{pointsTotals?.total_points ?? 0}</b>
+                      </div>
+                      <div className="flex items-center justify-between text-neutral-600 text-sm mt-1">
+                        <span>Checks completados</span>
+                        <span>{pointsTotals?.checks_done ?? 0} × 5</span>
+                      </div>
+                      <div className="flex items-center justify-between text-neutral-600 text-sm">
+                        <span>Días completos</span>
+                        <span>{pointsTotals?.days_completed ?? 0} × 10</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Desglose por día */}
+                <div className="rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--line)' }}>
+                  <div className="px-4 py-3 text-sm font-semibold bg-neutral-50">Desglose por día</div>
+                  {loadingPoints ? (
+                    <div className="p-4">
+                      <div className="animate-pulse space-y-2">
+                        <div className="h-3 w-full bg-neutral-200 rounded" />
+                        <div className="h-3 w-5/6 bg-neutral-200 rounded" />
+                        <div className="h-3 w-4/6 bg-neutral-200 rounded" />
+                      </div>
+                    </div>
+                  ) : pointsByDay.length === 0 ? (
+                    <div className="p-4 text-sm text-neutral-500">Sin datos aún.</div>
+                  ) : (
+                    <ul className="divide-y divide-neutral-100">
+                      {pointsByDay.map((r) => (
+                        <li key={r.day_index} className="px-4 py-3 text-sm flex items-center justify-between">
+                          <div className="min-w-0">
+                            <div className="font-medium">Día {r.day_index}</div>
+                            <div className="text-[12px] text-neutral-600">
+                              {r.tasks_done}/{r.tasks_total} checks — {r.day_completed ? 'Completo (+10)' : 'Parcial'}
+                            </div>
+                          </div>
+                          <div className="font-semibold tabular-nums">{r.day_points} pts</div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                <p className="text-xs text-neutral-500">
+                  Reglas: <b>+5</b> por cada check completado · <b>+10</b> por completar todas las tareas del día.
+                </p>
+              </div>
+            )}
+          </>
+        )}
+      </section>
+
       {/* Modal confirmación reinicio */}
       {confirmOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40">
@@ -547,136 +821,6 @@ export default function ProgramDetail({
         </div>
       )}
 
-      {/* Progreso + Navegación: solo si iniciado */}
-      {started && data && totalDays > 0 && (
-        <>
-          <div className="mt-8">
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-sm font-medium">
-                Progreso: Día {Math.min(currentDay, totalDays)} / {totalDays}
-              </div>
-              <div className="text-sm text-neutral-500">{progressPct}%</div>
-            </div>
-            <div className="h-2 w-full rounded-full bg-neutral-200 overflow-hidden">
-              <div className="h-full bg-black transition-all" style={{ width: `${progressPct}%` }} />
-            </div>
-          </div>
-
-          <div className="mt-6 flex items-center justify-between">
-            <button
-              onClick={() => setViewedDay((d) => Math.max(1, d - 1))}
-              disabled={viewedDay <= 1}
-              className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border ${
-                viewedDay <= 1
-                  ? 'text-neutral-400 border-neutral-200 cursor-not-allowed'
-                  : 'text-neutral-700 border-neutral-300 hover:bg-neutral-50'
-              }`}
-              aria-label="Día anterior"
-            >
-              <ChevronLeft className="w-4 h-4" /> Anterior
-            </button>
-
-            <div className="text-[15px] font-semibold">Día {viewedDay}</div>
-
-            <button
-              onClick={() => setViewedDay((d) => Math.min(currentDay, d + 1))}
-              disabled={viewedDay >= currentDay}
-              className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border ${
-                viewedDay >= currentDay
-                  ? 'text-neutral-400 border-neutral-200 cursor-not-allowed'
-                  : 'text-neutral-700 border-neutral-300 hover:bg-neutral-50'
-              }`}
-              aria-label="Día siguiente"
-              title={
-                viewedDay >= currentDay
-                  ? 'El plan se revela día a día. Se desbloquea mañana.'
-                  : 'Ir al siguiente día'
-              }
-            >
-              {viewedDay >= currentDay ? (
-                <>Bloqueado <Lock className="w-4 h-4" /></>
-              ) : (
-                <>Siguiente <ChevronRight className="w-4 h-4" /></>
-              )}
-            </button>
-          </div>
-        </>
-      )}
-
-      {/* Lista de tareas: solo si iniciado (informativa; checks en Mi Zona) */}
-      {started && data && totalDays > 0 && (
-        <div className="mt-4">
-          {tasks.length === 0 ? (
-            <div className="text-sm text-neutral-600 border border-dashed border-neutral-300 rounded-2xl p-4">
-              Hoy desconectas de la app. Disfruta tu día sin móvil.
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-neutral-200 overflow-hidden divide-y divide-neutral-100">
-              {tasks.map((t, i) => {
-                const id = t.id ?? `task_${i}`;
-                const done = Boolean((dayProgressMap as any)[id]);
-                const isOpen = Boolean(openTasks[id]);
-                const detailId = `task_detail_${id}`;
-                return (
-                  <div key={id} className="bg-white">
-                    <div className="w-full px-4 py-2">
-                      <div className="flex items-start gap-3">
-                        {/* Icono de estado (informativo) */}
-                        <button
-                          type="button"
-                          onClick={() => setInfoOpen(true)}
-                          className="shrink-0 mt-0.5"
-                          aria-label="Los checks se hacen en Mi Zona"
-                          title="Los checks se hacen en Mi Zona"
-                        >
-                          {done ? (
-                            <CheckCircle2 className="w-5 h-5 text-green-600" />
-                          ) : (
-                            <Circle className="w-5 h-5 text-neutral-400" />
-                          )}
-                        </button>
-
-                        {/* Cabecera del ítem: label + chevron (abre/cierra detalle) */}
-                        <button
-                          type="button"
-                          onClick={() => toggleTaskOpen(t, i)}
-                          aria-expanded={isOpen}
-                          aria-controls={detailId}
-                          className="flex-1 text-left rounded-lg px-2 py-1 -mx-2 hover:bg-neutral-50 active:scale-[0.99] transition flex items-center justify-between"
-                        >
-                          <span className="text-[15px] text-neutral-900">
-                            <MD className="text-[15px]">{t.label}</MD>
-                          </span>
-                          {t.detail ? (
-                            isOpen ? (
-                              <ChevronUp className="w-4 h-4 shrink-0 text-neutral-500" />
-                            ) : (
-                              <ChevronDown className="w-4 h-4 shrink-0 text-neutral-500" />
-                            )
-                          ) : null}
-                        </button>
-                      </div>
-
-                      {/* Detalle desplegable */}
-                      {t.detail && isOpen && (
-                        <div id={detailId} className="mt-2 ml-9 pr-2">
-                          <MD className="text-[13px] text-neutral-700">
-                            {t.detail}
-                          </MD>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          <p className="text-xs text-neutral-500 mt-2">
-            * Los checks se hacen en <strong>Mi Zona</strong>. Aquí puedes revisar tu progreso. El plan se revela día a día.
-          </p>
-        </div>
-      )}
-
       {/* Pop-up informativo */}
       {infoOpen && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40">
@@ -696,5 +840,98 @@ export default function ProgramDetail({
         </div>
       )}
     </div>
+  );
+}
+
+/* ======= Subcomponentes auxiliares ======= */
+
+function DayTasksList({
+  tasks,
+  dayProgressMap,
+  openTasks,
+  toggleTaskOpen,
+}: {
+  tasks: JsonTask[];
+  dayProgressMap: Record<string, boolean>;
+  openTasks: Record<string, boolean>;
+  toggleTaskOpen: (t: JsonTask, i: number) => void;
+}) {
+  return tasks.length === 0 ? (
+    <div className="text-sm text-neutral-600 border border-dashed border-neutral-300 rounded-2xl p-4">
+      Hoy desconectas de la app. Disfruta tu día sin móvil.
+    </div>
+  ) : (
+    <div className="rounded-2xl border border-neutral-200 overflow-hidden divide-y divide-neutral-100">
+      {tasks.map((t, i) => {
+        const id = t.id ?? `task_${i}`;
+        const done = Boolean((dayProgressMap as any)[id]);
+        const isOpen = Boolean(openTasks[id]);
+        const detailId = `task_detail_${id}`;
+        return (
+          <div key={id} className="bg-white">
+            <div className="w-full px-4 py-2">
+              <div className="flex items-start gap-3">
+                {/* Icono de estado (informativo) */}
+                <span className="shrink-0 mt-0.5">
+                  {done ? (
+                    <CheckCircle2 className="w-5 h-5 text-green-600" />
+                  ) : (
+                    <Circle className="w-5 h-5 text-neutral-400" />
+                  )}
+                </span>
+
+                {/* Cabecera del ítem: label + chevron (abre/cierra detalle) */}
+                <button
+                  type="button"
+                  onClick={() => toggleTaskOpen(t, i)}
+                  aria-expanded={isOpen}
+                  aria-controls={detailId}
+                  className="flex-1 text-left rounded-lg px-2 py-1 -mx-2 hover:bg-neutral-50 active:scale-[0.99] transition flex items-center justify-between"
+                >
+                  <span className="text-[15px] text-neutral-900">
+                    <MD className="text-[15px]">{t.label}</MD>
+                  </span>
+                  {t.detail ? (
+                    isOpen ? (
+                      <ChevronUp className="w-4 h-4 shrink-0 text-neutral-500" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 shrink-0 text-neutral-500" />
+                    )
+                  ) : null}
+                </button>
+              </div>
+
+              {/* Detalle desplegable */}
+              {t.detail && isOpen && (
+                <div id={detailId} className="mt-2 ml-9 pr-2">
+                  <MD className="text-[13px] text-neutral-700">
+                    {t.detail}
+                  </MD>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function PreviewDayOne({ data }: { data: ProgramJson | null }) {
+  const first = data?.days?.[0] ?? null;
+  if (!first) {
+    return (
+      <div className="text-sm text-neutral-600 border border-dashed border-neutral-300 rounded-2xl p-4">
+        Aún no hay contenido para el Día 1.
+      </div>
+    );
+  }
+  return (
+    <DayTasksList
+      tasks={first.tasks ?? []}
+      dayProgressMap={{}}             // siempre vacío en preview
+      openTasks={{}}                  // cerradas por defecto
+      toggleTaskOpen={() => {}}       // no-op en preview
+    />
   );
 }

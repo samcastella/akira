@@ -1,3 +1,4 @@
+// src/lib/programService.ts
 // Servicios para Programas guiados con sincronización Supabase.
 // Fuente de metadatos: src/data/programs.ts
 // Fuente de contenidos detallados: JSON local (ej. lectura-30.json).
@@ -5,6 +6,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getBySlug, type ProgramMeta } from "@/data/programs";
+import { supabase } from "@/lib/supabaseClient"; // para helpers opcionales (no rompe nada)
 
 // JSON del programa Lectura
 import lecturaProgramRaw from "../data/programs/lectura-30.json";
@@ -57,8 +59,7 @@ function normalizeProgramDef(slug: string, input: any): ProgramDef {
   if (!meta) throw new Error(`No se encontró metadato para ${slug}`);
 
   const howItWorks = String(
-    input?.howItWorks ??
-      "Completa las mini-tareas diarias y avanza automáticamente."
+    input?.howItWorks ?? "Completa las mini-tareas diarias y avanza automáticamente."
   );
   const daysDef: ProgramDayDef[] = Array.isArray(input?.days)
     ? input.days.map((d: any, idx: number) => ({
@@ -123,11 +124,11 @@ export function clearLocalActive() {
 // ---------- Servicios de estado Supabase ----------
 
 export async function getActiveProgram(
-  supabase: SupabaseClient,
+  sb: SupabaseClient,
   userId: string,
   slug: string
 ): Promise<ActiveProgramRow | null> {
-  const { data, error } = await supabase
+  const { data, error } = await sb
     .from(TABLE_PROGRAMS)
     .select("*")
     .eq("user_id", userId)
@@ -144,11 +145,11 @@ export async function getActiveProgram(
 }
 
 export async function startProgram(
-  supabase: SupabaseClient,
+  sb: SupabaseClient,
   userId: string,
   slug: string
 ): Promise<ActiveProgramRow> {
-  const { data, error } = await supabase
+  const { data, error } = await sb
     .from(TABLE_PROGRAMS)
     .upsert(
       {
@@ -170,18 +171,18 @@ export async function startProgram(
 }
 
 export async function resetProgram(
-  supabase: SupabaseClient,
+  sb: SupabaseClient,
   userId: string,
   slug: string
 ): Promise<void> {
-  const { error: delErr } = await supabase
+  const { error: delErr } = await sb
     .from(TABLE_TASKS)
     .delete()
     .eq("user_id", userId)
     .eq("program_slug", slug);
   if (delErr) throw delErr;
 
-  const { error: upErr } = await supabase
+  const { error: upErr } = await sb
     .from(TABLE_PROGRAMS)
     .upsert(
       {
@@ -201,7 +202,7 @@ export async function resetProgram(
 // ---------- Gestión de tareas ----------
 
 async function ensureDayTaskRows(
-  supabase: SupabaseClient,
+  sb: SupabaseClient,
   userId: string,
   slug: string,
   day: number,
@@ -210,7 +211,7 @@ async function ensureDayTaskRows(
   const dayDef = def.daysDef.find((d) => d.day === day);
   if (!dayDef) throw new Error(`Día ${day} no existe en ${slug}`);
 
-  const { data: existing, error: exErr } = await supabase
+  const { data: existing, error: exErr } = await sb
     .from(TABLE_TASKS)
     .select("task_id")
     .eq("user_id", userId)
@@ -232,9 +233,7 @@ async function ensureDayTaskRows(
     }));
 
   if (toInsert.length) {
-    const { error: insErr } = await supabase
-      .from(TABLE_TASKS)
-      .insert(toInsert);
+    const { error: insErr } = await sb.from(TABLE_TASKS).insert(toInsert);
     if (insErr) throw insErr;
   }
 }
@@ -246,15 +245,15 @@ export type TaskWithStatus = ProgramTaskDef & {
 };
 
 export async function getDayTasks(
-  supabase: SupabaseClient,
+  sb: SupabaseClient,
   userId: string,
   slug: string,
   day: number
 ): Promise<TaskWithStatus[]> {
   const def = getProgramDef(slug);
-  await ensureDayTaskRows(supabase, userId, slug, day, def);
+  await ensureDayTaskRows(sb, userId, slug, day, def);
 
-  const { data: rows, error } = await supabase
+  const { data: rows, error } = await sb
     .from(TABLE_TASKS)
     .select("*")
     .eq("user_id", userId)
@@ -280,14 +279,15 @@ export async function getDayTasks(
 }
 
 export async function toggleTask(
-  supabase: SupabaseClient,
+  sb: SupabaseClient,
   userId: string,
   slug: string,
   day: number,
   taskId: string,
   completed: boolean
 ): Promise<{ advanced: boolean; nextDay: number | null }> {
-  const { error: upErr } = await supabase
+  // ⬇️ IMPORTANTE: ON CONFLICT ahora incluye "day" (PK = user_id, program_slug, day, task_id)
+  const { error: upErr } = await sb
     .from(TABLE_TASKS)
     .upsert(
       {
@@ -298,11 +298,12 @@ export async function toggleTask(
         completed,
         completed_at: completed ? new Date().toISOString() : null,
       },
-      { onConflict: "user_id,program_slug,task_id" }
+      { onConflict: "user_id,program_slug,day,task_id" }
     );
   if (upErr) throw upErr;
 
-  const { data: pending, error: pendErr } = await supabase
+  // ¿Queda alguna tarea pendiente en el día?
+  const { data: pending, error: pendErr } = await sb
     .from(TABLE_TASKS)
     .select("task_id")
     .eq("user_id", userId)
@@ -313,7 +314,8 @@ export async function toggleTask(
   if (pendErr) throw pendErr;
 
   if (!pending || pending.length === 0) {
-    const { data: prog, error: selErr } = await supabase
+    // Avanza current_day si corresponde
+    const { data: prog, error: selErr } = await sb
       .from(TABLE_PROGRAMS)
       .select("*")
       .eq("user_id", userId)
@@ -325,17 +327,17 @@ export async function toggleTask(
       day + 1,
       (prog as ActiveProgramRow | null)?.current_day ?? day + 1
     );
-   const { error: updErr } = await supabase
-  .from(TABLE_PROGRAMS)
-  .update({ current_day: next, updated_at: new Date().toISOString() })
-  .eq("user_id", userId)
-  .eq("program_slug", slug);
+
+    const { error: updErr } = await sb
+      .from(TABLE_PROGRAMS)
+      .update({ current_day: next, updated_at: new Date().toISOString() })
+      .eq("user_id", userId)
+      .eq("program_slug", slug);
     if (updErr) throw updErr;
 
     writeLocalActive(
       slug,
-      (prog as ActiveProgramRow | null)?.started_at ??
-        new Date().toISOString(),
+      (prog as ActiveProgramRow | null)?.started_at ?? new Date().toISOString(),
       next
     );
     return { advanced: true, nextDay: next };
@@ -345,13 +347,13 @@ export async function toggleTask(
 }
 
 export async function getProgress(
-  supabase: SupabaseClient,
+  sb: SupabaseClient,
   userId: string,
   slug: string
 ): Promise<{ daysCompleted: number; totalDays: number; currentDay: number }> {
   const def = getProgramDef(slug);
 
-  const { data: prog, error: pErr } = await supabase
+  const { data: prog, error: pErr } = await sb
     .from(TABLE_PROGRAMS)
     .select("*")
     .eq("user_id", userId)
@@ -359,7 +361,7 @@ export async function getProgress(
     .maybeSingle();
   if (pErr) throw pErr;
 
-  const { data: rows, error: rErr } = await supabase
+  const { data: rows, error: rErr } = await sb
     .from(TABLE_TASKS)
     .select("day, completed")
     .eq("user_id", userId)
@@ -384,7 +386,47 @@ export async function getProgress(
 
   return {
     daysCompleted,
-    totalDays: def.days,
+    totalDays: def.days, // viene del ProgramMeta
     currentDay: (prog as ActiveProgramRow | null)?.current_day ?? 1,
   };
+}
+
+/* ========= Helpers opcionales de PUNTUACIÓN (RPC) =========
+   No rompen APIs existentes. Los usamos desde el frontend para
+   mostrar +5 por check y +10 por día completo.
+*/
+
+export type ProgramPointsTotals = {
+  total_points: number;
+  checks_done: number;
+  days_completed: number;
+};
+
+export type ProgramPointsByDayRow = {
+  day_index: number;
+  tasks_total: number;
+  tasks_done: number;
+  day_completed: boolean;
+  day_points: number;
+};
+
+/** Totales de puntos (usa RPC get_program_points) */
+export async function fetchProgramPoints(uid: string, slug: string): Promise<ProgramPointsTotals> {
+  const { data, error } = await supabase.rpc("get_program_points", {
+    p_user: uid,
+    p_slug: slug,
+  });
+  if (error) throw error;
+  return (data?.[0] ??
+    { total_points: 0, checks_done: 0, days_completed: 0 }) as ProgramPointsTotals;
+}
+
+/** Desglose por día (usa RPC get_program_points_by_day) */
+export async function fetchProgramPointsByDay(uid: string, slug: string): Promise<ProgramPointsByDayRow[]> {
+  const { data, error } = await supabase.rpc("get_program_points_by_day", {
+    p_user: uid,
+    p_slug: slug,
+  });
+  if (error) throw error;
+  return (data ?? []) as ProgramPointsByDayRow[];
 }
