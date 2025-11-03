@@ -1,7 +1,7 @@
 'use client';
 
 import type { FC } from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import {
@@ -15,6 +15,7 @@ import {
   Lock,
   X,
   Play,
+  Plus,
 } from 'lucide-react';
 
 /* === Unificación almacenamiento local (programas activos) === */
@@ -32,7 +33,7 @@ import { pushStartProgram, pushResetProgram, pullUserPrograms } from '@/lib/prog
 /* === Usuario (para saber si hay sesión antes de hacer pulls) === */
 import { useAuthUserId } from '@/lib/user';
 
-/* ✅ IMPORT NECESARIO PARA REALTIME */
+/* ✅ Realtime */
 import { supabase } from '@/lib/supabaseClient';
 
 /* === Puntuación (RPC helpers) === */
@@ -42,6 +43,9 @@ import {
   type ProgramPointsTotals,
   type ProgramPointsByDayRow,
 } from '@/lib/programService';
+
+/* === UI barras estilo CreateHabitBar === */
+import CreateHabitBar from '@/components/habits/CreateHabitBar';
 
 type JsonTask = { id?: string; label: string; detail?: string; tags?: string[] };
 type JsonDay = { day: number; tasks: JsonTask[] };
@@ -70,7 +74,7 @@ const DATA_LOADERS: Record<string, () => Promise<ProgramJson>> = {
   },
 };
 
-/* === fechas/helpers === */
+/* === helpers fecha === */
 function todayKey() {
   const d = new Date();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -88,15 +92,15 @@ function daysBetweenFromMs(startMs: number, endISOyyyyMmDd: string) {
   return Math.floor((b - a) / 86_400_000);
 }
 
-/* ---------- Mini-render Markdown seguro (negrita/cursiva/line breaks) ---------- */
+/* ---------- Mini-render Markdown seguro ---------- */
 function escapeHtml(s: string) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 function renderLightMarkdown(input: string) {
   let html = escapeHtml(input ?? '');
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>'); // **bold**
-  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');             // *italic*
-  html = html.replace(/\n/g, '<br/>');                           // line breaks
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  html = html.replace(/\n/g, '<br/>');
   return html;
 }
 const MD: FC<{ children: string; className?: string }> = ({ children, className }) => (
@@ -107,13 +111,19 @@ type Props = {
   slug: string;
   imageSrc?: string;
   title: string;
-  shortDescription: string; // oculto en esta vista
+  shortDescription: string; // oculto aquí
   howItWorks: string;
 };
 
-/* ===== Tabs (como en Retos) ===== */
+/* ===== Tabs ===== */
 const TABS = ['Resumen', 'Check del día', 'Puntuación'] as const;
 type Tab = typeof TABS[number];
+
+/* ===== Colores por programa (para la barra) ===== */
+const PROGRAM_COLORS: Record<string, string> = {
+  'lectura-30': '#111111',
+  'detox-tecnologico-30': '#0a7cff',
+};
 
 export default function ProgramDetail({
   slug,
@@ -123,14 +133,16 @@ export default function ProgramDetail({
   howItWorks,
 }: Props) {
   const router = useRouter();
-  const uid = useAuthUserId(); // ⬅️ saber si hay sesión
+  const uid = useAuthUserId();
 
   const [data, setData] = useState<ProgramJson | null>(null);
   const [loadingData, setLoadingData] = useState(true);
 
   const [activeMap, setActiveMap] = useState<LocalStore>({});
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [infoOpen, setInfoOpen] = useState(false);
+
+  // modal detalle de tarea
+  const [taskInfoOpen, setTaskInfoOpen] = useState<null | { label: string; detail?: string }>(null);
 
   const [openAcc, setOpenAcc] = useState<{ do: boolean; get: boolean; use: boolean }>({
     do: false,
@@ -177,12 +189,14 @@ export default function ProgramDetail({
       .finally(() => {
         if (!cancelled) setLoadingData(false);
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [slug]);
 
-  // migrar legacy y cargar progreso unificado + subscribirse a cambios externos
+  // migrar legacy y cargar progreso + listeners
   useEffect(() => {
-    migrateCompat(); // idempotente
+    migrateCompat();
     setActiveMap(loadActive());
 
     const onProgramsUpdated = () => setActiveMap(loadActive());
@@ -194,29 +208,35 @@ export default function ProgramDetail({
     };
   }, []);
 
-  // ⬇️ Al montar/uid listo, hidrata desde server (por si entramos directo desde enlace)
+  // pull al montar si uid
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        if (!uid) return;               // evita pull sin sesión
-        await pullUserPrograms();       // DB → local
+        if (!uid) return;
+        await pullUserPrograms();
       } finally {
         if (!cancelled) setActiveMap(loadActive());
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [uid]);
 
-  // ⬇️ Al volver a foco / online, rehidratar (puede haber cambios)
+  // rehidratar en foco/online
   useEffect(() => {
     if (!uid) return;
     let cancelled = false;
     const rehydrate = async () => {
-      try { await pullUserPrograms(); } catch {}
+      try {
+        await pullUserPrograms();
+      } catch {}
       if (!cancelled) setActiveMap(loadActive());
     };
-    const onVis = () => { if (document.visibilityState === 'visible') void rehydrate(); };
+    const onVis = () => {
+      if (document.visibilityState === 'visible') void rehydrate();
+    };
     const onOnline = () => void rehydrate();
 
     document.addEventListener('visibilitychange', onVis);
@@ -228,7 +248,7 @@ export default function ProgramDetail({
     };
   }, [uid]);
 
-  /* ✅ Realtime: escucha cambios de tareas del usuario y filtra por slug en el callback. */
+  /* ✅ Realtime */
   useEffect(() => {
     if (!uid) return;
     let cancelled = false;
@@ -241,14 +261,14 @@ export default function ProgramDetail({
           event: '*',
           schema: 'public',
           table: 'user_program_tasks',
-          filter: `user_id=eq.${uid}`, // 👈 solo por user; filtramos slug abajo
+          filter: `user_id=eq.${uid}`,
         },
         async (payload: any) => {
           try {
             const row = (payload?.new ?? payload?.old) as { program_slug?: string } | undefined;
-            if (!row || row.program_slug !== slug) return; // 👈 filtrado por programa
-            await pullUserPrograms();                       // DB -> local
-            if (!cancelled) setActiveMap(loadActive());     // refresca estado local
+            if (!row || row.program_slug !== slug) return;
+            await pullUserPrograms();
+            if (!cancelled) setActiveMap(loadActive());
           } catch {}
         }
       )
@@ -256,27 +276,25 @@ export default function ProgramDetail({
 
     return () => {
       cancelled = true;
-      try { supabase.removeChannel(channel); } catch {}
+      try {
+        supabase.removeChannel(channel);
+      } catch {}
     };
   }, [uid, slug]);
 
   const active: LocalProgram | null = activeMap[slug] ?? null;
   const started = Boolean(active?.startedAt);
 
-  // Si el usuario ha iniciado el programa, por UX abrimos "Check del día" por defecto
+  // UX: si iniciado, arrancamos en "Check del día"
   useEffect(() => {
     setActiveTab(started ? 'Check del día' : 'Resumen');
   }, [started]);
 
-  const totalDays = useMemo(
-    () => data?.durationDays ?? data?.days?.length ?? 0,
-    [data]
-  );
+  const totalDays = useMemo(() => data?.durationDays ?? data?.days?.length ?? 0, [data]);
 
   const currentDay = useMemo(() => {
     if (!active?.startedAt || totalDays <= 0) return 1;
     const delta = daysBetweenFromMs(active.startedAt, todayKey());
-    // clamp a [1, totalDays]
     return Math.min(totalDays, Math.max(1, delta + 1));
   }, [active?.startedAt, totalDays]);
 
@@ -299,7 +317,7 @@ export default function ProgramDetail({
     const raw = (entry.progress ?? {})[dayNum] as any;
     if (!raw) return {};
     if (Array.isArray(raw)) {
-      // migración antigua [bool,bool,...] → {taskId: bool}
+      // migración antigua
       const migrated: Record<string, boolean> = {};
       const dayTasks =
         data?.days.find((d) => d.day === dayNum)?.tasks ?? data?.days[dayNum - 1]?.tasks ?? [];
@@ -332,14 +350,14 @@ export default function ProgramDetail({
     return Math.round((passed / totalDays) * 100);
   }, [active?.startedAt, totalDays]);
 
-  /* ======== Acciones con sync Supabase ======== */
+  /* ======== Acciones ======== */
   async function handleStartProgram() {
     setErrorMsg(null);
     setStarting(true);
     try {
-      await pushStartProgram(slug);   // server
-      await pullUserPrograms();       // rehidrata desde server
-      setActiveMap(loadActive());     // refresca estado local
+      await pushStartProgram(slug);
+      await pullUserPrograms();
+      setActiveMap(loadActive());
     } catch (e: any) {
       console.error('[ProgramDetail] pushStartProgram error', e);
       setErrorMsg('No se pudo iniciar el programa. Inténtalo de nuevo.');
@@ -355,9 +373,9 @@ export default function ProgramDetail({
     setErrorMsg(null);
     setResetting(true);
     try {
-      await pushResetProgram(slug, { deleteTasks: true }); // server
-      await pullUserPrograms();                             // rehidrata
-      setActiveMap(loadActive());                           // local
+      await pushResetProgram(slug, { deleteTasks: true });
+      await pullUserPrograms();
+      setActiveMap(loadActive());
       setOpenTasks({});
       setViewedDay(1);
       setConfirmOpen(false);
@@ -377,23 +395,14 @@ export default function ProgramDetail({
     setOpenTasks((p) => ({ ...p, [taskId]: !p[taskId] }));
   }
 
-  // Row de acordeón
-  const ARow: FC<{ label: string; open: boolean; onClick: () => void }> = ({
-    label,
-    open,
-    onClick,
-  }) => (
-    <button
-      onClick={onClick}
-      className="w-full flex items-center justify-between py-3"
-      aria-expanded={open}
-    >
-      <span className="text-[15px] font-semibold text-neutral-900">{label}</span>
-      {open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-    </button>
-  );
+  // Hook para confeti (placeholder, no rompe nada)
+  function triggerConfetti() {
+    try {
+      window.dispatchEvent(new CustomEvent('akira:celebrate'));
+    } catch {}
+  }
 
-  // ====== Carga de puntuación cuando el programa está iniciado ======
+  /* ====== Carga de puntuación si iniciado ====== */
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -411,8 +420,7 @@ export default function ProgramDetail({
         if (!alive) return;
         setPointsTotals(tot);
         setPointsByDay(byDay);
-      } catch (e) {
-        // Silencioso; la sección muestra placeholders
+      } catch {
         if (!alive) return;
         setPointsTotals(null);
         setPointsByDay([]);
@@ -420,10 +428,12 @@ export default function ProgramDetail({
         if (alive) setLoadingPoints(false);
       }
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [uid, slug, started]);
 
-  // Fallback si no hay loader/JSON
+  /* ===== Render ===== */
   if (!loadingData && !data) {
     return (
       <div className="px-4 pb-24 bg-white">
@@ -434,19 +444,25 @@ export default function ProgramDetail({
     );
   }
 
+  const programColor = PROGRAM_COLORS[slug] ?? '#111111';
+
   return (
     <div className="px-4 pb-24 bg-white">
-      {/* Hero 16:9 full-bleed con botón Volver sobre la imagen */}
+      {/* Hero */}
       {imageSrc && (
         <div className="-mx-4 mb-5 relative">
           <div className="relative w-full aspect-[16/9]">
             <Image src={imageSrc} alt={title} fill className="object-cover" priority />
           </div>
-
-          {/* Botón Volver overlay (siempre claro) */}
           <div className="absolute top-3 right-3">
             <button
-              onClick={() => { try { router.back(); } catch { location.href = '/habitos'; } }}
+              onClick={() => {
+                try {
+                  router.back();
+                } catch {
+                  location.href = '/habitos';
+                }
+              }}
               className="inline-flex items-center gap-1.5 text-[13px] font-medium px-3.5 py-2 rounded-full border border-neutral-300 bg-white/85 backdrop-blur-md shadow-md hover:bg-white active:scale-[0.98]"
             >
               <ChevronLeft className="w-4 h-4" />
@@ -456,7 +472,7 @@ export default function ProgramDetail({
         </div>
       )}
 
-      {/* Título y chip */}
+      {/* Título */}
       <h1 className="text-2xl font-semibold text-neutral-900">{title}</h1>
       {data?.durationDays ? (
         <div className="mt-1 inline-flex items-center gap-2">
@@ -466,117 +482,40 @@ export default function ProgramDetail({
         </div>
       ) : null}
 
-      {/* Introducción */}
+      {/* CTA */}
       <div className="mt-4">
-        {/* Error (si lo hay) */}
         {errorMsg && (
           <div className="mb-3 rounded-xl border border-red-200 bg-red-50 text-red-700 px-3 py-2 text-sm">
             {errorMsg}
           </div>
         )}
-
-        {/* Skeleton breve mientras carga el JSON */}
-        {loadingData && (
-          <div className="animate-pulse">
-            <div className="h-3 w-2/3 bg-neutral-200 rounded mb-2" />
-            <div className="h-3 w-1/2 bg-neutral-200 rounded mb-2" />
-            <div className="h-3 w-3/5 bg-neutral-200 rounded" />
-          </div>
-        )}
-
         {!loadingData && (
-          <MD className="text-[13px] text-neutral-800 leading-relaxed">{howItWorks}</MD>
-        )}
-
-        {!loadingData && (data?.accordions?.whatYouWillDo?.length ||
-          data?.accordions?.whatYouWillGet?.length ||
-          data?.accordions?.howToUse?.length) && (
-          <div className="mt-4 divide-y divide-neutral-200">
-            {data?.accordions?.whatYouWillDo?.length ? (
-              <div className="py-2">
-                <ARow
-                  label="¿Qué vas a hacer?"
-                  open={openAcc.do}
-                  onClick={() => setOpenAcc((s) => ({ ...s, do: !s.do }))}
-                />
-                {openAcc.do && (
-                  <ul className="pl-4 list-disc text-[13px] text-neutral-800 space-y-1">
-                    {data!.accordions!.whatYouWillDo!.map((li, i) => (
-                      <li key={`do_${i}`}>
-                        <MD className="text-[13px] leading-relaxed">{li}</MD>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            ) : null}
-
-            {data?.accordions?.whatYouWillGet?.length ? (
-              <div className="py-2">
-                <ARow
-                  label="¿Qué vas a conseguir?"
-                  open={openAcc.get}
-                  onClick={() => setOpenAcc((s) => ({ ...s, get: !s.get }))}
-                />
-                {openAcc.get && (
-                  <ul className="pl-4 list-disc text-[14px] text-neutral-900 space-y-1">
-                    {data!.accordions!.whatYouWillGet!.map((li, i) => (
-                      <li key={`get_${i}`}>
-                        <MD className="text-[14px] leading-relaxed">{li}</MD>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            ) : null}
-
-            {data?.accordions?.howToUse?.length ? (
-              <div className="py-2">
-                <ARow
-                  label="¿Cómo se usa?"
-                  open={openAcc.use}
-                  onClick={() => setOpenAcc((s) => ({ ...s, use: !s.use }))}
-                />
-                {openAcc.use && (
-                  <ul className="pl-4 list-disc text-[13px] text-neutral-800 space-y-1">
-                    {data!.accordions!.howToUse!.map((li, i) => (
-                      <li key={`use_${i}`}>
-                        <MD className="text-[13px] leading-relaxed">{li}</MD>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            ) : null}
+          <div className="mt-2 flex items-center gap-2">
+            {!started ? (
+              <button
+                onClick={handleStartProgram}
+                disabled={starting || loadingData || !uid}
+                className="inline-flex items-center gap-2 rounded-2xl px-5 py-3.5 text-[15px] font-semibold bg-black text-white shadow-md active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                <Play className="w-4 h-4" />
+                {starting ? 'Iniciando…' : 'Empezar programa'}
+              </button>
+            ) : (
+              <button
+                onClick={requestReset}
+                disabled={resetting || !uid}
+                className="inline-flex items-center gap-2 justify-center rounded-xl px-3.5 py-2.5 text-xs font-medium bg-neutral-100 text-neutral-700 hover:bg-neutral-200 transition disabled:opacity-60 disabled:cursor-not-allowed"
+                title="Reiniciar programa"
+              >
+                <RotateCcw className="w-4 h-4" />
+                {resetting ? 'Reiniciando…' : 'Reiniciar'}
+              </button>
+            )}
           </div>
         )}
       </div>
 
-      {/* CTA */}
-      <div className="mt-6 flex items-center gap-2">
-        {!started ? (
-          <button
-            onClick={handleStartProgram}
-            disabled={starting || loadingData || !uid}
-            className="inline-flex items-center gap-2 rounded-2xl px-5 py-3.5 text-[15px] font-semibold bg-black text-white shadow-md active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            <Play className="w-4 h-4" />
-            {starting ? 'Iniciando…' : 'Empezar programa'}
-          </button>
-        ) : (
-          <button
-            onClick={requestReset}
-            disabled={resetting || !uid}
-            className="inline-flex items-center gap-2 justify-center rounded-xl px-3.5 py-2.5 text-xs font-medium bg-neutral-100 text-neutral-700 hover:bg-neutral-200 transition disabled:opacity-60 disabled:cursor-not-allowed"
-            title="Reiniciar programa"
-          >
-            <RotateCcw className="w-4 h-4" />
-            {resetting ? 'Reiniciando…' : 'Reiniciar'}
-          </button>
-        )}
-      </div>
-
-      {/* ===== SUBMENÚ (Tabs) ===== */}
+      {/* TABS */}
       <nav className="border-b bg-white sticky top-[48px] z-10 -mt-px mt-6">
         <div className="container mx-auto flex justify-between px-0 overflow-x-auto">
           {TABS.map((tab) => {
@@ -601,34 +540,104 @@ export default function ProgramDetail({
         </div>
       </nav>
 
-      {/* ===== CONTENIDO POR TAB ===== */}
+      {/* CONTENIDO */}
       <section className="container mx-auto px-0 py-6 space-y-6">
-        {/* ========== TAB: RESUMEN ========== */}
+        {/* ===== Resumen ===== */}
         {activeTab === 'Resumen' && (
           <>
-            {/* Progreso (si iniciado) */}
-            {started && data && totalDays > 0 && (
-              <div className="mt-2">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="text-sm font-medium">
-                    Progreso: Día {Math.min(currentDay, totalDays)} / {totalDays}
+            {/* Cómo va a ser el programa (restaurado) */}
+            {!loadingData && (
+              <div className="space-y-4">
+                {howItWorks ? (
+                  <MD className="text-[13px] text-neutral-800 leading-relaxed">{howItWorks}</MD>
+                ) : null}
+
+                {(data?.accordions?.whatYouWillDo?.length ||
+                  data?.accordions?.whatYouWillGet?.length ||
+                  data?.accordions?.howToUse?.length) && (
+                  <div className="divide-y divide-neutral-200 rounded-2xl border border-neutral-200">
+                    {data?.accordions?.whatYouWillDo?.length ? (
+                      <div className="p-4">
+                        <ARow
+                          label="¿Qué vas a hacer?"
+                          open={openAcc.do}
+                          onClick={() => setOpenAcc((s) => ({ ...s, do: !s.do }))}
+                        />
+                        {openAcc.do && (
+                          <ul className="pl-4 list-disc text-[13px] text-neutral-800 space-y-1">
+                            {data!.accordions!.whatYouWillDo!.map((li, i) => (
+                              <li key={`do_${i}`}>
+                                <MD className="text-[13px] leading-relaxed">{li}</MD>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    ) : null}
+
+                    {data?.accordions?.whatYouWillGet?.length ? (
+                      <div className="p-4">
+                        <ARow
+                          label="¿Qué vas a conseguir?"
+                          open={openAcc.get}
+                          onClick={() => setOpenAcc((s) => ({ ...s, get: !s.get }))}
+                        />
+                        {openAcc.get && (
+                          <ul className="pl-4 list-disc text-[14px] text-neutral-900 space-y-1">
+                            {data!.accordions!.whatYouWillGet!.map((li, i) => (
+                              <li key={`get_${i}`}>
+                                <MD className="text-[14px] leading-relaxed">{li}</MD>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    ) : null}
+
+                    {data?.accordions?.howToUse?.length ? (
+                      <div className="p-4">
+                        <ARow
+                          label="¿Cómo se usa?"
+                          open={openAcc.use}
+                          onClick={() => setOpenAcc((s) => ({ ...s, use: !s.use }))}
+                        />
+                        {openAcc.use && (
+                          <ul className="pl-4 list-disc text-[13px] text-neutral-800 space-y-1">
+                            {data!.accordions!.howToUse!.map((li, i) => (
+                              <li key={`use_${i}`}>
+                                <MD className="text-[13px] leading-relaxed">{li}</MD>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    ) : null}
                   </div>
-                  <div className="text-sm text-neutral-500">{progressPct}%</div>
-                </div>
-                <div className="h-2 w-full rounded-full bg-neutral-200 overflow-hidden">
-                  <div className="h-full bg-black transition-all" style={{ width: `${progressPct}%` }} />
-                </div>
+                )}
+
+                {started && totalDays > 0 && (
+                  <div className="mt-2">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="text-sm font-medium">
+                        Progreso: Día {Math.min(currentDay, totalDays)} / {totalDays}
+                      </div>
+                      <div className="text-sm text-neutral-500">{progressPct}%</div>
+                    </div>
+                    <div className="h-2 w-full rounded-full bg-neutral-200 overflow-hidden">
+                      <div className="h-full bg-black transition-all" style={{ width: `${progressPct}%` }} />
+                    </div>
+                  </div>
+                )}
+
+                <p className="text-xs text-neutral-500">
+                  * El plan se revela día a día. Los checks se realizan en <strong>Mi Zona</strong>.
+                </p>
               </div>
             )}
-
-            {/* Texto guía */}
-            <p className="text-xs text-neutral-500">
-              * El plan se revela día a día. Los checks se realizan en <strong>Mi Zona</strong>.
-            </p>
           </>
         )}
 
-        {/* ========== TAB: CHECK DEL DÍA ========== */}
+        {/* ===== Check del día ===== */}
         {activeTab === 'Check del día' && (
           <>
             {!started && (
@@ -638,8 +647,6 @@ export default function ProgramDetail({
                   Bloqueado hasta empezar el programa
                 </div>
                 <p className="text-sm mb-3">Puedes ver un ejemplo del <strong>Día 1</strong> (lectura en gris):</p>
-
-                {/* Preview Día 1 (gris, sin interacción) */}
                 <div className="opacity-60 pointer-events-none">
                   <PreviewDayOne data={data} />
                 </div>
@@ -648,19 +655,18 @@ export default function ProgramDetail({
 
             {started && data && totalDays > 0 && (
               <>
-                {/* Progreso del día y navegación */}
-                <div className="mt-2">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="text-sm font-medium">
-                      Día {Math.min(currentDay, totalDays)} / {totalDays}
-                    </div>
-                    <div className="text-sm text-neutral-500">{progressPct}%</div>
-                  </div>
+                <p className="text-sm text-neutral-700">
+                  <strong>Estos son los retos que tienes que completar hoy</strong>, cuando los hayas hecho márcalos para ver tu progreso en este programa.
+                </p>
+
+                {/* Progreso simple */}
+                <div className="mt-3">
                   <div className="h-2 w-full rounded-full bg-neutral-200 overflow-hidden">
                     <div className="h-full bg-black transition-all" style={{ width: `${progressPct}%` }} />
                   </div>
                 </div>
 
+                {/* Navegación por días */}
                 <div className="mt-6 flex items-center justify-between">
                   <button
                     onClick={() => setViewedDay((d) => Math.max(1, d - 1))}
@@ -700,23 +706,24 @@ export default function ProgramDetail({
                   </button>
                 </div>
 
-                {/* Lista de tareas del día (informativo; checks reales en Mi Zona) */}
-                <DayTasksList
+                {/* Lista de tareas como barras CreateHabitBar */}
+                <TaskBarsList
                   tasks={tasks}
                   dayProgressMap={dayProgressMap}
-                  openTasks={openTasks}
-                  toggleTaskOpen={toggleTaskOpen}
+                  programColor={programColor}
+                  onOpenInfo={(payload) => setTaskInfoOpen(payload)}
+                  onCelebrate={triggerConfetti}
                 />
 
                 <p className="text-xs text-neutral-500 mt-2">
-                  * Los checks se hacen en <strong>Mi Zona</strong>. Aquí puedes revisar tu progreso. El plan se revela día a día.
+                  * Los checks se hacen en <strong>Mi Zona</strong>. Aquí solo ves tu progreso y la descripción de cada reto.
                 </p>
               </>
             )}
           </>
         )}
 
-        {/* ========== TAB: PUNTUACIÓN ========== */}
+        {/* ===== Puntuación ===== */}
         {activeTab === 'Puntuación' && (
           <>
             {!started && (
@@ -730,31 +737,25 @@ export default function ProgramDetail({
             )}
 
             {started && (
-              <div className="space-y-4">
-                {/* Totales */}
+              <div className="space-y-6">
+                {/* Cabecera tipo "Actividad" */}
+                <div className="text-center">
+                  <div className="text-[56px] leading-none font-extrabold tabular-nums">
+                    {pointsTotals?.total_points ?? 0}
+                  </div>
+                  <div className="text-sm text-neutral-600 mt-1">Puntos ganados con este programa</div>
+                  <div className="mt-4 text-lg font-semibold">
+                    {pointsTotals?.days_completed ?? 0} días completando tus retos
+                  </div>
+                </div>
+
+                {/* Reglas */}
                 <div className="rounded-2xl border p-4 bg-white" style={{ borderColor: 'var(--line)' }}>
-                  <div className="text-sm font-semibold mb-2">Tus puntos</div>
-                  {loadingPoints ? (
-                    <div className="animate-pulse">
-                      <div className="h-3 w-1/2 bg-neutral-200 rounded mb-2" />
-                      <div className="h-3 w-1/3 bg-neutral-200 rounded" />
-                    </div>
-                  ) : (
-                    <div className="text-[15px]">
-                      <div className="flex items-center justify-between">
-                        <span>Total</span>
-                        <b>{pointsTotals?.total_points ?? 0}</b>
-                      </div>
-                      <div className="flex items-center justify-between text-neutral-600 text-sm mt-1">
-                        <span>Checks completados</span>
-                        <span>{pointsTotals?.checks_done ?? 0} × 5</span>
-                      </div>
-                      <div className="flex items-center justify-between text-neutral-600 text-sm">
-                        <span>Días completos</span>
-                        <span>{pointsTotals?.days_completed ?? 0} × 10</span>
-                      </div>
-                    </div>
-                  )}
+                  <div className="text-sm font-semibold mb-2">Reglas de puntuación</div>
+                  <ul className="text-sm text-neutral-700 list-disc pl-5 space-y-1">
+                    <li><b>+5</b> puntos por cada check completado.</li>
+                    <li><b>+10</b> puntos por completar <i>todas</i> las tareas del día.</li>
+                  </ul>
                 </div>
 
                 {/* Desglose por día */}
@@ -787,9 +788,30 @@ export default function ProgramDetail({
                   )}
                 </div>
 
-                <p className="text-xs text-neutral-500">
-                  Reglas: <b>+5</b> por cada check completado · <b>+10</b> por completar todas las tareas del día.
-                </p>
+                {/* Divider */}
+                <hr className="border-neutral-200" />
+
+                {/* Insignia */}
+                <div className="rounded-2xl border p-4 bg-white flex items-center gap-4" style={{ borderColor: 'var(--line)' }}>
+                  <div className="flex-1">
+                    <div className="text-[15px] font-semibold">Insignia</div>
+                    <p className="text-sm text-neutral-600">
+                      Consigue esta insignia al completar el reto (deberás haber completado el <b>90%</b> de los retos).
+                    </p>
+                  </div>
+                  <div className="w-24 h-24 relative rounded-xl overflow-hidden border border-neutral-200 bg-neutral-50">
+                    <Image
+                      src={`/images/badges/${slug}.png`}
+                      alt="Insignia del programa"
+                      fill
+                      className="object-cover"
+                      onError={(e) => {
+                        // fallback
+                        (e.currentTarget as any).src = '/images/badges/generic-badge.png';
+                      }}
+                    />
+                  </div>
+                </div>
               </div>
             )}
           </>
@@ -821,20 +843,26 @@ export default function ProgramDetail({
         </div>
       )}
 
-      {/* Pop-up informativo */}
-      {infoOpen && (
+      {/* Pop-up detalle de reto */}
+      {taskInfoOpen && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-2xl p-5 w-[90%] max-w-md shadow-lg relative">
             <button
-              onClick={() => setInfoOpen(false)}
+              onClick={() => setTaskInfoOpen(null)}
               className="absolute top-3 right-3 p-1 rounded-full hover:bg-neutral-100"
               aria-label="Cerrar"
               title="Cerrar"
             >
               <X className="w-4 h-4" />
             </button>
-            <p className="text-[15px] text-neutral-800">
-              Los checks se hacen en <strong>Mi Zona</strong>. Aquí puedes revisar tu progreso. El plan se revela día a día.
+            <h4 className="text-[15px] font-semibold text-neutral-900">{taskInfoOpen.label}</h4>
+            {taskInfoOpen.detail ? (
+              <MD className="block mt-2 text-[13px] text-neutral-700">{taskInfoOpen.detail}</MD>
+            ) : (
+              <p className="mt-2 text-[13px] text-neutral-600">Sin descripción adicional.</p>
+            )}
+            <p className="mt-4 text-xs text-neutral-500">
+              * Los checks se hacen en <strong>Mi Zona</strong>.
             </p>
           </div>
         </div>
@@ -843,7 +871,55 @@ export default function ProgramDetail({
   );
 }
 
-/* ======= Subcomponentes auxiliares ======= */
+/* ======= Subcomponentes ======= */
+
+function TaskBarsList({
+  tasks,
+  dayProgressMap,
+  programColor,
+  onOpenInfo,
+  onCelebrate,
+}: {
+  tasks: JsonTask[];
+  dayProgressMap: Record<string, boolean>;
+  programColor: string;
+  onOpenInfo: (payload: { label: string; detail?: string }) => void;
+  onCelebrate: () => void;
+}) {
+  if (tasks.length === 0) {
+    return (
+      <div className="text-sm text-neutral-600 border border-dashed border-neutral-300 rounded-2xl p-4">
+        Hoy desconectas de la app. Disfruta tu día sin móvil.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2 mt-4">
+      {tasks.map((t, i) => {
+        const id = t.id ?? `task_${i}`;
+        const done = Boolean((dayProgressMap as any)[id]);
+
+        return (
+          <CreateHabitBar
+            key={id}
+            variant="task"
+            label={t.label}
+            checked={done}
+            color={programColor}
+            // ¡Ojo! Aquí no togglamos (se hace en Mi Zona) para no romper el flujo actual.
+            onToggle={() => {
+              // no-op por ahora; cuando conectemos el toggle aquí, lanzar confeti:
+              // onCelebrate();
+            }}
+            onInfo={() => onOpenInfo({ label: t.label, detail: t.detail })}
+            ariaLabel={t.label}
+          />
+        );
+      })}
+    </div>
+  );
+}
 
 function DayTasksList({
   tasks,
@@ -856,6 +932,7 @@ function DayTasksList({
   openTasks: Record<string, boolean>;
   toggleTaskOpen: (t: JsonTask, i: number) => void;
 }) {
+  // (Se mantiene por compatibilidad y para el preview del Día 1 si no has empezado)
   return tasks.length === 0 ? (
     <div className="text-sm text-neutral-600 border border-dashed border-neutral-300 rounded-2xl p-4">
       Hoy desconectas de la app. Disfruta tu día sin móvil.
@@ -871,7 +948,6 @@ function DayTasksList({
           <div key={id} className="bg-white">
             <div className="w-full px-4 py-2">
               <div className="flex items-start gap-3">
-                {/* Icono de estado (informativo) */}
                 <span className="shrink-0 mt-0.5">
                   {done ? (
                     <CheckCircle2 className="w-5 h-5 text-green-600" />
@@ -879,8 +955,6 @@ function DayTasksList({
                     <Circle className="w-5 h-5 text-neutral-400" />
                   )}
                 </span>
-
-                {/* Cabecera del ítem: label + chevron (abre/cierra detalle) */}
                 <button
                   type="button"
                   onClick={() => toggleTaskOpen(t, i)}
@@ -900,13 +974,9 @@ function DayTasksList({
                   ) : null}
                 </button>
               </div>
-
-              {/* Detalle desplegable */}
               {t.detail && isOpen && (
                 <div id={detailId} className="mt-2 ml-9 pr-2">
-                  <MD className="text-[13px] text-neutral-700">
-                    {t.detail}
-                  </MD>
+                  <MD className="text-[13px] text-neutral-700">{t.detail}</MD>
                 </div>
               )}
             </div>
@@ -929,9 +999,24 @@ function PreviewDayOne({ data }: { data: ProgramJson | null }) {
   return (
     <DayTasksList
       tasks={first.tasks ?? []}
-      dayProgressMap={{}}             // siempre vacío en preview
-      openTasks={{}}                  // cerradas por defecto
-      toggleTaskOpen={() => {}}       // no-op en preview
+      dayProgressMap={{}}
+      openTasks={{}}
+      toggleTaskOpen={() => {}}
     />
   );
 }
+
+const ARow: FC<{ label: string; open: boolean; onClick: () => void }> = ({
+  label,
+  open,
+  onClick,
+}) => (
+  <button
+    onClick={onClick}
+    className="w-full flex items-center justify-between py-3"
+    aria-expanded={open}
+  >
+    <span className="text-[15px] font-semibold text-neutral-900">{label}</span>
+    {open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+  </button>
+);
