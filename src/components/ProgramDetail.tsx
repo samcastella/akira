@@ -1,7 +1,7 @@
 'use client';
 
 import type { FC } from 'react';
-import { useEffect, useMemo, useState, useRef } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import {
@@ -15,7 +15,6 @@ import {
   Lock,
   X,
   Play,
-  Plus,
 } from 'lucide-react';
 
 /* === Unificación almacenamiento local (programas activos) === */
@@ -107,14 +106,6 @@ const MD: FC<{ children: string; className?: string }> = ({ children, className 
   <span className={className} dangerouslySetInnerHTML={{ __html: renderLightMarkdown(children) }} />
 );
 
-type Props = {
-  slug: string;
-  imageSrc?: string;
-  title: string;
-  shortDescription: string; // oculto aquí
-  howItWorks: string;
-};
-
 /* ===== Tabs ===== */
 const TABS = ['Resumen', 'Check del día', 'Puntuación'] as const;
 type Tab = typeof TABS[number];
@@ -123,6 +114,20 @@ type Tab = typeof TABS[number];
 const PROGRAM_COLORS: Record<string, string> = {
   'lectura-30': '#111111',
   'detox-tecnologico-30': '#0a7cff',
+};
+
+/* ===== Badge files por programa ===== */
+const BADGE_FILES: Record<string, string> = {
+  'lectura-30': '/images/badges/superlector.png',
+  'detox-tecnologico-30': '/images/badges/detox-tecnologico.png',
+};
+
+type Props = {
+  slug: string;
+  imageSrc?: string;
+  title: string;
+  shortDescription: string; // oculto aquí
+  howItWorks: string;
 };
 
 export default function ProgramDetail({
@@ -390,16 +395,50 @@ export default function ProgramDetail({
     setConfirmOpen(false);
   }
 
-  function toggleTaskOpen(task: JsonTask, index: number) {
-    const taskId = task.id ?? `task_${index}`;
-    setOpenTasks((p) => ({ ...p, [taskId]: !p[taskId] }));
-  }
+  /** Marcar/Desmarcar un check dentro del programa (optimista + write-through) */
+  async function toggleTaskDone(dayNum: number, taskId: string) {
+    // Estado actual
+    const prev = Boolean((getDayProgressMap(dayNum) as any)[taskId]);
+    const next = !prev;
 
-  // Hook para confeti (placeholder, no rompe nada)
-  function triggerConfetti() {
+    // 1) Actualiza LOCAL optimista
+    const entry = activeMap[slug];
+    const progress = { ...(entry?.progress ?? {}) };
+    const mapForDay = { ...(progress[dayNum] as any || {}) };
+    mapForDay[taskId] = next;
+    progress[dayNum] = mapForDay;
+
+    const updated: LocalProgram = {
+      ...(entry as LocalProgram),
+      startedAt: entry?.startedAt ?? Date.now(),
+      progress,
+      updatedAt: Date.now(),
+    };
+
+    const newStore: LocalStore = { ...activeMap, [slug]: updated };
+    saveActive(newStore);
+    setActiveMap(newStore);
+
+    // 2) Confeti si se marca
+    if (next) {
+      try { window.dispatchEvent(new CustomEvent('akira:celebrate')); } catch {}
+    }
+
+    // 3) Persistencia remota (best-effort)
     try {
-      window.dispatchEvent(new CustomEvent('akira:celebrate'));
-    } catch {}
+      if (!uid) return;
+      await supabase.from('user_program_tasks').upsert({
+        user_id: uid,
+        program_slug: slug,
+        day_index: dayNum,
+        task_id: taskId,
+        done: next,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id,program_slug,day_index,task_id' as any });
+    } catch (e) {
+      // si falla, dejamos el local tal cual y ya se rehidratará al volver a foco
+      console.warn('[toggleTaskDone] upsert fallo', e);
+    }
   }
 
   /* ====== Carga de puntuación si iniciado ====== */
@@ -445,6 +484,7 @@ export default function ProgramDetail({
   }
 
   const programColor = PROGRAM_COLORS[slug] ?? '#111111';
+  const badgeSrc = BADGE_FILES[slug] ?? '/images/badges/generic-badge.png';
 
   return (
     <div className="px-4 pb-24 bg-white">
@@ -545,7 +585,6 @@ export default function ProgramDetail({
         {/* ===== Resumen ===== */}
         {activeTab === 'Resumen' && (
           <>
-            {/* Cómo va a ser el programa (restaurado) */}
             {!loadingData && (
               <div className="space-y-4">
                 {howItWorks ? (
@@ -706,18 +745,15 @@ export default function ProgramDetail({
                   </button>
                 </div>
 
-                {/* Lista de tareas como barras CreateHabitBar */}
+                {/* Lista de tareas como barras CreateHabitBar (marcables aquí) */}
                 <TaskBarsList
                   tasks={tasks}
+                  day={viewedDay}
                   dayProgressMap={dayProgressMap}
                   programColor={programColor}
                   onOpenInfo={(payload) => setTaskInfoOpen(payload)}
-                  onCelebrate={triggerConfetti}
+                  onToggle={(taskId) => toggleTaskDone(viewedDay, taskId)}
                 />
-
-                <p className="text-xs text-neutral-500 mt-2">
-                  * Los checks se hacen en <strong>Mi Zona</strong>. Aquí solo ves tu progreso y la descripción de cada reto.
-                </p>
               </>
             )}
           </>
@@ -801,14 +837,10 @@ export default function ProgramDetail({
                   </div>
                   <div className="w-24 h-24 relative rounded-xl overflow-hidden border border-neutral-200 bg-neutral-50">
                     <Image
-                      src={`/images/badges/${slug}.png`}
+                      src={badgeSrc}
                       alt="Insignia del programa"
                       fill
                       className="object-cover"
-                      onError={(e) => {
-                        // fallback
-                        (e.currentTarget as any).src = '/images/badges/generic-badge.png';
-                      }}
                     />
                   </div>
                 </div>
@@ -875,16 +907,18 @@ export default function ProgramDetail({
 
 function TaskBarsList({
   tasks,
+  day,
   dayProgressMap,
   programColor,
   onOpenInfo,
-  onCelebrate,
+  onToggle,
 }: {
   tasks: JsonTask[];
+  day: number;
   dayProgressMap: Record<string, boolean>;
   programColor: string;
   onOpenInfo: (payload: { label: string; detail?: string }) => void;
-  onCelebrate: () => void;
+  onToggle: (taskId: string) => void;
 }) {
   if (tasks.length === 0) {
     return (
@@ -899,19 +933,14 @@ function TaskBarsList({
       {tasks.map((t, i) => {
         const id = t.id ?? `task_${i}`;
         const done = Boolean((dayProgressMap as any)[id]);
-
         return (
           <CreateHabitBar
-            key={id}
+            key={`${day}_${id}`}
             variant="task"
             label={t.label}
             checked={done}
             color={programColor}
-            // ¡Ojo! Aquí no togglamos (se hace en Mi Zona) para no romper el flujo actual.
-            onToggle={() => {
-              // no-op por ahora; cuando conectemos el toggle aquí, lanzar confeti:
-              // onCelebrate();
-            }}
+            onToggle={() => onToggle(id)}
             onInfo={() => onOpenInfo({ label: t.label, detail: t.detail })}
             ariaLabel={t.label}
           />
@@ -932,7 +961,7 @@ function DayTasksList({
   openTasks: Record<string, boolean>;
   toggleTaskOpen: (t: JsonTask, i: number) => void;
 }) {
-  // (Se mantiene por compatibilidad y para el preview del Día 1 si no has empezado)
+  // (Se mantiene para el preview del Día 1 si no has empezado)
   return tasks.length === 0 ? (
     <div className="text-sm text-neutral-600 border border-dashed border-neutral-300 rounded-2xl p-4">
       Hoy desconectas de la app. Disfruta tu día sin móvil.
