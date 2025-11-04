@@ -173,6 +173,8 @@ export default function ProgramDetail({
   const [pointsTotals, setPointsTotals] = useState<ProgramPointsTotals | null>(null);
   const [pointsByDay, setPointsByDay] = useState<ProgramPointsByDayRow[]>([]);
   const [loadingPoints, setLoadingPoints] = useState(false);
+  // ✅ Tick para refetch de puntos tras cada check
+  const [pointsTick, setPointsTick] = useState(0);
 
   /* cargar JSON */
   useEffect(() => {
@@ -278,6 +280,7 @@ export default function ProgramDetail({
             if (!row || row.program_slug !== slug) return;
             await pullUserPrograms();
             if (!cancelled) setActiveMap(loadActive());
+            // (opcional) podríamos refetchear puntos aquí también si quieres súper reactividad
           } catch {}
         }
       )
@@ -393,14 +396,23 @@ export default function ProgramDetail({
 
     try {
       if (!uid) return;
-      await supabase.from('user_program_tasks').upsert({
-        user_id: uid,
-        program_slug: slug,
-        day_index: dayNum,
-        task_id: taskId,
-        done: next,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'user_id,program_slug,day_index,task_id' as any });
+      // ✅ Campos correctos para que las RPC de puntos funcionen
+      await supabase
+        .from('user_program_tasks')
+        .upsert(
+          {
+            user_id: uid,
+            program_slug: slug,
+            day: dayNum,               // << antes day_index
+            task_id: taskId,
+            completed: next,           // << antes done
+            completed_at: next ? new Date().toISOString() : null,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id,program_slug,day,task_id' as any }
+        );
+      // ✅ Forzar refetch de puntos/estadísticas
+      setPointsTick((n) => n + 1);
     } catch {}
   }
 
@@ -431,7 +443,8 @@ export default function ProgramDetail({
       }
     })();
     return () => { alive = false; };
-  }, [uid, slug, started]);
+    // ✅ añadimos pointsTick para refrescar al marcar/desmarcar
+  }, [uid, slug, started, pointsTick]);
 
   /* ===== Estadísticas (semana móvil real con etiquetas correctas) ===== */
   const weeklyStats = useMemo(() => {
@@ -491,7 +504,7 @@ export default function ProgramDetail({
           <div className="absolute top-3 right-3">
             <button
               onClick={() => { try { router.back(); } catch { location.href = '/habitos'; } }}
-              className="inline-flex items-center gap-1.5 text-[13px] font-medium px-3.5 py-2 rounded-full border border-neutral-300 bg-white/85 backdrop-blur-md shadow-md hover:bg-white active:scale-[0.98]"
+              className="inline-flex items-center gap-1.5 text:[13px] text-[13px] font-medium px-3.5 py-2 rounded-full border border-neutral-300 bg-white/85 backdrop-blur-md shadow-md hover:bg-white active:scale-[0.98]"
             >
               <ChevronLeft className="w-4 h-4" />
               Volver
@@ -544,7 +557,7 @@ export default function ProgramDetail({
       </div>
 
       {/* TABS */}
-      <nav className="border-b bg-white sticky top-[48px] z-10 -mt-px mt-6">
+      <nav className="border-b bg-white sticky top:[48px] top-[48px] z-10 -mt-px mt-6">
         <div className="container mx-auto flex justify-between px-0 overflow-x-auto">
           {TABS.map((tab) => {
             const locked = (tab === 'Check del día' || tab === 'Estadísticas') && !started;
