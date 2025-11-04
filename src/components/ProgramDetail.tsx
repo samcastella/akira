@@ -472,6 +472,36 @@ export default function ProgramDetail({
     };
   }, [uid, slug, started]);
 
+  /* ===== Helpers Puntuación → Estadísticas (semana móvil) ===== */
+  const weeklyStats = useMemo(() => {
+    if (!started || !data) {
+      return { labels: ['L','M','X','J','V','S','D'], goal: Array(7).fill(0), actual: Array(7).fill(0) };
+    }
+    // Semana móvil: últimos 7 días dentro del programa (clamp a [1..totalDays])
+    const end = currentDay;
+    const start = Math.max(1, end - 6);
+    const labels = ['L','M','X','J','V','S','D']; // presentación
+
+    const dayIdxs: number[] = [];
+    for (let d = start; d <= end; d++) dayIdxs.push(d);
+    while (dayIdxs.length < 7) dayIdxs.unshift(0); // pad al principio si aún no hay 7 días de programa
+
+    const goal: number[] = dayIdxs.map((d) => {
+      if (d <= 0) return 0;
+      const day = data.days.find(x => x.day === d) ?? data.days[d - 1];
+      return Math.max(0, day?.tasks?.length ?? 0);
+    });
+
+    const actual: number[] = dayIdxs.map((d) => {
+      if (d <= 0) return 0;
+      const map = (activeMap[slug]?.progress ?? {})[d] as Record<string, boolean> | undefined;
+      if (!map) return 0;
+      return Object.values(map).filter(Boolean).length;
+    });
+
+    return { labels, goal, actual };
+  }, [started, data, activeMap, slug, currentDay]);
+
   /* ===== Render ===== */
   if (!loadingData && !data) {
     return (
@@ -794,34 +824,24 @@ export default function ProgramDetail({
                   </ul>
                 </div>
 
-                {/* Desglose por día */}
+                {/* === Estadísticas (semana) === */}
                 <div className="rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--line)' }}>
-                  <div className="px-4 py-3 text-sm font-semibold bg-neutral-50">Desglose por día</div>
-                  {loadingPoints ? (
-                    <div className="p-4">
-                      <div className="animate-pulse space-y-2">
-                        <div className="h-3 w-full bg-neutral-200 rounded" />
-                        <div className="h-3 w-5/6 bg-neutral-200 rounded" />
-                        <div className="h-3 w-4/6 bg-neutral-200 rounded" />
+                  <div className="px-4 py-3 text-sm font-semibold bg-neutral-50">Estadísticas</div>
+                  <div className="p-4">
+                    <WeeklyStatsChart
+                      labels={weeklyStats.labels}
+                      goal={weeklyStats.goal}
+                      actual={weeklyStats.actual}
+                    />
+                    <div className="mt-3 flex items-center gap-4 text-xs text-neutral-600">
+                      <div className="flex items-center gap-2">
+                        <span className="inline-block w-4 h-[2px] bg-neutral-300" /> Objetivo
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="inline-block w-4 h-[2px] bg-blue-500" /> Hecho
                       </div>
                     </div>
-                  ) : pointsByDay.length === 0 ? (
-                    <div className="p-4 text-sm text-neutral-500">Sin datos aún.</div>
-                  ) : (
-                    <ul className="divide-y divide-neutral-100">
-                      {pointsByDay.map((r) => (
-                        <li key={r.day_index} className="px-4 py-3 text-sm flex items-center justify-between">
-                          <div className="min-w-0">
-                            <div className="font-medium">Día {r.day_index}</div>
-                            <div className="text-[12px] text-neutral-600">
-                              {r.tasks_done}/{r.tasks_total} checks — {r.day_completed ? 'Completo (+10)' : 'Parcial'}
-                            </div>
-                          </div>
-                          <div className="font-semibold tabular-nums">{r.day_points} pts</div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                  </div>
                 </div>
 
                 {/* Divider */}
@@ -1049,3 +1069,101 @@ const ARow: FC<{ label: string; open: boolean; onClick: () => void }> = ({
     {open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
   </button>
 );
+
+/* ======== WeeklyStatsChart (SVG puro, responsive) ======== */
+const WeeklyStatsChart: FC<{ labels: string[]; goal: number[]; actual: number[] }> = ({
+  labels,
+  goal,
+  actual,
+}) => {
+  const width = 640;  // se escala con viewBox
+  const height = 220;
+  const padL = 28;
+  const padR = 16;
+  const padT = 20;
+  const padB = 28;
+
+  const n = 7;
+  const xs = (i: number) =>
+    padL + (i * (width - padL - padR)) / Math.max(1, n - 1);
+
+  const maxY = Math.max(5, ...goal, ...actual);
+  const niceMax = Math.max(5, Math.ceil(maxY / 5) * 5); // ticks cada 5
+  const ys = (v: number) =>
+    padT + (height - padT - padB) * (1 - v / (niceMax || 1));
+
+  const gridLines = 4; // 0%, 25%, 50%, 75%, 100%
+  const pathFor = (arr: number[]) =>
+    arr
+      .map((v, i) => `${i === 0 ? 'M' : 'L'} ${xs(i)} ${ys(v)}`)
+      .join(' ');
+
+  const goalPath = pathFor(goal);
+  const actualPath = pathFor(actual);
+
+  return (
+    <div className="w-full">
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto">
+        {/* fondo */}
+        <rect x="0" y="0" width={width} height={height} fill="white" />
+
+        {/* grid */}
+        {[...Array(gridLines + 1)].map((_, i) => {
+          const y = padT + ((height - padT - padB) * i) / gridLines;
+          return (
+            <line
+              key={`g${i}`}
+              x1={padL}
+              x2={width - padR}
+              y1={y}
+              y2={y}
+              stroke="#e5e7eb"
+              strokeWidth="1"
+            />
+          );
+        })}
+
+        {/* ejes labels derecha */}
+        {[0, 0.25, 0.5, 0.75, 1].map((p, i) => {
+          const val = Math.round(niceMax * p);
+          const y = padT + (height - padT - padB) * (1 - p);
+          return (
+            <text
+              key={`t${i}`}
+              x={width - padR + 6}
+              y={y + 4}
+              fontSize="10"
+              fill="#6b7280"
+            >
+              {val}
+            </text>
+          );
+        })}
+
+        {/* líneas */}
+        <path d={goalPath} fill="none" stroke="#d1d5db" strokeWidth="2" />
+        <path d={actualPath} fill="none" stroke="#3b82f6" strokeWidth="2" />
+
+        {/* puntos */}
+        {goal.map((v, i) => (
+          <circle key={`pg${i}`} cx={xs(i)} cy={ys(v)} r="4" fill="white" stroke="#d1d5db" strokeWidth="2" />
+        ))}
+        {actual.map((v, i) => (
+          <circle key={`pa${i}`} cx={xs(i)} cy={ys(v)} r="4" fill="white" stroke="#3b82f6" strokeWidth="2" />
+        ))}
+
+        {/* labels X */}
+        {labels.map((l, i) => (
+          <text key={`lx${i}`} x={xs(i)} y={height - padB + 16} textAnchor="middle" fontSize="11" fill="#6b7280">
+            {l}
+          </text>
+        ))}
+
+        {/* título eje der */}
+        <text x={width - 4} y={padT - 6} textAnchor="end" fontSize="12" fill="#6b7280">
+          Retos
+        </text>
+      </svg>
+    </div>
+  );
+};

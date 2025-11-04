@@ -152,7 +152,14 @@ export default function CreateHabitBar(props: Props) {
             lastXY.current = { x: e.clientX, y: e.clientY };
             (window as any).__akiraLastXY = { x: e.clientX, y: e.clientY };
           }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onToggle();
+            }
+          }}
           onClick={onToggle}
+          tabIndex={0}
           className="grid h-9 w-9 place-items-center rounded-full border shrink-0"
           title={checked ? 'Desmarcar' : 'Marcar'}
           aria-label={checked ? `Desmarcar ${label}` : `Marcar ${label}`}
