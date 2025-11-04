@@ -329,6 +329,45 @@ export default function ProgramDetail({
     return Math.round((passed / totalDays) * 100);
   }, [active?.startedAt, totalDays]);
 
+  /* ========== FIX: sembrar filas del día antes del primer toggle ========== */
+  async function ensureDayRows(uid: string, slug: string, dayNum: number, taskIds: string[]) {
+    if (!taskIds.length) return;
+
+    // ¿Qué filas existen ya para ese día?
+    const { data: existing, error: selErr } = await supabase
+      .from('user_program_tasks')
+      .select('task_id')
+      .eq('user_id', uid)
+      .eq('program_slug', slug)
+      .eq('day', dayNum);
+
+    if (selErr) {
+      console.warn('[ensureDayRows] select error', selErr);
+      return;
+    }
+
+    const have = new Set((existing ?? []).map((r: any) => r.task_id));
+    const missing = taskIds.filter((id) => !have.has(id));
+    if (!missing.length) return;
+
+    const now = new Date().toISOString();
+    const seedRows = missing.map((id) => ({
+      user_id: uid,
+      program_slug: slug,
+      day: dayNum,
+      task_id: id,
+      completed: false,
+      completed_at: null,
+      updated_at: now,
+    }));
+
+    const { error: upErr } = await supabase
+      .from('user_program_tasks')
+      .upsert(seedRows as any, { onConflict: 'user_id,program_slug,day,task_id' as any });
+
+    if (upErr) console.warn('[ensureDayRows] upsert error', upErr);
+  }
+
   /* ======== Acciones ======== */
   async function handleStartProgram() {
     setErrorMsg(null);
@@ -395,20 +434,27 @@ export default function ProgramDetail({
 
     try {
       if (!uid) return;
+
+      // ⬅️ NUEVO: sembrar todas las filas del día antes del toggle
+      const dayTasks = (data?.days.find(d => d.day === dayNum)?.tasks ?? []).map((t, i) => t.id ?? `task_${i}`);
+      await ensureDayRows(uid, slug, dayNum, dayTasks);
+
+      // Upsert del toggle real
       await supabase
         .from('user_program_tasks')
         .upsert(
           {
             user_id: uid,
             program_slug: slug,
-            day: dayNum,               // ✅ 'day'
+            day: dayNum,
             task_id: taskId,
-            completed: next,           // ✅ 'completed'
+            completed: next,
             completed_at: next ? new Date().toISOString() : null,
             updated_at: new Date().toISOString(),
           },
           { onConflict: 'user_id,program_slug,day,task_id' as any }
         );
+
       // Refrescar puntos y estadísticas
       setPointsTick((n) => n + 1);
     } catch (e) {
@@ -465,7 +511,7 @@ export default function ProgramDetail({
 
     const goal: number[] = idxs.map((d) => {
       if (d <= 0) return 0;
-      const day = data.days.find(x => x.day === d) ?? data.days[d - 1];
+      const day = data!.days.find(x => x.day === d) ?? data!.days[d - 1];
       return Math.max(0, day?.tasks?.length ?? 0);
     });
 
@@ -530,7 +576,7 @@ export default function ProgramDetail({
           </div>
         )}
         {!loadingData && (
-          <div className="mt-2 flex items-center gap-2">
+          <div className="mt-2 flex itemscenter gap-2">
             {!started ? (
               <button
                 onClick={handleStartProgram}
@@ -594,7 +640,6 @@ export default function ProgramDetail({
             {(data?.accordions?.whatYouWillDo?.length ||
               data?.accordions?.whatYouWillGet?.length ||
               data?.accordions?.howToUse?.length) && (
-              // Sin recuadro; solo separadores
               <div className="divide-y divide-neutral-200">
                 {data?.accordions?.whatYouWillDo?.length ? (
                   <div className="py-3">
@@ -697,14 +742,12 @@ export default function ProgramDetail({
                   <strong>Estos son los retos que tienes que completar hoy</strong>, cuando los hayas hecho márcalos para ver tu progreso en este programa.
                 </p>
 
-                {/* Barra progreso simple */}
                 <div className="mt-3">
                   <div className="h-2 w-full rounded-full bg-neutral-200 overflow-hidden">
                     <div className="h-full bg-black transition-all" style={{ width: `${progressPct}%` }} />
                   </div>
                 </div>
 
-                {/* Lista de tareas con botón “+” informativo */}
                 <div className="mt-5 space-y-2">
                   {(data.days.find(d => d.day === currentDay)?.tasks ?? []).map((t, i) => {
                     const id = t.id ?? `task_${i}`;
@@ -743,7 +786,6 @@ export default function ProgramDetail({
 
             {started && (
               <div className="space-y-6">
-                {/* Cabecera */}
                 <div className="text-center">
                   <div className="text-[56px] leading-none font-extrabold tabular-nums">
                     {pointsTotals?.total_points ?? 0}
@@ -754,7 +796,6 @@ export default function ProgramDetail({
                   </div>
                 </div>
 
-                {/* Reglas */}
                 <div className="rounded-2xl border p-4 bg-white" style={{ borderColor: 'var(--line)' }}>
                   <div className="text-sm font-semibold mb-2">Reglas de puntuación</div>
                   <ul className="text-sm text-neutral-700 list-disc pl-5 space-y-1">
@@ -763,7 +804,6 @@ export default function ProgramDetail({
                   </ul>
                 </div>
 
-                {/* Estadísticas semana */}
                 <div className="rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--line)' }}>
                   <div className="px-4 py-3 text-sm font-semibold bg-neutral-50">Estadísticas</div>
                   <div className="p-4">
@@ -783,10 +823,8 @@ export default function ProgramDetail({
                   </div>
                 </div>
 
-                {/* Divider */}
                 <hr className="border-neutral-200" />
 
-                {/* Insignia */}
                 <div className="rounded-2xl border p-4 bg-white flex items-center gap-4" style={{ borderColor: 'var(--line)' }}>
                   <div className="flex-1">
                     <div className="text-[15px] font-semibold">Insignia</div>
