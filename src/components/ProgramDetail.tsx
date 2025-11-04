@@ -17,7 +17,7 @@ import {
   Play,
 } from 'lucide-react';
 
-/* === Unificación almacenamiento local (programas activos) === */
+/* === Local store programas === */
 import {
   loadActive,
   saveActive,
@@ -26,16 +26,16 @@ import {
   type LocalProgram,
 } from '@/lib/programsLocal';
 
-/* === Sync con Supabase (write-through / pull) === */
+/* === Sync Supabase === */
 import { pushStartProgram, pushResetProgram, pullUserPrograms } from '@/lib/programSync';
 
-/* === Usuario (para saber si hay sesión antes de hacer pulls) === */
+/* === Usuario === */
 import { useAuthUserId } from '@/lib/user';
 
 /* ✅ Realtime */
 import { supabase } from '@/lib/supabaseClient';
 
-/* === Puntuación (RPC helpers) === */
+/* === Puntuación (RPC) === */
 import {
   fetchProgramPoints,
   fetchProgramPointsByDay,
@@ -43,7 +43,7 @@ import {
   type ProgramPointsByDayRow,
 } from '@/lib/programService';
 
-/* === UI barras estilo CreateHabitBar === */
+/* === UI barras === */
 import CreateHabitBar from '@/components/habits/CreateHabitBar';
 
 type JsonTask = { id?: string; label: string; detail?: string; tags?: string[] };
@@ -90,8 +90,17 @@ function daysBetweenFromMs(startMs: number, endISOyyyyMmDd: string) {
   const b = startOfDayMs(new Date(`${endISOyyyyMmDd}T00:00:00`));
   return Math.floor((b - a) / 86_400_000);
 }
+function addDays(ms: number, days: number) {
+  return startOfDayMs(new Date(ms + days * 86_400_000));
+}
+function weekdayLabel(dateMs: number) {
+  // 0=Dom,1=Lun,...6=Sáb → queremos L M X J V S D
+  const map = ['D', 'L', 'M', 'X', 'J', 'V', 'S'] as const;
+  const d = new Date(dateMs).getDay(); // 0..6
+  return map[d];
+}
 
-/* ---------- Mini-render Markdown seguro ---------- */
+/* ---------- Mini Markdown ---------- */
 function escapeHtml(s: string) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
@@ -106,17 +115,17 @@ const MD: FC<{ children: string; className?: string }> = ({ children, className 
   <span className={className} dangerouslySetInnerHTML={{ __html: renderLightMarkdown(children) }} />
 );
 
-/* ===== Tabs ===== */
-const TABS = ['Resumen', 'Check del día', 'Puntuación'] as const;
+/* ===== Tabs (renombrado Puntuación → Estadísticas) ===== */
+const TABS = ['Resumen', 'Check del día', 'Estadísticas'] as const;
 type Tab = typeof TABS[number];
 
-/* ===== Colores por programa (para la barra) ===== */
+/* ===== Colores ===== */
 const PROGRAM_COLORS: Record<string, string> = {
   'lectura-30': '#111111',
   'detox-tecnologico-30': '#0a7cff',
 };
 
-/* ===== Badge files por programa ===== */
+/* ===== Badges ===== */
 const BADGE_FILES: Record<string, string> = {
   'lectura-30': '/images/badges/superlector.png',
   'detox-tecnologico-30': '/images/badges/detox-tecnologico.png',
@@ -126,7 +135,7 @@ type Props = {
   slug: string;
   imageSrc?: string;
   title: string;
-  shortDescription: string; // oculto aquí
+  shortDescription: string;
   howItWorks: string;
 };
 
@@ -146,7 +155,6 @@ export default function ProgramDetail({
   const [activeMap, setActiveMap] = useState<LocalStore>({});
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  // modal detalle de tarea
   const [taskInfoOpen, setTaskInfoOpen] = useState<null | { label: string; detail?: string }>(null);
 
   const [openAcc, setOpenAcc] = useState<{ do: boolean; get: boolean; use: boolean }>({
@@ -154,14 +162,11 @@ export default function ProgramDetail({
     get: false,
     use: false,
   });
-  const [openTasks, setOpenTasks] = useState<Record<string, boolean>>({});
 
-  // Estados de acción
   const [starting, setStarting] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Pestaña activa
   const [activeTab, setActiveTab] = useState<Tab>('Resumen');
 
   // Puntuación
@@ -169,7 +174,7 @@ export default function ProgramDetail({
   const [pointsByDay, setPointsByDay] = useState<ProgramPointsByDayRow[]>([]);
   const [loadingPoints, setLoadingPoints] = useState(false);
 
-  // cargar JSON
+  /* cargar JSON */
   useEffect(() => {
     let cancelled = false;
     const loader = DATA_LOADERS[slug];
@@ -186,7 +191,6 @@ export default function ProgramDetail({
         if (cancelled) return;
         setData(payload);
         setOpenAcc({ do: false, get: false, use: false });
-        setOpenTasks({});
       })
       .catch(() => {
         if (!cancelled) setData(null);
@@ -199,7 +203,7 @@ export default function ProgramDetail({
     };
   }, [slug]);
 
-  // migrar legacy y cargar progreso + listeners
+  /* cargar progreso + listeners */
   useEffect(() => {
     migrateCompat();
     setActiveMap(loadActive());
@@ -213,7 +217,7 @@ export default function ProgramDetail({
     };
   }, []);
 
-  // pull al montar si uid
+  /* pull al montar si uid */
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -229,7 +233,7 @@ export default function ProgramDetail({
     };
   }, [uid]);
 
-  // rehidratar en foco/online
+  /* rehydrate en foco/online */
   useEffect(() => {
     if (!uid) return;
     let cancelled = false;
@@ -303,51 +307,19 @@ export default function ProgramDetail({
     return Math.min(totalDays, Math.max(1, delta + 1));
   }, [active?.startedAt, totalDays]);
 
-  const [viewedDay, setViewedDay] = useState<number>(1);
-  useEffect(() => {
-    setViewedDay(currentDay || 1);
-  }, [currentDay]);
-
   const dayData = useMemo(() => {
     if (!data || totalDays === 0) return null;
-    return data.days.find((d) => d.day === viewedDay) ?? data.days[viewedDay - 1] ?? null;
-  }, [data, viewedDay, totalDays]);
+    return data.days.find((d) => d.day === currentDay) ?? data.days[currentDay - 1] ?? null;
+  }, [data, currentDay, totalDays]);
 
   const tasks: JsonTask[] = dayData?.tasks ?? [];
 
-  // Progress shape: LocalProgram.progress → { [dayNum]: { [taskId]: boolean } }
   function getDayProgressMap(dayNum: number): Record<string, boolean> {
     const entry = activeMap[slug];
     if (!entry) return {};
     const raw = (entry.progress ?? {})[dayNum] as any;
-    if (!raw) return {};
-    if (Array.isArray(raw)) {
-      // migración antigua
-      const migrated: Record<string, boolean> = {};
-      const dayTasks =
-        data?.days.find((d) => d.day === dayNum)?.tasks ?? data?.days[dayNum - 1]?.tasks ?? [];
-      dayTasks.forEach((t, i) => {
-        const id = t.id ?? `task_${i}`;
-        migrated[id] = Boolean(raw[i]);
-      });
-
-      const next: LocalStore = { ...activeMap };
-      const lp: LocalProgram = {
-        ...(entry as LocalProgram),
-        progress: {
-          ...(entry.progress ?? {}),
-          [dayNum]: migrated,
-        },
-        updatedAt: Date.now(),
-      };
-      next[slug] = lp;
-      saveActive(next);
-      setActiveMap(next);
-      return migrated;
-    }
-    return raw as Record<string, boolean>;
+    return (raw && !Array.isArray(raw)) ? (raw as Record<string, boolean>) : {};
   }
-  const dayProgressMap = getDayProgressMap(viewedDay);
 
   const progressPct = useMemo(() => {
     if (!active?.startedAt || totalDays === 0) return 0;
@@ -381,8 +353,6 @@ export default function ProgramDetail({
       await pushResetProgram(slug, { deleteTasks: true });
       await pullUserPrograms();
       setActiveMap(loadActive());
-      setOpenTasks({});
-      setViewedDay(1);
       setConfirmOpen(false);
     } catch (e: any) {
       console.error('[ProgramDetail] pushResetProgram error', e);
@@ -395,14 +365,12 @@ export default function ProgramDetail({
     setConfirmOpen(false);
   }
 
-  /** Marcar/Desmarcar un check dentro del programa (optimista + write-through) */
+  /** Toggle check (optimista) */
   async function toggleTaskDone(dayNum: number, taskId: string) {
-    // Estado actual
-    const prev = Boolean((getDayProgressMap(dayNum) as any)[taskId]);
+    const entry = activeMap[slug] as LocalProgram | undefined;
+    const prev = Boolean((entry?.progress?.[dayNum] as any)?.[taskId]);
     const next = !prev;
 
-    // 1) Actualiza LOCAL optimista
-    const entry = activeMap[slug];
     const progress = { ...(entry?.progress ?? {}) };
     const mapForDay = { ...(progress[dayNum] as any || {}) };
     mapForDay[taskId] = next;
@@ -419,12 +387,10 @@ export default function ProgramDetail({
     saveActive(newStore);
     setActiveMap(newStore);
 
-    // 2) Confeti si se marca
     if (next) {
       try { window.dispatchEvent(new CustomEvent('akira:celebrate')); } catch {}
     }
 
-    // 3) Persistencia remota (best-effort)
     try {
       if (!uid) return;
       await supabase.from('user_program_tasks').upsert({
@@ -435,13 +401,10 @@ export default function ProgramDetail({
         done: next,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'user_id,program_slug,day_index,task_id' as any });
-    } catch (e) {
-      // si falla, dejamos el local tal cual y ya se rehidratará al volver a foco
-      console.warn('[toggleTaskDone] upsert fallo', e);
-    }
+    } catch {}
   }
 
-  /* ====== Carga de puntuación si iniciado ====== */
+  /* ====== Carga de puntos ====== */
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -467,40 +430,41 @@ export default function ProgramDetail({
         if (alive) setLoadingPoints(false);
       }
     })();
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, [uid, slug, started]);
 
-  /* ===== Helpers Puntuación → Estadísticas (semana móvil) ===== */
+  /* ===== Estadísticas (semana móvil real con etiquetas correctas) ===== */
   const weeklyStats = useMemo(() => {
-    if (!started || !data) {
+    if (!started || !data || !active?.startedAt) {
       return { labels: ['L','M','X','J','V','S','D'], goal: Array(7).fill(0), actual: Array(7).fill(0) };
     }
-    // Semana móvil: últimos 7 días dentro del programa (clamp a [1..totalDays])
     const end = currentDay;
     const start = Math.max(1, end - 6);
-    const labels = ['L','M','X','J','V','S','D']; // presentación
 
-    const dayIdxs: number[] = [];
-    for (let d = start; d <= end; d++) dayIdxs.push(d);
-    while (dayIdxs.length < 7) dayIdxs.unshift(0); // pad al principio si aún no hay 7 días de programa
+    const idxs: number[] = [];
+    for (let d = start; d <= end; d++) idxs.push(d);
+    while (idxs.length < 7) idxs.unshift(0); // pad anterior a inicio
 
-    const goal: number[] = dayIdxs.map((d) => {
+    const labels: string[] = idxs.map((d) => {
+      if (d <= 0) return '';
+      const dateMs = addDays(active.startedAt!, d - 1);
+      return weekdayLabel(dateMs);
+    });
+
+    const goal: number[] = idxs.map((d) => {
       if (d <= 0) return 0;
       const day = data.days.find(x => x.day === d) ?? data.days[d - 1];
       return Math.max(0, day?.tasks?.length ?? 0);
     });
 
-    const actual: number[] = dayIdxs.map((d) => {
+    const actual: number[] = idxs.map((d) => {
       if (d <= 0) return 0;
       const map = (activeMap[slug]?.progress ?? {})[d] as Record<string, boolean> | undefined;
-      if (!map) return 0;
-      return Object.values(map).filter(Boolean).length;
+      return map ? Object.values(map).filter(Boolean).length : 0;
     });
 
     return { labels, goal, actual };
-  }, [started, data, activeMap, slug, currentDay]);
+  }, [started, data, active?.startedAt, activeMap, slug, currentDay]);
 
   /* ===== Render ===== */
   if (!loadingData && !data) {
@@ -526,13 +490,7 @@ export default function ProgramDetail({
           </div>
           <div className="absolute top-3 right-3">
             <button
-              onClick={() => {
-                try {
-                  router.back();
-                } catch {
-                  location.href = '/habitos';
-                }
-              }}
+              onClick={() => { try { router.back(); } catch { location.href = '/habitos'; } }}
               className="inline-flex items-center gap-1.5 text-[13px] font-medium px-3.5 py-2 rounded-full border border-neutral-300 bg-white/85 backdrop-blur-md shadow-md hover:bg-white active:scale-[0.98]"
             >
               <ChevronLeft className="w-4 h-4" />
@@ -589,7 +547,7 @@ export default function ProgramDetail({
       <nav className="border-b bg-white sticky top-[48px] z-10 -mt-px mt-6">
         <div className="container mx-auto flex justify-between px-0 overflow-x-auto">
           {TABS.map((tab) => {
-            const locked = (tab === 'Check del día' || tab === 'Puntuación') && !started;
+            const locked = (tab === 'Check del día' || tab === 'Estadísticas') && !started;
             const isActive = activeTab === tab;
             return (
               <button
@@ -614,96 +572,95 @@ export default function ProgramDetail({
       <section className="container mx-auto px-0 py-6 space-y-6">
         {/* ===== Resumen ===== */}
         {activeTab === 'Resumen' && (
-          <>
-            {!loadingData && (
-              <div className="space-y-4">
-                {howItWorks ? (
-                  <MD className="text-[13px] text-neutral-800 leading-relaxed">{howItWorks}</MD>
+          <div className="space-y-5">
+            {howItWorks ? (
+              <MD className="block text-[15px] md:text-[16px] leading-[1.75] text-neutral-900">
+                {howItWorks}
+              </MD>
+            ) : null}
+
+            {(data?.accordions?.whatYouWillDo?.length ||
+              data?.accordions?.whatYouWillGet?.length ||
+              data?.accordions?.howToUse?.length) && (
+              // Sin recuadro; solo separadores
+              <div className="divide-y divide-neutral-200">
+                {data?.accordions?.whatYouWillDo?.length ? (
+                  <div className="py-3">
+                    <ARow
+                      label="¿Qué vas a hacer?"
+                      open={openAcc.do}
+                      onClick={() => setOpenAcc((s) => ({ ...s, do: !s.do }))}
+                    />
+                    {openAcc.do && (
+                      <ul className="pl-4 list-disc text-[13px] text-neutral-800 space-y-1 mt-1">
+                        {data!.accordions!.whatYouWillDo!.map((li, i) => (
+                          <li key={`do_${i}`}>
+                            <MD className="text-[13px] leading-relaxed">{li}</MD>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
                 ) : null}
 
-                {(data?.accordions?.whatYouWillDo?.length ||
-                  data?.accordions?.whatYouWillGet?.length ||
-                  data?.accordions?.howToUse?.length) && (
-                  <div className="divide-y divide-neutral-200 rounded-2xl border border-neutral-200">
-                    {data?.accordions?.whatYouWillDo?.length ? (
-                      <div className="p-4">
-                        <ARow
-                          label="¿Qué vas a hacer?"
-                          open={openAcc.do}
-                          onClick={() => setOpenAcc((s) => ({ ...s, do: !s.do }))}
-                        />
-                        {openAcc.do && (
-                          <ul className="pl-4 list-disc text-[13px] text-neutral-800 space-y-1">
-                            {data!.accordions!.whatYouWillDo!.map((li, i) => (
-                              <li key={`do_${i}`}>
-                                <MD className="text-[13px] leading-relaxed">{li}</MD>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-                    ) : null}
-
-                    {data?.accordions?.whatYouWillGet?.length ? (
-                      <div className="p-4">
-                        <ARow
-                          label="¿Qué vas a conseguir?"
-                          open={openAcc.get}
-                          onClick={() => setOpenAcc((s) => ({ ...s, get: !s.get }))}
-                        />
-                        {openAcc.get && (
-                          <ul className="pl-4 list-disc text-[14px] text-neutral-900 space-y-1">
-                            {data!.accordions!.whatYouWillGet!.map((li, i) => (
-                              <li key={`get_${i}`}>
-                                <MD className="text-[14px] leading-relaxed">{li}</MD>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-                    ) : null}
-
-                    {data?.accordions?.howToUse?.length ? (
-                      <div className="p-4">
-                        <ARow
-                          label="¿Cómo se usa?"
-                          open={openAcc.use}
-                          onClick={() => setOpenAcc((s) => ({ ...s, use: !s.use }))}
-                        />
-                        {openAcc.use && (
-                          <ul className="pl-4 list-disc text-[13px] text-neutral-800 space-y-1">
-                            {data!.accordions!.howToUse!.map((li, i) => (
-                              <li key={`use_${i}`}>
-                                <MD className="text-[13px] leading-relaxed">{li}</MD>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-                    ) : null}
+                {data?.accordions?.whatYouWillGet?.length ? (
+                  <div className="py-3">
+                    <ARow
+                      label="¿Qué vas a conseguir?"
+                      open={openAcc.get}
+                      onClick={() => setOpenAcc((s) => ({ ...s, get: !s.get }))}
+                    />
+                    {openAcc.get && (
+                      <ul className="pl-4 list-disc text-[14px] text-neutral-900 space-y-1 mt-1">
+                        {data!.accordions!.whatYouWillGet!.map((li, i) => (
+                          <li key={`get_${i}`}>
+                            <MD className="text-[14px] leading-relaxed">{li}</MD>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
-                )}
+                ) : null}
 
-                {started && totalDays > 0 && (
-                  <div className="mt-2">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="text-sm font-medium">
-                        Progreso: Día {Math.min(currentDay, totalDays)} / {totalDays}
-                      </div>
-                      <div className="text-sm text-neutral-500">{progressPct}%</div>
-                    </div>
-                    <div className="h-2 w-full rounded-full bg-neutral-200 overflow-hidden">
-                      <div className="h-full bg-black transition-all" style={{ width: `${progressPct}%` }} />
-                    </div>
+                {data?.accordions?.howToUse?.length ? (
+                  <div className="py-3">
+                    <ARow
+                      label="¿Cómo se usa?"
+                      open={openAcc.use}
+                      onClick={() => setOpenAcc((s) => ({ ...s, use: !s.use }))}
+                    />
+                    {openAcc.use && (
+                      <ul className="pl-4 list-disc text-[13px] text-neutral-800 space-y-1 mt-1">
+                        {data!.accordions!.howToUse!.map((li, i) => (
+                          <li key={`use_${i}`}>
+                            <MD className="text-[13px] leading-relaxed">{li}</MD>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
-                )}
-
-                <p className="text-xs text-neutral-500">
-                  * El plan se revela día a día. Los checks se realizan en <strong>Mi Zona</strong>.
-                </p>
+                ) : null}
               </div>
             )}
-          </>
+
+            {started && totalDays > 0 && (
+              <div className="mt-2">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-sm font-medium">
+                    Progreso: Día {Math.min(currentDay, totalDays)} / {totalDays}
+                  </div>
+                  <div className="text-sm text-neutral-500">{progressPct}%</div>
+                </div>
+                <div className="h-2 w-full rounded-full bg-neutral-200 overflow-hidden">
+                  <div className="h-full bg-black transition-all" style={{ width: `${progressPct}%` }} />
+                </div>
+              </div>
+            )}
+
+            <p className="text-xs text-neutral-500">
+              * El plan se revela día a día. Los checks se realizan en <strong>Mi Zona</strong>.
+            </p>
+          </div>
         )}
 
         {/* ===== Check del día ===== */}
@@ -728,69 +685,39 @@ export default function ProgramDetail({
                   <strong>Estos son los retos que tienes que completar hoy</strong>, cuando los hayas hecho márcalos para ver tu progreso en este programa.
                 </p>
 
-                {/* Progreso simple */}
+                {/* Barra progreso simple */}
                 <div className="mt-3">
                   <div className="h-2 w-full rounded-full bg-neutral-200 overflow-hidden">
                     <div className="h-full bg-black transition-all" style={{ width: `${progressPct}%` }} />
                   </div>
                 </div>
 
-                {/* Navegación por días */}
-                <div className="mt-6 flex items-center justify-between">
-                  <button
-                    onClick={() => setViewedDay((d) => Math.max(1, d - 1))}
-                    disabled={viewedDay <= 1}
-                    className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border ${
-                      viewedDay <= 1
-                        ? 'text-neutral-400 border-neutral-200 cursor-not-allowed'
-                        : 'text-neutral-700 border-neutral-300 hover:bg-neutral-50'
-                    }`}
-                    aria-label="Día anterior"
-                  >
-                    <ChevronLeft className="w-4 h-4" /> Anterior
-                  </button>
-
-                  <div className="text-[15px] font-semibold">Día {viewedDay}</div>
-
-                  <button
-                    onClick={() => setViewedDay((d) => Math.min(currentDay, d + 1))}
-                    disabled={viewedDay >= currentDay}
-                    className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border ${
-                      viewedDay >= currentDay
-                        ? 'text-neutral-400 border-neutral-200 cursor-not-allowed'
-                        : 'text-neutral-700 border-neutral-300 hover:bg-neutral-50'
-                    }`}
-                    aria-label="Día siguiente"
-                    title={
-                      viewedDay >= currentDay
-                        ? 'El plan se revela día a día. Se desbloquea mañana.'
-                        : 'Ir al siguiente día'
-                    }
-                  >
-                    {viewedDay >= currentDay ? (
-                      <>Bloqueado <Lock className="w-4 h-4" /></>
-                    ) : (
-                      <>Siguiente <ChevronRight className="w-4 h-4" /></>
-                    )}
-                  </button>
+                {/* Lista de tareas con botón “+” informativo */}
+                <div className="mt-5 space-y-2">
+                  {(data.days.find(d => d.day === currentDay)?.tasks ?? []).map((t, i) => {
+                    const id = t.id ?? `task_${i}`;
+                    const done = Boolean((activeMap[slug]?.progress?.[currentDay] as any)?.[id]);
+                    return (
+                      <CreateHabitBar
+                        key={`t_${id}`}
+                        variant="task"
+                        label={t.label}
+                        checked={done}
+                        color={programColor}
+                        onToggle={() => toggleTaskDone(currentDay, id)}
+                        showInfoButton={Boolean(t.detail)}
+                        onInfo={() => setTaskInfoOpen({ label: t.label, detail: t.detail })}
+                      />
+                    );
+                  })}
                 </div>
-
-                {/* Lista de tareas como barras CreateHabitBar (marcables aquí) */}
-                <TaskBarsList
-                  tasks={tasks}
-                  day={viewedDay}
-                  dayProgressMap={dayProgressMap}
-                  programColor={programColor}
-                  onOpenInfo={(payload) => setTaskInfoOpen(payload)}
-                  onToggle={(taskId) => toggleTaskDone(viewedDay, taskId)}
-                />
               </>
             )}
           </>
         )}
 
-        {/* ===== Puntuación ===== */}
-        {activeTab === 'Puntuación' && (
+        {/* ===== Estadísticas ===== */}
+        {activeTab === 'Estadísticas' && (
           <>
             {!started && (
               <div className="rounded-2xl border p-4 bg-neutral-50 text-neutral-600" style={{ borderColor: 'var(--line)' }}>
@@ -804,7 +731,7 @@ export default function ProgramDetail({
 
             {started && (
               <div className="space-y-6">
-                {/* Cabecera tipo "Actividad" */}
+                {/* Cabecera */}
                 <div className="text-center">
                   <div className="text-[56px] leading-none font-extrabold tabular-nums">
                     {pointsTotals?.total_points ?? 0}
@@ -824,7 +751,7 @@ export default function ProgramDetail({
                   </ul>
                 </div>
 
-                {/* === Estadísticas (semana) === */}
+                {/* Estadísticas semana */}
                 <div className="rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--line)' }}>
                   <div className="px-4 py-3 text-sm font-semibold bg-neutral-50">Estadísticas</div>
                   <div className="p-4">
@@ -856,12 +783,7 @@ export default function ProgramDetail({
                     </p>
                   </div>
                   <div className="w-24 h-24 relative rounded-xl overflow-hidden border border-neutral-200 bg-neutral-50">
-                    <Image
-                      src={badgeSrc}
-                      alt="Insignia del programa"
-                      fill
-                      className="object-cover"
-                    />
+                    <Image src={badgeSrc} alt="Insignia del programa" fill className="object-cover" />
                   </div>
                 </div>
               </div>
@@ -877,10 +799,7 @@ export default function ProgramDetail({
             <h3 className="text-lg font-semibold">¿Estás seguro?</h3>
             <p className="text-sm text-neutral-600 mt-2">Esto dejará el programa como no iniciado.</p>
             <div className="mt-4 grid grid-cols-2 gap-2">
-              <button
-                onClick={cancelReset}
-                className="rounded-xl border border-neutral-200 py-2 text-sm font-medium hover:bg-neutral-50"
-              >
+              <button onClick={cancelReset} className="rounded-xl border border-neutral-200 py-2 text-sm font-medium hover:bg-neutral-50">
                 Cancelar
               </button>
               <button
@@ -895,7 +814,7 @@ export default function ProgramDetail({
         </div>
       )}
 
-      {/* Pop-up detalle de reto */}
+      {/* Pop-up detalle */}
       {taskInfoOpen && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-2xl p-5 w-[90%] max-w-md shadow-lg relative">
@@ -923,50 +842,24 @@ export default function ProgramDetail({
   );
 }
 
-/* ======= Subcomponentes ======= */
+/* ===== Subcomponentes ===== */
 
-function TaskBarsList({
-  tasks,
-  day,
-  dayProgressMap,
-  programColor,
-  onOpenInfo,
-  onToggle,
-}: {
-  tasks: JsonTask[];
-  day: number;
-  dayProgressMap: Record<string, boolean>;
-  programColor: string;
-  onOpenInfo: (payload: { label: string; detail?: string }) => void;
-  onToggle: (taskId: string) => void;
-}) {
-  if (tasks.length === 0) {
+function PreviewDayOne({ data }: { data: ProgramJson | null }) {
+  const first = data?.days?.[0] ?? null;
+  if (!first) {
     return (
       <div className="text-sm text-neutral-600 border border-dashed border-neutral-300 rounded-2xl p-4">
-        Hoy desconectas de la app. Disfruta tu día sin móvil.
+        Aún no hay contenido para el Día 1.
       </div>
     );
   }
-
   return (
-    <div className="space-y-2 mt-4">
-      {tasks.map((t, i) => {
-        const id = t.id ?? `task_${i}`;
-        const done = Boolean((dayProgressMap as any)[id]);
-        return (
-          <CreateHabitBar
-            key={`${day}_${id}`}
-            variant="task"
-            label={t.label}
-            checked={done}
-            color={programColor}
-            onToggle={() => onToggle(id)}
-            onInfo={() => onOpenInfo({ label: t.label, detail: t.detail })}
-            ariaLabel={t.label}
-          />
-        );
-      })}
-    </div>
+    <DayTasksList
+      tasks={first.tasks ?? []}
+      dayProgressMap={{}}
+      openTasks={{}}
+      toggleTaskOpen={() => {}}
+    />
   );
 }
 
@@ -981,7 +874,6 @@ function DayTasksList({
   openTasks: Record<string, boolean>;
   toggleTaskOpen: (t: JsonTask, i: number) => void;
 }) {
-  // (Se mantiene para el preview del Día 1 si no has empezado)
   return tasks.length === 0 ? (
     <div className="text-sm text-neutral-600 border border-dashed border-neutral-300 rounded-2xl p-4">
       Hoy desconectas de la app. Disfruta tu día sin móvil.
@@ -1036,133 +928,49 @@ function DayTasksList({
   );
 }
 
-function PreviewDayOne({ data }: { data: ProgramJson | null }) {
-  const first = data?.days?.[0] ?? null;
-  if (!first) {
-    return (
-      <div className="text-sm text-neutral-600 border border-dashed border-neutral-300 rounded-2xl p-4">
-        Aún no hay contenido para el Día 1.
-      </div>
-    );
-  }
-  return (
-    <DayTasksList
-      tasks={first.tasks ?? []}
-      dayProgressMap={{}}
-      openTasks={{}}
-      toggleTaskOpen={() => {}}
-    />
-  );
-}
-
-const ARow: FC<{ label: string; open: boolean; onClick: () => void }> = ({
-  label,
-  open,
-  onClick,
-}) => (
-  <button
-    onClick={onClick}
-    className="w-full flex items-center justify-between py-3"
-    aria-expanded={open}
-  >
+const ARow: FC<{ label: string; open: boolean; onClick: () => void }> = ({ label, open, onClick }) => (
+  <button onClick={onClick} className="w-full flex items-center justify-between py-3" aria-expanded={open}>
     <span className="text-[15px] font-semibold text-neutral-900">{label}</span>
     {open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
   </button>
 );
 
-/* ======== WeeklyStatsChart (SVG puro, responsive) ======== */
-const WeeklyStatsChart: FC<{ labels: string[]; goal: number[]; actual: number[] }> = ({
-  labels,
-  goal,
-  actual,
-}) => {
-  const width = 640;  // se escala con viewBox
-  const height = 220;
-  const padL = 28;
-  const padR = 16;
-  const padT = 20;
-  const padB = 28;
-
+/* ===== WeeklyStatsChart (SVG) ===== */
+const WeeklyStatsChart: FC<{ labels: string[]; goal: number[]; actual: number[] }> = ({ labels, goal, actual }) => {
+  const width = 640, height = 220, padL = 28, padR = 16, padT = 20, padB = 28;
   const n = 7;
-  const xs = (i: number) =>
-    padL + (i * (width - padL - padR)) / Math.max(1, n - 1);
-
+  const xs = (i: number) => padL + (i * (width - padL - padR)) / Math.max(1, n - 1);
   const maxY = Math.max(5, ...goal, ...actual);
-  const niceMax = Math.max(5, Math.ceil(maxY / 5) * 5); // ticks cada 5
-  const ys = (v: number) =>
-    padT + (height - padT - padB) * (1 - v / (niceMax || 1));
-
-  const gridLines = 4; // 0%, 25%, 50%, 75%, 100%
-  const pathFor = (arr: number[]) =>
-    arr
-      .map((v, i) => `${i === 0 ? 'M' : 'L'} ${xs(i)} ${ys(v)}`)
-      .join(' ');
-
+  const niceMax = Math.max(5, Math.ceil(maxY / 5) * 5);
+  const ys = (v: number) => padT + (height - padT - padB) * (1 - v / (niceMax || 1));
+  const gridLines = 4;
+  const pathFor = (arr: number[]) => arr.map((v, i) => `${i === 0 ? 'M' : 'L'} ${xs(i)} ${ys(v)}`).join(' ');
   const goalPath = pathFor(goal);
   const actualPath = pathFor(actual);
 
   return (
     <div className="w-full">
       <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto">
-        {/* fondo */}
         <rect x="0" y="0" width={width} height={height} fill="white" />
-
-        {/* grid */}
         {[...Array(gridLines + 1)].map((_, i) => {
           const y = padT + ((height - padT - padB) * i) / gridLines;
-          return (
-            <line
-              key={`g${i}`}
-              x1={padL}
-              x2={width - padR}
-              y1={y}
-              y2={y}
-              stroke="#e5e7eb"
-              strokeWidth="1"
-            />
-          );
+          return <line key={`g${i}`} x1={padL} x2={width - padR} y1={y} y2={y} stroke="#e5e7eb" strokeWidth="1" />;
         })}
-
-        {/* ejes labels derecha */}
         {[0, 0.25, 0.5, 0.75, 1].map((p, i) => {
           const val = Math.round(niceMax * p);
           const y = padT + (height - padT - padB) * (1 - p);
-          return (
-            <text
-              key={`t${i}`}
-              x={width - padR + 6}
-              y={y + 4}
-              fontSize="10"
-              fill="#6b7280"
-            >
-              {val}
-            </text>
-          );
+          return <text key={`t${i}`} x={width - padR + 6} y={y + 4} fontSize="10" fill="#6b7280">{val}</text>;
         })}
-
-        {/* líneas */}
         <path d={goalPath} fill="none" stroke="#d1d5db" strokeWidth="2" />
         <path d={actualPath} fill="none" stroke="#3b82f6" strokeWidth="2" />
-
-        {/* puntos */}
-        {goal.map((v, i) => (
-          <circle key={`pg${i}`} cx={xs(i)} cy={ys(v)} r="4" fill="white" stroke="#d1d5db" strokeWidth="2" />
-        ))}
-        {actual.map((v, i) => (
-          <circle key={`pa${i}`} cx={xs(i)} cy={ys(v)} r="4" fill="white" stroke="#3b82f6" strokeWidth="2" />
-        ))}
-
-        {/* labels X */}
+        {goal.map((v, i) => <circle key={`pg${i}`} cx={xs(i)} cy={ys(v)} r="4" fill="white" stroke="#d1d5db" strokeWidth="2" />)}
+        {actual.map((v, i) => <circle key={`pa${i}`} cx={xs(i)} cy={ys(v)} r="4" fill="white" stroke="#3b82f6" strokeWidth="2" />)}
         {labels.map((l, i) => (
           <text key={`lx${i}`} x={xs(i)} y={height - padB + 16} textAnchor="middle" fontSize="11" fill="#6b7280">
-            {l}
+            {l || ' '}
           </text>
         ))}
-
-        {/* título eje der */}
-        <text x={width - 4} y={padT - 6} textAnchor="end" fontSize="12" fill="#6b7280">
-          Retos
-        </text>
+        <text x={width - 4} y={padT - 6} textAnchor="end" fontSize="12" fill="#6b7280">Retos</text>
       </svg>
     </div>
   );
