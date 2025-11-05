@@ -38,6 +38,11 @@ function routeSlug(slug: string) {
   return slug.replace(/-30$/, '');
 }
 
+/* Mini mapa explícito de thumbnails para evitar fallos */
+const THUMB_MAP: Record<string, string> = {
+  lectura: '/images/programs/lectura-hero.jpg',
+  'detox-tecnologico': '/images/programs/detox-tecnologico-hero.jpg',
+};
 /* ===== Tabs ===== */
 const TABS = [
   { href: '/mizona/resumen', label: 'Resumen', exact: true },
@@ -46,7 +51,7 @@ const TABS = [
 ] as const;
 
 export default function MiActividadResumen() {
-  const { totalGoal, totalDone, historicalPoints } = useTodayActivity(); // hoy (global) + puntos históricos
+  const { totalGoal, totalDone, historicalPoints } = useTodayActivity(); // hoy + puntos (si el hook lo trae)
   const pct = totalGoal ? Math.round((totalDone / totalGoal) * 100) : 0;
 
   const user = useUserProfile();
@@ -55,17 +60,17 @@ export default function MiActividadResumen() {
     (user?.username && user.username.trim()) ||
     'Tú';
 
-  // Puntos globales visibles en tarjeta perfil (de momento usamos historicalPoints)
-  const totalPoints = typeof historicalPoints === 'number' ? historicalPoints : 0;
-  // Ranking mensual — placeholder hasta tener endpoint/campo real
+  // Puntos globales visibles (fallback a 0 si el hook no trae)
+  const totalPoints = Number.isFinite(historicalPoints) ? (historicalPoints as number) : 0;
+  // Ranking mensual — placeholder hasta tener endpoint
   const rankMonthly = (user as any)?.rank_month ?? '-';
 
   return (
     <div className="pb-6">
-      {/* Submenú */}
+      {/* Submenú (mismo aire que /amigos): dejamos borde y añadimos un margen superior mínimo al contenido */}
       <SubHeaderTabs tabs={TABS as any} size="compact" ariaLabel="Navegación Mi actividad" />
 
-      <div className="py-6 space-y-8">
+      <div className="pt-3 pb-6 space-y-8">
         {/* ===== Rueda ===== */}
         <section>
           <div className="w-full flex items-center justify-center">
@@ -127,8 +132,7 @@ export default function MiActividadResumen() {
             <Link href="#stats" className="text-sm font-medium text-neutral-700 hover:underline">Ver todo</Link>
           </div>
           <div className="[&_.ak-calendar-day]:flex [&_.ak-calendar-day]:items-center [&_.ak-calendar-day]:justify-center">
-            {/* Cuando CalendarLite acepte dayStatus, se lo pasamos */}
-            <CalendarLite />
+            <CalendarLite dayStatus={getDayStatus} />
           </div>
         </section>
 
@@ -151,9 +155,12 @@ function ActiveProgramsList() {
     const json = tryGetProgramJson(slug);
     const totalDays: number = json?.days?.length ?? json?.durationDays ?? 0;
     if (!totalDays) return false;
-    // ocultar si ya acabó
-    const today = clampDay(lp.startedAt, new Date(), totalDays);
-    return today <= totalDays;
+
+    // Ocultar programas COMPLETADOS (si ya pasamos del último día)
+    const rawIdx = dayIdxSince(lp.startedAt, new Date());
+    if (rawIdx > totalDays) return false;
+
+    return true;
   });
 
   if (!entries.length) return <div className="text-sm text-neutral-600">No tienes programas activos.</div>;
@@ -168,10 +175,11 @@ function ActiveProgramsList() {
         const today = totalDays ? clampDay(lp.startedAt!, new Date(), totalDays) : 0;
         const pct = totalDays ? Math.round((today / totalDays) * 100) : 0;
 
-        const thumb = `/images/programs/${routeSlug(slug)}-hero.jpg`;
+        const rslug = routeSlug(slug);
+        const thumb = THUMB_MAP[rslug] ?? `/images/programs/${rslug}-hero.jpg`;
 
         return (
-          <Link key={slug} href={`/programas/${routeSlug(slug)}`} className="block rounded-3xl bg-neutral-100 px-4 py-4">
+          <Link key={slug} href={`/programas/${rslug}`} className="block rounded-3xl bg-neutral-100 px-4 py-4">
             <div className="flex items-center gap-3">
               <div className="relative w-14 h-14 rounded-full overflow-hidden ring-1 ring-white/70 bg-white">
                 <Image src={thumb} alt={title} fill className="object-cover" sizes="56px" />
@@ -216,9 +224,9 @@ function buildWeeklySeries(activeMap: LocalStore) {
 
   // por cada programa activo, sumamos tareas planificadas y hechas
   for (const [slug, prog] of Object.entries(activeMap)) {
-    const lp = prog as LocalProgram;
-    if (!lp?.startedAt) continue;
-    const json = tryGetProgramJson(slug);
+  const lp = prog as LocalProgram;
+  if (!lp?.startedAt) continue;
+  const json = tryGetProgramJson(slug);
     const totalDays: number = json?.days?.length ?? json?.durationDays ?? 0;
     if (!totalDays) continue;
 
@@ -303,14 +311,14 @@ function AchievementsStrip() {
   );
 }
 
-/* ===== Estados por día (listo para cuando CalendarLite lo soporte) ===== */
+/* ===== Estados por día para calendario (colores) ===== */
 function getDayStatus(date: Date): 'none'|'some'|'all'|'missed' {
   const map = loadActive();
   let planned = 0, done = 0;
-  for (const [slug, prog] of Object.entries(map)) {
-    const lp = prog as LocalProgram;
-    if (!lp?.startedAt) continue;
-    const json = tryGetProgramJson(slug);
+for (const [slug, prog] of Object.entries(map)) {
+  const lp = prog as LocalProgram;
+  if (!lp?.startedAt) continue;
+  const json = tryGetProgramJson(slug);
     const totalDays: number = json?.days?.length ?? json?.durationDays ?? 0;
     if (!totalDays) continue;
     const dNum = dayIdxSince(lp.startedAt, date);
