@@ -576,7 +576,7 @@ export default function ProgramDetail({
           </div>
         )}
         {!loadingData && (
-          <div className="mt-2 flex itemscenter gap-2">
+          <div className="mt-2 flex items-center gap-2">{/* <-- fix: items-center */}
             {!started ? (
               <button
                 onClick={handleStartProgram}
@@ -752,6 +752,7 @@ export default function ProgramDetail({
                   {(data.days.find(d => d.day === currentDay)?.tasks ?? []).map((t, i) => {
                     const id = t.id ?? `task_${i}`;
                     const done = Boolean((activeMap[slug]?.progress?.[currentDay] as any)?.[id]);
+                    const hasDetail = Boolean(t.detail);
                     return (
                       <CreateHabitBar
                         key={`t_${id}`}
@@ -760,8 +761,7 @@ export default function ProgramDetail({
                         checked={done}
                         color={programColor}
                         onToggle={() => toggleTaskDone(currentDay, id)}
-                        showInfoButton={Boolean(t.detail)}
-                        onInfo={() => setTaskInfoOpen({ label: t.label, detail: t.detail })}
+                        onInfo={hasDetail ? () => setTaskInfoOpen({ label: t.label, detail: t.detail }) : undefined}
                       />
                     );
                   })}
