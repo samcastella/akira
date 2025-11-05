@@ -11,6 +11,7 @@ import ComidasTool from '@/components/tools/ComidasTool';
 import ExerciseLog from '@/components/ExerciseLog';
 import GoalsTool from '@/components/tools/GoalsTool';
 import BooksTool from '@/components/tools/BooksTool';
+import BloqueoToolPage from '@/app/herramientas/bloqueo/page'; // nuevo import directo
 
 const MAP: Record<string, { label: string; Render: React.ComponentType }> = {
   notas:      { label: 'Mis notas',             Render: NotasTool },
@@ -21,19 +22,25 @@ const MAP: Record<string, { label: string; Render: React.ComponentType }> = {
   objetivos:  { label: 'Objetivos para hoy',    Render: GoalsTool },
   libros:     { label: 'Mis libros',            Render: BooksTool },
 
-  // 🧠 Nuevo acceso directo
+  // ⚙️ Configurador de límites
   'detox-config': {
-    label: 'Configurar límites (Détox Tecnológico)',
+    label: 'Configurador de límites',
     Render: function RedirectDetoxConfig() {
       if (typeof window !== 'undefined') {
         window.location.href = '/programas/detox-tecnologico-30/configurar';
       }
       return (
         <div className="p-4 text-sm text-neutral-600">
-          Redirigiendo al configurador del Détox Tecnológico…
+          Redirigiendo al configurador de límites…
         </div>
       );
     },
+  },
+
+  // 🔒 Bloqueo de uso
+  bloqueo: {
+    label: 'Bloqueo de uso',
+    Render: BloqueoToolPage,
   },
 };
 
@@ -46,7 +53,10 @@ export default function ToolPage({ params }: { params: { tool: string } }) {
   return (
     <main className="container mx-auto px-4 py-6">
       <div className="mb-4">
-        <Link href="/herramientas" className="text-sm inline-flex items-center gap-2 hover:underline">
+        <Link
+          href="/herramientas"
+          className="text-sm inline-flex items-center gap-2 hover:underline"
+        >
           ← Volver
         </Link>
       </div>

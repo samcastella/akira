@@ -4,7 +4,7 @@ import SubHeaderTabs from '@/components/nav/SubHeaderTabs';
 import Link from 'next/link';
 import {
   Notebook, Heart, Activity as ActivityIcon, Utensils, Dumbbell,
-  Target, BookOpen, ChevronRight
+  Target, BookOpen, ChevronRight, Lock
 } from 'lucide-react';
 
 /* ✅ Definimos el tipo con href opcional */
@@ -24,12 +24,20 @@ const TOOLS: Tool[] = [
   { slug: 'objetivos', label: 'Objetivos para hoy', Icon: Target },
   { slug: 'libros', label: 'Mis libros', Icon: BookOpen },
 
-  // 🔗 Acceso al configurador del Détox Tecnológico
+  // 🔗 Configurador de límites (ruta del Détox)
   {
     slug: 'detox-config',
-    label: 'Configurar límites (Détox Tecnológico)',
+    label: 'Configurador de límites',
     Icon: Target,
     href: '/programas/detox-tecnologico-30/configurar',
+  },
+
+  // 🛡️ Bloqueo de uso (pantalla negra + cuenta atrás + reto)
+  {
+    slug: 'bloqueo',
+    label: 'Bloqueo de uso',
+    Icon: Lock,
+    href: '/herramientas/bloqueo',
   },
 ];
 
