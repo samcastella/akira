@@ -94,9 +94,8 @@ function addDays(ms: number, days: number) {
   return startOfDayMs(new Date(ms + days * 86_400_000));
 }
 function weekdayLabel(dateMs: number) {
-  // 0=Dom,1=Lun,...6=Sáb → queremos L M X J V S D
   const map = ['D', 'L', 'M', 'X', 'J', 'V', 'S'] as const;
-  const d = new Date(dateMs).getDay(); // 0..6
+  const d = new Date(dateMs).getDay();
   return map[d];
 }
 
@@ -129,6 +128,10 @@ const PROGRAM_COLORS: Record<string, string> = {
 const BADGE_FILES: Record<string, string> = {
   'lectura-30': '/images/badges/superlector.png',
   'detox-tecnologico-30': '/images/badges/detox-tecnologico.png',
+};
+const BADGE_TITLES: Record<string, string> = {
+  'lectura-30': 'Superlector',
+  'detox-tecnologico-30': 'Domador del Scroll',
 };
 
 type Props = {
@@ -173,7 +176,7 @@ export default function ProgramDetail({
   const [pointsTotals, setPointsTotals] = useState<ProgramPointsTotals | null>(null);
   const [pointsByDay, setPointsByDay] = useState<ProgramPointsByDayRow[]>([]);
   const [loadingPoints, setLoadingPoints] = useState(false);
-  const [pointsTick, setPointsTick] = useState(0); // ⬅️ refresco tras cada check
+  const [pointsTick, setPointsTick] = useState(0); // refresco tras cada check
 
   /* cargar JSON */
   useEffect(() => {
@@ -279,7 +282,6 @@ export default function ProgramDetail({
             if (!row || row.program_slug !== slug) return;
             await pullUserPrograms();
             if (!cancelled) setActiveMap(loadActive());
-            // opcional: refrescar puntos aquí también
           } catch {}
         }
       )
@@ -320,7 +322,7 @@ export default function ProgramDetail({
     const entry = activeMap[slug];
     if (!entry) return {};
     const raw = (entry.progress ?? {})[dayNum] as any;
-    return (raw && !Array.isArray(raw)) ? (raw as Record<string, boolean>) : {};
+    return raw && !Array.isArray(raw) ? (raw as Record<string, boolean>) : {};
   }
 
   const progressPct = useMemo(() => {
@@ -329,11 +331,10 @@ export default function ProgramDetail({
     return Math.round((passed / totalDays) * 100);
   }, [active?.startedAt, totalDays]);
 
-  /* ========== FIX: sembrar filas del día antes del primer toggle ========== */
+  /* ========== Sembrar filas del día antes del primer toggle ========== */
   async function ensureDayRows(uid: string, slug: string, dayNum: number, taskIds: string[]) {
     if (!taskIds.length) return;
 
-    // ¿Qué filas existen ya para ese día?
     const { data: existing, error: selErr } = await supabase
       .from('user_program_tasks')
       .select('task_id')
@@ -406,14 +407,14 @@ export default function ProgramDetail({
     setConfirmOpen(false);
   }
 
-  /** Toggle check (optimista) */
+  /** Toggle check (optimista + pull inmediato para persistencia tras logout) */
   async function toggleTaskDone(dayNum: number, taskId: string) {
     const entry = activeMap[slug] as LocalProgram | undefined;
     const prev = Boolean((entry?.progress?.[dayNum] as any)?.[taskId]);
     const next = !prev;
 
     const progress = { ...(entry?.progress ?? {}) };
-    const mapForDay = { ...(progress[dayNum] as any || {}) };
+    const mapForDay = { ...((progress[dayNum] as any) || {}) };
     mapForDay[taskId] = next;
     progress[dayNum] = mapForDay;
 
@@ -435,7 +436,7 @@ export default function ProgramDetail({
     try {
       if (!uid) return;
 
-      // ⬅️ NUEVO: sembrar todas las filas del día antes del toggle
+      // Sembrar todas las filas del día antes del toggle
       const dayTasks = (data?.days.find(d => d.day === dayNum)?.tasks ?? []).map((t, i) => t.id ?? `task_${i}`);
       await ensureDayRows(uid, slug, dayNum, dayTasks);
 
@@ -455,20 +456,26 @@ export default function ProgramDetail({
           { onConflict: 'user_id,program_slug,day,task_id' as any }
         );
 
-      // Refrescar puntos y estadísticas
+      // Pull inmediato para que quede persistido en local (sobre todo tras logout/login)
+      await pullUserPrograms();
+      setActiveMap(loadActive());
+
+      // Refrescar puntos/estadísticas (si estás en la pestaña)
       setPointsTick((n) => n + 1);
     } catch (e) {
       console.error('[UPT upsert EXCEPTION]', e);
     }
   }
 
-  /* ====== Carga de puntos ====== */
+  /* ====== Carga de puntos (solo cuando pestaña = Estadísticas) ====== */
   useEffect(() => {
     let alive = true;
     (async () => {
-      if (!uid || !started) {
-        setPointsTotals(null);
-        setPointsByDay([]);
+      if (!uid || !started || activeTab !== 'Estadísticas') {
+        if (!uid || !started) {
+          setPointsTotals(null);
+          setPointsByDay([]);
+        }
         return;
       }
       setLoadingPoints(true);
@@ -489,7 +496,7 @@ export default function ProgramDetail({
       }
     })();
     return () => { alive = false; };
-  }, [uid, slug, started, pointsTick]); // ⬅️ incluye pointsTick
+  }, [uid, slug, started, pointsTick, activeTab]);
 
   /* ===== Estadísticas (semana móvil real con etiquetas correctas) ===== */
   const weeklyStats = useMemo(() => {
@@ -501,7 +508,7 @@ export default function ProgramDetail({
 
     const idxs: number[] = [];
     for (let d = start; d <= end; d++) idxs.push(d);
-    while (idxs.length < 7) idxs.unshift(0); // pad anterior a inicio
+    while (idxs.length < 7) idxs.unshift(0);
 
     const labels: string[] = idxs.map((d) => {
       if (d <= 0) return '';
@@ -537,6 +544,7 @@ export default function ProgramDetail({
 
   const programColor = PROGRAM_COLORS[slug] ?? '#111111';
   const badgeSrc = BADGE_FILES[slug] ?? '/images/badges/generic-badge.png';
+  const badgeTitle = BADGE_TITLES[slug] ?? 'Insignia';
 
   return (
     <div className="px-4 pb-24 bg-white">
@@ -576,7 +584,7 @@ export default function ProgramDetail({
           </div>
         )}
         {!loadingData && (
-          <div className="mt-2 flex items-center gap-2">{/* <-- fix: items-center */}
+          <div className="mt-2 flex items-center gap-2">
             {!started ? (
               <button
                 onClick={handleStartProgram}
@@ -761,6 +769,7 @@ export default function ProgramDetail({
                         checked={done}
                         color={programColor}
                         onToggle={() => toggleTaskDone(currentDay, id)}
+                        showInfoButton={hasDetail}
                         onInfo={hasDetail ? () => setTaskInfoOpen({ label: t.label, detail: t.detail }) : undefined}
                       />
                     );
@@ -788,11 +797,11 @@ export default function ProgramDetail({
               <div className="space-y-6">
                 <div className="text-center">
                   <div className="text-[56px] leading-none font-extrabold tabular-nums">
-                    {pointsTotals?.total_points ?? 0}
+                    {loadingPoints ? 'Cargando…' : (pointsTotals?.total_points ?? 0)}
                   </div>
                   <div className="text-sm text-neutral-600 mt-1">Puntos ganados con este programa</div>
                   <div className="mt-4 text-lg font-semibold">
-                    {pointsTotals?.days_completed ?? 0} días completando tus retos
+                    {loadingPoints ? '—' : (pointsTotals?.days_completed ?? 0)} días completando tus retos
                   </div>
                 </div>
 
@@ -831,9 +840,10 @@ export default function ProgramDetail({
                     <p className="text-sm text-neutral-600">
                       Consigue esta insignia al completar el reto (deberás haber completado el <b>90%</b> de los retos).
                     </p>
+                    <div className="mt-1 text-sm font-medium text-neutral-900">{badgeTitle}</div>
                   </div>
                   <div className="w-24 h-24 relative rounded-xl overflow-hidden border border-neutral-200 bg-neutral-50">
-                    <Image src={badgeSrc} alt="Insignia del programa" fill className="object-cover" />
+                    <Image src={badgeSrc} alt={`Insignia: ${badgeTitle}`} fill className="object-cover" />
                   </div>
                 </div>
               </div>
