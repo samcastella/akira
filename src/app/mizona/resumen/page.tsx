@@ -6,6 +6,7 @@ import Link from 'next/link';
 import TodayWheel from '@/components/mizona/TodayWheel';
 import CalendarLite from '@/components/mizona/CalendarLite';
 import StreakCard from '@/components/mizona/StreakCard';
+import SubHeaderTabs from '@/components/SubHeaderTabs';
 import { useTodayActivity } from '@/lib/activity/useTodayActivity';
 import { useUserProfile } from '@/lib/user';
 import { useMemo } from 'react';
@@ -37,8 +38,15 @@ function routeSlug(slug: string) {
   return slug.replace(/-30$/, '');
 }
 
+/* ===== Tabs ===== */
+const TABS = [
+  { href: '/mizona/resumen', label: 'Resumen', exact: true },
+  { href: '/mizona/checks', label: 'Checks del día' },
+  { href: '/mizona/estadisticas', label: 'Estadísticas' },
+] as const;
+
 export default function MiActividadResumen() {
-  const { totalGoal, totalDone, weeklySeries } = useTodayActivity(); // hoy (global) + series semanales
+  const { totalGoal, totalDone, historicalPoints } = useTodayActivity(); // hoy (global) + puntos históricos
   const pct = totalGoal ? Math.round((totalDone / totalGoal) * 100) : 0;
 
   const user = useUserProfile();
@@ -47,75 +55,89 @@ export default function MiActividadResumen() {
     (user?.username && user.username.trim()) ||
     'Tú';
 
-  // totales/posición (si no tienes aún en DB, se verán en "-")
-  const totalPoints = (user as any)?.total_points ?? (user as any)?.puntos ?? 0;
-  const rankGlobal = (user as any)?.rank_global ?? (user as any)?.ranking ?? '-';
+  // Puntos globales visibles en tarjeta perfil (de momento usamos historicalPoints)
+  const totalPoints = typeof historicalPoints === 'number' ? historicalPoints : 0;
+  // Ranking mensual — placeholder hasta tener endpoint/campo real
+  const rankMonthly = (user as any)?.rank_month ?? '-';
 
   return (
-    <div className="py-6 space-y-8">
-      {/* ===== Rueda (como la captura) ===== */}
-      <section>
-        <div className="w-full max-w-[520px] mx-auto">
-          <div aria-hidden className="text-xl text-center mb-1 select-none">🔥</div>
-          <div className="mx-auto flex flex-col items-center">
-            <TodayWheel value={pct} label="ACTIVIDADES DE ESTA SEMANA" />
-            <div className="mt-2 text-sm text-neutral-600">{totalDone}/{totalGoal} checks</div>
+    <div className="pb-6">
+      {/* Submenú */}
+      <SubHeaderTabs tabs={TABS as any} size="compact" ariaLabel="Navegación Mi actividad" />
+
+      <div className="py-6 space-y-8">
+        {/* ===== Rueda ===== */}
+        <section>
+          <div className="w-full flex items-center justify-center">
+            <TodayWheel
+              value={pct}
+              title="ACTIVIDADES PARA HOY"
+              totalDone={totalDone}
+              totalGoal={totalGoal}
+              size={260}
+            />
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* ===== Racha ===== */}
-      <StreakCard />
+        {/* ===== Racha ===== */}
+        <StreakCard />
 
-      {/* ===== Perfil: avatar + puntos + ranking ===== */}
-      <section className="rounded-2xl border border-neutral-200 p-4 flex items-center gap-4">
-        <Avatar64 src={user?.foto} alt="Tu perfil" />
-        <div className="flex-1 min-w-0">
-          <div className="text-[15px] font-semibold text-neutral-900 truncate">{name}</div>
-          <div className="mt-1 flex items-center gap-2 text-sm text-neutral-700">
-            <span className="px-2 py-0.5 rounded-full bg-neutral-100">Puntos: <b>{totalPoints}</b></span>
-            <span className="px-2 py-0.5 rounded-full bg-neutral-100">Ranking: <b>#{rankGlobal}</b></span>
+        {/* ===== Perfil: avatar + puntos + ranking ===== */}
+        <section className="rounded-2xl border border-neutral-200 p-4 flex items-center gap-4">
+          <div className="relative w-16 h-16 rounded-full overflow-hidden bg-neutral-100">
+            <Image
+              src={user?.foto || '/images/avatars/default.png'}
+              alt="Tu perfil"
+              fill
+              className="object-cover"
+              sizes="64px"
+              priority
+            />
           </div>
-        </div>
-      </section>
+          <div className="flex-1 min-w-0">
+            <div className="text-[15px] font-semibold text-neutral-900 truncate">{name}</div>
+            <div className="mt-1 text-sm text-neutral-600">
+              Ranking mensual: <b>#{rankMonthly}</b>
+            </div>
+          </div>
+          <div className="text-2xl font-extrabold tabular-nums">{totalPoints}</div>
+        </section>
 
-      {/* ===== Programas activos ===== */}
-      <section>
-        <div className="mb-1 flex items-baseline justify-between">
-          <h3 className="text-lg font-semibold">Programas activos</h3>
-          <Link href="/programas" className="text-sm font-medium text-neutral-700 hover:underline">Ver todos</Link>
-        </div>
-        <p className="text-sm text-neutral-600 mb-3">Sigue con tus programas activos.</p>
-        <ActiveProgramsList />
-      </section>
+        {/* ===== Programas activos ===== */}
+        <section>
+          <div className="mb-1 flex items-baseline justify-between">
+            <h3 className="text-lg font-semibold">Programas activos</h3>
+            <Link href="/programas" className="text-sm font-medium text-neutral-700 hover:underline">Ver todos</Link>
+          </div>
+          <p className="text-sm text-neutral-600 mb-3">Sigue con tus programas activos.</p>
+          <ActiveProgramsList />
+        </section>
 
-      {/* ===== Estadísticas (minigráfico real, reactivo a los checks) ===== */}
-      <section id="stats">
-        <h3 className="text-lg font-semibold mb-2">Estadísticas</h3>
-        <p className="text-sm text-neutral-600 mb-3">Descubre tus estadísticas de esta semana</p>
-        <MiniWeeklyChart labels={(weeklySeries[0]?.labels) ?? ['L','M','X','J','V','S','D']}
-                         goal={(weeklySeries[0]?.goal) ?? [0,0,0,0,0,0,0]}
-                         actual={(weeklySeries[0]?.actual) ?? [0,0,0,0,0,0,0]} />
-      </section>
+        {/* ===== Estadísticas (minigráfico real) ===== */}
+        <section id="stats">
+          <h3 className="text-lg font-semibold mb-2">Estadísticas</h3>
+          <p className="text-sm text-neutral-600 mb-3">Descubre tus estadísticas de esta semana</p>
+          <MiniWeeklyChartReal />
+        </section>
 
-      {/* ===== Calendario con “Ver todo” ===== */}
-      <section>
-        <div className="mb-2 flex items-baseline justify-between">
-          <h3 className="text-lg font-semibold">Calendario</h3>
-          <Link href="#stats" className="text-sm font-medium text-neutral-700 hover:underline">Ver todo</Link>
-        </div>
-        <div className="[&_.ak-calendar-day]:flex [&_.ak-calendar-day]:items-center [&_.ak-calendar-day]:justify-center">
-          {/* Si CalendarLite acepta una prop de estado por día, pásale getDayStatus */}
-          <CalendarLite /* dayStatus={getDayStatus} */ />
-        </div>
-        {/* Leyenda (gris/naranja/verde/rojo) opcional aquí si quieres */}
-      </section>
+        {/* ===== Calendario con “Ver todo” ===== */}
+        <section>
+          <div className="mb-2 flex items-baseline justify-between">
+            <h3 className="text-lg font-semibold">Calendario</h3>
+            <Link href="#stats" className="text-sm font-medium text-neutral-700 hover:underline">Ver todo</Link>
+          </div>
+          <div className="[&_.ak-calendar-day]:flex [&_.ak-calendar-day]:items-center [&_.ak-calendar-day]:justify-center">
+            {/* Cuando CalendarLite acepte dayStatus, se lo pasamos */}
+            <CalendarLite />
+          </div>
+        </section>
 
-      {/* ===== Logros ===== */}
-      <section>
-        <h3 className="text-lg font-semibold mb-3">Logros</h3>
-        <AchievementsStrip />
-      </section>
+        {/* ===== Logros ===== */}
+        <section>
+          <h3 className="text-lg font-semibold mb-3">Logros</h3>
+          <AchievementsStrip />
+        </section>
+      </div>
     </div>
   );
 }
@@ -175,10 +197,52 @@ function ActiveProgramsList() {
   );
 }
 
+/* ===== Estadísticas reales (últimos 7 días, global) ===== */
+function MiniWeeklyChartReal() {
+  const activeMap = useMemo<LocalStore>(() => loadActive(), []);
+  const series = useMemo(() => buildWeeklySeries(activeMap), [activeMap]);
+  return <MiniChart labels={series.labels} goal={series.goal} actual={series.actual} />;
+}
+
+function buildWeeklySeries(activeMap: LocalStore) {
+  const labels = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+  const goal = Array(7).fill(0);
+  const actual = Array(7).fill(0);
+
+  // ventana: hoy hacia atrás 6 días
+  const today = startOfDay(new Date());
+  const days: Date[] = [];
+  for (let i = 6; i >= 0; i--) days.push(new Date(today.getTime() - i * 86_400_000));
+
+  // por cada programa activo, sumamos tareas planificadas y hechas
+  for (const [slug, prog] of Object.entries(activeMap)) {
+    const lp = prog as LocalProgram;
+    if (!lp?.startedAt) continue;
+    const json = tryGetProgramJson(slug);
+    const totalDays: number = json?.days?.length ?? json?.durationDays ?? 0;
+    if (!totalDays) continue;
+
+    days.forEach((d, idx) => {
+      const dayNum = dayIdxSince(lp.startedAt, d); // puede ser <1 o >totalDays
+      if (dayNum < 1 || dayNum > totalDays) return;
+
+      const dayDef = json?.days?.find((x: any) => x.day === dayNum) ?? json?.days?.[dayNum - 1];
+      const planned = Math.max(0, dayDef?.tasks?.length ?? 0);
+      goal[idx] += planned;
+
+      const doneMap = (lp.progress?.[dayNum] as Record<string, boolean> | undefined) ?? {};
+      const done = Object.values(doneMap).filter(Boolean).length;
+      actual[idx] += done;
+    });
+  }
+
+  return { labels, goal, actual };
+}
+
 /* ===== MiniChart SVG ===== */
-function MiniWeeklyChart({ labels, goal, actual }: { labels: string[]; goal: number[]; actual: number[] }) {
+function MiniChart({ labels, goal, actual }: { labels: string[]; goal: number[]; actual: number[] }) {
   const width = 640, height = 220, padL = 28, padR = 16, padT = 20, padB = 28;
-  const n = labels.length;
+  const n = 7;
   const xs = (i: number) => padL + (i * (width - padL - padR)) / Math.max(1, n - 1);
   const maxY = Math.max(5, ...goal, ...actual);
   const niceMax = Math.max(5, Math.ceil(maxY / 5) * 5);
@@ -239,13 +303,7 @@ function AchievementsStrip() {
   );
 }
 
-/* ===== (Opcional) estados de día para el calendario =====
-   Reglas:
-   - gris: ningún check empezado
-   - naranja: algunos hechos (no todos)
-   - verde: todos hechos
-   - rojo: día pasado y 0 hechos
-*/
+/* ===== Estados por día (listo para cuando CalendarLite lo soporte) ===== */
 function getDayStatus(date: Date): 'none'|'some'|'all'|'missed' {
   const map = loadActive();
   let planned = 0, done = 0;
@@ -266,35 +324,9 @@ function getDayStatus(date: Date): 'none'|'some'|'all'|'missed' {
   }
   if (planned === 0) return 'none';
   if (done === 0) {
-    // pasado y nada hecho => rojo
     const isPast = startOfDay(date).getTime() < startOfDay(new Date()).getTime();
     return isPast ? 'missed' : 'none';
   }
   if (done < planned) return 'some';
   return 'all';
-}
-
-/* ===== Avatar robusto (URLs remotas sin romper Next/Image) ===== */
-function Avatar64({ src, alt }: { src?: string | null; alt: string }) {
-  const url = src && src.trim().length ? src : '/images/avatars/default.png';
-  const remote = /^https?:\/\//i.test(url);
-  if (remote) {
-    return (
-      <div className="relative w-16 h-16 rounded-full overflow-hidden bg-neutral-100">
-        <img
-          src={url}
-          alt={alt}
-          className="w-full h-full object-cover"
-          onError={(e)=>{ (e.currentTarget as HTMLImageElement).src = '/images/avatars/default.png'; }}
-          loading="eager"
-          decoding="async"
-        />
-      </div>
-    );
-  }
-  return (
-    <div className="relative w-16 h-16 rounded-full overflow-hidden bg-neutral-100">
-      <Image src={url} alt={alt} fill className="object-cover" sizes="64px" priority />
-    </div>
-  );
 }

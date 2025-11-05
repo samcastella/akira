@@ -2,38 +2,35 @@
 'use client';
 
 type Props = {
-  /** Porcentaje 0..100 */
-  value: number;
-  /** Texto pequeño bajo el porcentaje (centro) */
-  label: string;
+  value: number;                // 0..100
+  title?: string;               // ej. "ACTIVIDADES PARA HOY"
+  totalDone?: number;           // ej. 0
+  totalGoal?: number;           // ej. 3
+  size?: number;                // diámetro en px (default 240)
 };
 
-export default function TodayWheel({ value, label }: Props) {
-  // Tamaños fijos según tu diseño actual
-  const size = 160;
-  const stroke = 12;
-
-  // Cálculos geométricos
+export default function TodayWheel({
+  value,
+  title = '',
+  totalDone,
+  totalGoal,
+  size = 240,
+}: Props) {
+  const stroke = Math.round(size * 0.075); // proporcional
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
-
-  // Aseguramos 0..100 y números enteros para evitar jitter
-  const pct = Math.max(0, Math.min(100, Math.round(Number.isFinite(value) ? value : 0)));
+  const pct = Math.min(100, Math.max(0, Math.round(value)));
   const off = c * (1 - pct / 100);
 
+  // Ángulo en radianes (parte visible empieza en -90º)
+  const ang = ((pct / 100) * 360 - 90) * (Math.PI / 180);
+  const cx = size / 2 + r * Math.cos(ang);
+  const cy = size / 2 + r * Math.sin(ang);
+
   return (
-    <div
-      className="relative w-[160px] h-[160px] select-none"
-      role="img"
-      aria-label={`${pct}% ${label}`}
-    >
-      <svg
-        width={size}
-        height={size}
-        viewBox={`0 0 ${size} ${size}`}
-        aria-hidden="true"
-      >
-        {/* pista */}
+    <div className="relative" style={{ width: size, height: size }}>
+      <svg width={size} height={size}>
+        {/* Base */}
         <circle
           cx={size / 2}
           cy={size / 2}
@@ -42,7 +39,7 @@ export default function TodayWheel({ value, label }: Props) {
           strokeWidth={stroke}
           fill="none"
         />
-        {/* progreso */}
+        {/* Progreso */}
         <circle
           cx={size / 2}
           cy={size / 2}
@@ -54,15 +51,37 @@ export default function TodayWheel({ value, label }: Props) {
           strokeDashoffset={off}
           strokeLinecap="round"
           transform={`rotate(-90 ${size / 2} ${size / 2})`}
-          style={{ transition: 'stroke-dashoffset .4s ease' }}
         />
+        {/* Marcador 🔥 en la punta */}
+        <g transform={`translate(${cx}, ${cy})`}>
+          <circle r={Math.max(2, stroke * 0.18)} fill="white" />
+          <text
+            x="0"
+            y="4"
+            textAnchor="middle"
+            fontSize={Math.max(10, Math.round(stroke * 0.9))}
+          >
+            🔥
+          </text>
+        </g>
       </svg>
 
-      {/* Centro */}
+      {/* Contenidos centrados */}
       <div className="absolute inset-0 flex items-center justify-center">
         <div className="text-center leading-tight">
-          <div className="text-2xl font-extrabold tabular-nums">{pct}%</div>
-          <div className="text-xs text-neutral-600">{label}</div>
+          {title ? (
+            <div className="text-[11px] tracking-[0.12em] text-neutral-500">
+              {title}
+            </div>
+          ) : null}
+          <div className="mt-1 text-[32px] font-extrabold tabular-nums text-neutral-900">
+            {pct}% completado
+          </div>
+          {typeof totalDone === 'number' && typeof totalGoal === 'number' ? (
+            <div className="mt-1 text-sm text-neutral-500">
+              {totalDone}/{totalGoal} checks
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
