@@ -37,7 +37,17 @@ export default function MiActividadStats() {
   const { historicalPoints, programsCompleted, weeklySeries } = useTodayActivity();
 
   const [weekOffset, setWeekOffset] = useState(0); // 0 = última, 1 = penúltima, etc.
-  const current = useMemo(() => weeklySeries[weekOffset] || weeklySeries[0], [weeklySeries, weekOffset]);
+  const current = useMemo(
+    () =>
+      weeklySeries[weekOffset] ??
+      weeklySeries[0] ?? {
+        labels: ['L', 'M', 'X', 'J', 'V', 'S', 'D'],
+        goal: [0, 0, 0, 0, 0, 0, 0],
+        actual: [0, 0, 0, 0, 0, 0, 0],
+        range: ['—', '—'] as [string, string],
+      },
+    [weeklySeries, weekOffset]
+  );
 
   return (
     <div className="py-6 space-y-8">
@@ -46,6 +56,8 @@ export default function MiActividadStats() {
         <div className="text-[56px] leading-none font-extrabold tabular-nums">{historicalPoints}</div>
         <div className="text-sm text-neutral-600 mt-1">Puntuación histórica</div>
         <div className="mt-4 text-lg font-semibold">{programsCompleted} programas completados</div>
+        {/* Aire extra para evitar solapes en algunos navegadores móviles */}
+        <div className="mt-2" />
       </section>
 
       {/* Calendario general */}
@@ -67,7 +79,7 @@ export default function MiActividadStats() {
                   i === weekOffset ? 'bg-black text-white border-black' : 'border-neutral-300 hover:bg-neutral-50'
                 }`}
               >
-                {i === 0 ? 'Última semana' : `Semana del ${w.range[0]} al ${w.range[1]}`}
+                {i === 0 ? 'Última semana' : `Semana del ${w.range?.[0] ?? '—'} al ${w.range?.[1] ?? '—'}`}
               </button>
             ))}
           </div>

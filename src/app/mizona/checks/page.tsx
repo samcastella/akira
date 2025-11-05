@@ -1,12 +1,15 @@
 // src/app/mizona/checks/page.tsx
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useTodayActivity } from '@/lib/activity/useTodayActivity';
 import CreateHabitBar from '@/components/habits/CreateHabitBar';
 
 const NOOP = () => {};
 
 export default function MiActividadChecks() {
+  const router = useRouter();
+
   const {
     programsToday,
     challengesToday,
@@ -40,6 +43,7 @@ export default function MiActividadChecks() {
                   checked={t.done}
                   color={prog.color}
                   onToggle={() => toggleProgramTask(prog.slug, prog.day, t.id)}
+                  onInfo={() => router.push(`/programas/${prog.slug.replace(/-30$/, '')}`)}
                 />
               ))}
             </div>
@@ -62,6 +66,7 @@ export default function MiActividadChecks() {
                   checked={t.done}
                   color="#111"
                   onToggle={t.onToggle ?? NOOP}
+                  // Si más adelante quieres (+) aquí, pásame la ruta de detalle del reto
                 />
               ))}
             </div>
@@ -82,6 +87,7 @@ export default function MiActividadChecks() {
                 checked={!!h.done}
                 color={h.color || '#111'}
                 onToggle={h.onToggle ?? NOOP}
+                // onInfo opcional si añadimos detalle del hábito
               />
             </div>
           ))}

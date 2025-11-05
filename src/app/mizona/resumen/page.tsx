@@ -38,7 +38,7 @@ function routeSlug(slug: string) {
 }
 
 export default function MiActividadResumen() {
-  const { totalGoal, totalDone } = useTodayActivity(); // hoy (global)
+  const { totalGoal, totalDone, weeklySeries } = useTodayActivity(); // hoy (global) + series semanales
   const pct = totalGoal ? Math.round((totalDone / totalGoal) * 100) : 0;
 
   const user = useUserProfile();
@@ -55,16 +55,11 @@ export default function MiActividadResumen() {
     <div className="py-6 space-y-8">
       {/* ===== Rueda (como la captura) ===== */}
       <section>
-        <div className="relative w-full max-w-[520px] mx-auto">
-          <div aria-hidden className="absolute -top-2 left-1/2 -translate-x-1/2 z-[1] text-xl select-none">🔥</div>
-          {/* Aseguramos que el componente no pinte label propio */}
-          <TodayWheel value={pct} label="" />
-          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
-            <div className="text-[11px] tracking-[0.12em] text-neutral-500">ACTIVIDADES DE ESTA SEMANA</div>
-            <div className="mt-1 text-[28px] sm:text-[32px] font-extrabold text-neutral-900 tabular-nums leading-none">
-              {pct}% completado
-            </div>
-            <div className="mt-2 text-sm text-neutral-500">{totalDone}/{totalGoal} checks</div>
+        <div className="w-full max-w-[520px] mx-auto">
+          <div aria-hidden className="text-xl text-center mb-1 select-none">🔥</div>
+          <div className="mx-auto flex flex-col items-center">
+            <TodayWheel value={pct} label="ACTIVIDADES DE ESTA SEMANA" />
+            <div className="mt-2 text-sm text-neutral-600">{totalDone}/{totalGoal} checks</div>
           </div>
         </div>
       </section>
@@ -74,16 +69,7 @@ export default function MiActividadResumen() {
 
       {/* ===== Perfil: avatar + puntos + ranking ===== */}
       <section className="rounded-2xl border border-neutral-200 p-4 flex items-center gap-4">
-        <div className="relative w-16 h-16 rounded-full overflow-hidden bg-neutral-100">
-          <Image
-            src={user?.foto || '/images/avatars/default.png'}
-            alt="Tu perfil"
-            fill
-            className="object-cover"
-            sizes="64px"
-            priority
-          />
-        </div>
+        <Avatar64 src={user?.foto} alt="Tu perfil" />
         <div className="flex-1 min-w-0">
           <div className="text-[15px] font-semibold text-neutral-900 truncate">{name}</div>
           <div className="mt-1 flex items-center gap-2 text-sm text-neutral-700">
@@ -103,11 +89,13 @@ export default function MiActividadResumen() {
         <ActiveProgramsList />
       </section>
 
-      {/* ===== Estadísticas (minigráfico real) ===== */}
+      {/* ===== Estadísticas (minigráfico real, reactivo a los checks) ===== */}
       <section id="stats">
         <h3 className="text-lg font-semibold mb-2">Estadísticas</h3>
         <p className="text-sm text-neutral-600 mb-3">Descubre tus estadísticas de esta semana</p>
-        <MiniWeeklyChartReal />
+        <MiniWeeklyChart labels={(weeklySeries[0]?.labels) ?? ['L','M','X','J','V','S','D']}
+                         goal={(weeklySeries[0]?.goal) ?? [0,0,0,0,0,0,0]}
+                         actual={(weeklySeries[0]?.actual) ?? [0,0,0,0,0,0,0]} />
       </section>
 
       {/* ===== Calendario con “Ver todo” ===== */}
@@ -187,52 +175,10 @@ function ActiveProgramsList() {
   );
 }
 
-/* ===== Estadísticas reales (últimos 7 días, global) ===== */
-function MiniWeeklyChartReal() {
-  const activeMap = useMemo<LocalStore>(() => loadActive(), []);
-  const series = useMemo(() => buildWeeklySeries(activeMap), [activeMap]);
-  return <MiniChart labels={series.labels} goal={series.goal} actual={series.actual} />;
-}
-
-function buildWeeklySeries(activeMap: LocalStore) {
-  const labels = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
-  const goal = Array(7).fill(0);
-  const actual = Array(7).fill(0);
-
-  // ventana: hoy hacia atrás 6 días
-  const today = startOfDay(new Date());
-  const days: Date[] = [];
-  for (let i = 6; i >= 0; i--) days.push(new Date(today.getTime() - i * 86_400_000));
-
-  // por cada programa activo, sumamos tareas planificadas y hechas
-  for (const [slug, prog] of Object.entries(activeMap)) {
-    const lp = prog as LocalProgram;
-    if (!lp?.startedAt) continue;
-    const json = tryGetProgramJson(slug);
-    const totalDays: number = json?.days?.length ?? json?.durationDays ?? 0;
-    if (!totalDays) continue;
-
-    days.forEach((d, idx) => {
-      const dayNum = dayIdxSince(lp.startedAt, d); // puede ser <1 o >totalDays
-      if (dayNum < 1 || dayNum > totalDays) return;
-
-      const dayDef = json?.days?.find((x: any) => x.day === dayNum) ?? json?.days?.[dayNum - 1];
-      const planned = Math.max(0, dayDef?.tasks?.length ?? 0);
-      goal[idx] += planned;
-
-      const doneMap = (lp.progress?.[dayNum] as Record<string, boolean> | undefined) ?? {};
-      const done = Object.values(doneMap).filter(Boolean).length;
-      actual[idx] += done;
-    });
-  }
-
-  return { labels, goal, actual };
-}
-
 /* ===== MiniChart SVG ===== */
-function MiniChart({ labels, goal, actual }: { labels: string[]; goal: number[]; actual: number[] }) {
+function MiniWeeklyChart({ labels, goal, actual }: { labels: string[]; goal: number[]; actual: number[] }) {
   const width = 640, height = 220, padL = 28, padR = 16, padT = 20, padB = 28;
-  const n = 7;
+  const n = labels.length;
   const xs = (i: number) => padL + (i * (width - padL - padR)) / Math.max(1, n - 1);
   const maxY = Math.max(5, ...goal, ...actual);
   const niceMax = Math.max(5, Math.ceil(maxY / 5) * 5);
@@ -326,4 +272,29 @@ function getDayStatus(date: Date): 'none'|'some'|'all'|'missed' {
   }
   if (done < planned) return 'some';
   return 'all';
+}
+
+/* ===== Avatar robusto (URLs remotas sin romper Next/Image) ===== */
+function Avatar64({ src, alt }: { src?: string | null; alt: string }) {
+  const url = src && src.trim().length ? src : '/images/avatars/default.png';
+  const remote = /^https?:\/\//i.test(url);
+  if (remote) {
+    return (
+      <div className="relative w-16 h-16 rounded-full overflow-hidden bg-neutral-100">
+        <img
+          src={url}
+          alt={alt}
+          className="w-full h-full object-cover"
+          onError={(e)=>{ (e.currentTarget as HTMLImageElement).src = '/images/avatars/default.png'; }}
+          loading="eager"
+          decoding="async"
+        />
+      </div>
+    );
+  }
+  return (
+    <div className="relative w-16 h-16 rounded-full overflow-hidden bg-neutral-100">
+      <Image src={url} alt={alt} fill className="object-cover" sizes="64px" priority />
+    </div>
+  );
 }
