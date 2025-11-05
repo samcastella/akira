@@ -20,6 +20,21 @@ const MAP: Record<string, { label: string; Render: React.ComponentType }> = {
   ejercicio:  { label: 'Registro de ejercicio', Render: ExerciseLog },
   objetivos:  { label: 'Objetivos para hoy',    Render: GoalsTool },
   libros:     { label: 'Mis libros',            Render: BooksTool },
+
+  // 🧠 Nuevo acceso directo
+  'detox-config': {
+    label: 'Configurar límites (Détox Tecnológico)',
+    Render: function RedirectDetoxConfig() {
+      if (typeof window !== 'undefined') {
+        window.location.href = '/programas/detox-tecnologico-30/configurar';
+      }
+      return (
+        <div className="p-4 text-sm text-neutral-600">
+          Redirigiendo al configurador del Détox Tecnológico…
+        </div>
+      );
+    },
+  },
 };
 
 export default function ToolPage({ params }: { params: { tool: string } }) {

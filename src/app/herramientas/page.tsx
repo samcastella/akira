@@ -7,14 +7,15 @@ import {
   Target, BookOpen, ChevronRight
 } from 'lucide-react';
 
-type ToolItem = {
+/* ✅ Definimos el tipo con href opcional */
+type Tool = {
   slug: string;
   label: string;
   Icon: React.ComponentType<any>;
-  href?: string; // opcional: permite rutas personalizadas
+  href?: string;
 };
 
-const TOOLS: readonly ToolItem[] = [
+const TOOLS: Tool[] = [
   { slug: 'notas', label: 'Mis notas', Icon: Notebook },
   { slug: 'gratitud', label: 'Diario de gratitud', Icon: Heart },
   { slug: 'conductas', label: 'Registro de conductas', Icon: ActivityIcon },
@@ -23,14 +24,14 @@ const TOOLS: readonly ToolItem[] = [
   { slug: 'objetivos', label: 'Objetivos para hoy', Icon: Target },
   { slug: 'libros', label: 'Mis libros', Icon: BookOpen },
 
-  // 🔥 Acceso directo al configurador del Détox Tecnológico
+  // 🔗 Acceso al configurador del Détox Tecnológico
   {
     slug: 'detox-config',
     label: 'Configurar límites (Détox Tecnológico)',
     Icon: Target,
     href: '/programas/detox-tecnologico-30/configurar',
   },
-] as const;
+];
 
 export default function HerramientasDentroDeHabitos() {
   return (
@@ -49,7 +50,7 @@ export default function HerramientasDentroDeHabitos() {
 
         <nav role="list" aria-label="Lista de herramientas">
           {TOOLS.map((t, i) => {
-            const href = t.href ?? `/herramientas/${t.slug}`;
+            const href = t.href || `/herramientas/${t.slug}`;
             const isLast = i === TOOLS.length - 1;
             return (
               <Link
