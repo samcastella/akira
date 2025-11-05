@@ -1,8 +1,10 @@
+// src/components/habits/CreateHabitBar.tsx
 'use client';
 
 import React, { useEffect, useRef } from 'react';
 import { Check, Plus } from 'lucide-react';
 
+/* ========= Tipos ========= */
 type BaseProps = {
   label?: string;
   className?: string;
@@ -20,15 +22,27 @@ type TaskVariant = BaseProps & {
   color?: string;
   onToggle: () => void;
   onInfo?: () => void;
-  showInfoButton?: boolean;
-  /** NUEVO: contenido a la derecha (ej: botón “Subir foto”) */
+  showInfoButton?: boolean;   // ✅ esta línea DEBE estar aquí
   rightSlot?: React.ReactNode;
 };
 
 type Props = CreateVariant | TaskVariant;
 
+/* ========= Utils ========= */
 function cn(...parts: Array<string | undefined | false | null>) {
   return parts.filter(Boolean).join(' ');
+}
+
+function addAlpha(hexOrCss: string, alpha: number) {
+  if (!/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(hexOrCss)) {
+    return 'rgba(17,17,17,0.25)';
+  }
+  const hex = hexOrCss.replace('#', '');
+  const full = hex.length === 3 ? hex.split('').map((c) => c + c).join('') : hex;
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, alpha))})`;
 }
 
 /* ========= confeti ========= */
@@ -58,9 +72,9 @@ async function getShooter() {
 }
 
 async function boomAt(x?: number, y?: number) {
+  if (typeof window === 'undefined') return;
   try {
     const prefersReduced =
-      typeof window !== 'undefined' &&
       window.matchMedia &&
       window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (prefersReduced) return;
@@ -90,26 +104,18 @@ function renderInlineMarkdown(text?: string) {
   let m: RegExpExecArray | null;
   while ((m = re.exec(t)) !== null) {
     if (m.index > i) parts.push(t.slice(i, m.index));
-    parts.push(<strong key={`b-${m.index}`} className="font-semibold">{m[1]}</strong>);
+    parts.push(
+      <strong key={`b-${m.index}`} className="font-semibold">
+        {m[1]}
+      </strong>
+    );
     i = m.index + m[0].length;
   }
   if (i < t.length) parts.push(t.slice(i));
   return parts;
 }
 
-/* ===== Utils ===== */
-function addAlpha(hexOrCss: string, alpha: number) {
-  if (!/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(hexOrCss)) {
-    return 'rgba(17,17,17,0.25)';
-  }
-  const hex = hexOrCss.replace('#', '');
-  const full = hex.length === 3 ? hex.split('').map((c) => c + c).join('') : hex;
-  const r = parseInt(full.slice(0, 2), 16);
-  const g = parseInt(full.slice(2, 4), 16);
-  const b = parseInt(full.slice(4, 6), 16);
-  return `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, alpha))})`;
-}
-
+/* ========= Componente principal ========= */
 export default function CreateHabitBar(props: Props) {
   const {
     label = props.variant === 'task' ? 'Tarea' : 'Crear hábito',
@@ -117,31 +123,36 @@ export default function CreateHabitBar(props: Props) {
     ariaLabel = label,
   } = props;
 
+  /* ==== Variante TAREA ==== */
   if (props.variant === 'task') {
-    const { checked, onToggle, onInfo, color, showInfoButton = false, rightSlot } = props;
-
+    const { checked, onToggle, onInfo, color, showInfoButton, rightSlot } = props;
     const theme = color || '#F5F5F5';
-    const bg = checked ? theme : '#ffffff';
+    const bg = checked ? theme : '#fff';
     const border = checked ? '#00000080' : addAlpha(theme, 0.4);
-    const text = '#111111';
+    const text = '#111';
 
     const lastXY = useRef<{ x?: number; y?: number }>({});
     const prev = useRef<boolean>(checked);
+
     useEffect(() => {
       if (!prev.current && checked) {
-        const globalXY =
-          (typeof window !== 'undefined' && (window as any).__akiraLastXY) || {};
-        const x = lastXY.current.x ?? (globalXY as any).x;
-        const y = lastXY.current.y ?? (globalXY as any).y;
+        const globalXY = (window as any).__akiraLastXY || {};
+        const x = lastXY.current.x ?? globalXY.x;
+        const y = lastXY.current.y ?? globalXY.y;
         void boomAt(x, y);
         requestAnimationFrame(() => void boomAt(x, y));
       }
       prev.current = checked;
     }, [checked]);
 
+    const shouldShowInfo = showInfoButton ?? Boolean(onInfo);
+
     return (
       <div
-        className={cn('flex w-full items-center gap-3 px-4 py-3 transition rounded-full', className)}
+        className={cn(
+          'flex w-full items-center gap-3 px-4 py-3 transition rounded-full',
+          className
+        )}
         style={{ background: bg, color: text, border: `1px solid ${border}` }}
         role="group"
         aria-label={ariaLabel}
@@ -152,37 +163,38 @@ export default function CreateHabitBar(props: Props) {
             lastXY.current = { x: e.clientX, y: e.clientY };
             (window as any).__akiraLastXY = { x: e.clientX, y: e.clientY };
           }}
+          onClick={onToggle}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
               onToggle();
             }
           }}
-          onClick={onToggle}
-          tabIndex={0}
-          className="grid h-9 w-9 place-items-center rounded-full border shrink-0"
+          className={cn(
+            'grid h-9 w-9 place-items-center rounded-full border shrink-0 transition active:scale-95',
+            checked
+              ? 'bg-green-500 border-green-600 text-white'
+              : 'bg-white border-neutral-300 text-neutral-600 hover:bg-neutral-50'
+          )}
           title={checked ? 'Desmarcar' : 'Marcar'}
           aria-label={checked ? `Desmarcar ${label}` : `Marcar ${label}`}
           aria-pressed={checked}
-          style={
-            checked
-              ? { background: '#22c55e', color: 'white', borderColor: '#16a34a' }
-              : { background: 'white', borderColor: '#11111140' }
-          }
         >
-          {checked ? <Check size={16} /> : null}
+          {checked && <Check size={16} />}
         </button>
 
-        {/* Texto (truncable) */}
+        {/* Texto */}
         <div className="min-w-0 flex-1">
-          <div className="truncate text-base font-medium leading-tight">{renderInlineMarkdown(label)}</div>
+          <div className="truncate text-base font-medium leading-tight">
+            {renderInlineMarkdown(label)}
+          </div>
         </div>
 
         {/* Botón info opcional */}
-        {showInfoButton && (
+        {shouldShowInfo && (
           <button
             onClick={onInfo}
-            className="grid h-9 w-9 place-items-center rounded-full border shrink-0"
+            className="grid h-9 w-9 place-items-center rounded-full border shrink-0 transition hover:bg-neutral-50 active:scale-95"
             title="Ver detalles"
             aria-label={`Ver detalles de ${label}`}
             style={{ background: 'white', borderColor: '#11111140' }}
@@ -191,20 +203,20 @@ export default function CreateHabitBar(props: Props) {
           </button>
         )}
 
-        {/* NUEVO: Slot derecho (ej. botón “Subir foto”) */}
-        {rightSlot ? <div className="shrink-0">{rightSlot}</div> : null}
+        {/* Slot derecho */}
+        {rightSlot && <div className="shrink-0">{rightSlot}</div>}
       </div>
     );
   }
 
+  /* ==== Variante CREAR ==== */
   const { onClick } = props as CreateVariant;
   return (
     <button
       onClick={onClick}
       aria-label={ariaLabel}
       className={cn(
-        'group flex w-full items-center gap-3 rounded-2xl',
-        'border border-black/20 bg-white px-4 py-3 text-left transition hover:shadow-sm',
+        'group flex w-full items-center gap-3 rounded-2xl border border-black/20 bg-white px-4 py-3 text-left transition hover:shadow-sm active:scale-[0.99]',
         className
       )}
     >
@@ -214,7 +226,9 @@ export default function CreateHabitBar(props: Props) {
       >
         <Plus size={16} />
       </span>
-      <span className="text-base font-medium">{renderInlineMarkdown(label)}</span>
+      <span className="text-base font-medium">
+        {renderInlineMarkdown(label)}
+      </span>
     </button>
   );
 }

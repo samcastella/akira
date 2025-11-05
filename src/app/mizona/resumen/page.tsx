@@ -9,7 +9,7 @@ import StreakCard from '@/components/mizona/StreakCard';
 import SubHeaderTabs from '@/components/SubHeaderTabs';
 import { useTodayActivity } from '@/lib/activity/useTodayActivity';
 import { useUserProfile } from '@/lib/user';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { loadActive, type LocalStore, type LocalProgram } from '@/lib/programsLocal';
 import { ChevronRight } from 'lucide-react';
 
@@ -43,6 +43,7 @@ const THUMB_MAP: Record<string, string> = {
   lectura: '/images/programs/lectura-hero.jpg',
   'detox-tecnologico': '/images/programs/detox-tecnologico-hero.jpg',
 };
+
 /* ===== Tabs ===== */
 const TABS = [
   { href: '/mizona/resumen', label: 'Resumen', exact: true },
@@ -67,8 +68,10 @@ export default function MiActividadResumen() {
 
   return (
     <div className="pb-6">
-      {/* Submenú (mismo aire que /amigos): dejamos borde y añadimos un margen superior mínimo al contenido */}
-      <SubHeaderTabs tabs={TABS as any} size="compact" ariaLabel="Navegación Mi actividad" />
+      {/* Submenú estilo /amigos */}
+      <div className="sticky top-0 z-20 bg-white border-b">
+        <SubHeaderTabs tabs={TABS as any} size="compact" ariaLabel="Navegación Mi actividad" />
+      </div>
 
       <div className="pt-3 pb-6 space-y-8">
         {/* ===== Rueda ===== */}
@@ -125,7 +128,7 @@ export default function MiActividadResumen() {
           <MiniWeeklyChartReal />
         </section>
 
-        {/* ===== Calendario con “Ver todo” ===== */}
+        {/* ===== Calendario con “Ver todo” + leyenda ===== */}
         <section>
           <div className="mb-2 flex items-baseline justify-between">
             <h3 className="text-lg font-semibold">Calendario</h3>
@@ -133,6 +136,12 @@ export default function MiActividadResumen() {
           </div>
           <div className="[&_.ak-calendar-day]:flex [&_.ak-calendar-day]:items-center [&_.ak-calendar-day]:justify-center">
             <CalendarLite dayStatus={getDayStatus} />
+          </div>
+          <div className="mt-3 flex items-center gap-4 text-xs text-neutral-600">
+            <LegendDot cls="bg-neutral-300" label="Sin tareas / sin actividad" />
+            <LegendDot cls="bg-orange-300" label="Algunas hechas" />
+            <LegendDot cls="bg-green-300" label="Todo hecho" />
+            <LegendDot cls="bg-red-300" label="Día perdido" />
           </div>
         </section>
 
@@ -156,7 +165,7 @@ function ActiveProgramsList() {
     const totalDays: number = json?.days?.length ?? json?.durationDays ?? 0;
     if (!totalDays) return false;
 
-    // Ocultar programas COMPLETADOS (si ya pasamos del último día)
+    // Ocultar COMPLETADOS (si ya pasamos del último día)
     const rawIdx = dayIdxSince(lp.startedAt, new Date());
     if (rawIdx > totalDays) return false;
 
@@ -176,14 +185,11 @@ function ActiveProgramsList() {
         const pct = totalDays ? Math.round((today / totalDays) * 100) : 0;
 
         const rslug = routeSlug(slug);
-        const thumb = THUMB_MAP[rslug] ?? `/images/programs/${rslug}-hero.jpg`;
-
+        const base = `/images/programs/${rslug}-hero`;
         return (
           <Link key={slug} href={`/programas/${rslug}`} className="block rounded-3xl bg-neutral-100 px-4 py-4">
             <div className="flex items-center gap-3">
-              <div className="relative w-14 h-14 rounded-full overflow-hidden ring-1 ring-white/70 bg-white">
-                <Image src={thumb} alt={title} fill className="object-cover" sizes="56px" />
-              </div>
+              <ThumbCircle alt={title} srcJpg={`${base}.jpg`} srcPng={`${base}.png`} />
               <div className="flex-1 min-w-0">
                 <div className="text-xs text-neutral-500">Programa</div>
                 <div className="text-[15px] font-semibold text-neutral-900 truncate">{title}</div>
@@ -201,6 +207,23 @@ function ActiveProgramsList() {
           </Link>
         );
       })}
+    </div>
+  );
+}
+
+/* ===== Imagen con fallback jpg → png ===== */
+function ThumbCircle({ alt, srcJpg, srcPng }: { alt: string; srcJpg: string; srcPng: string }) {
+  const [src, setSrc] = useState(srcJpg);
+  return (
+    <div className="relative w-14 h-14 rounded-full overflow-hidden ring-1 ring-white/70 bg-white">
+      <img
+        src={src}
+        alt={alt}
+        className="object-cover w-full h-full"
+        onError={() => setSrc(srcPng)}
+        loading="lazy"
+        decoding="async"
+      />
     </div>
   );
 }
@@ -224,9 +247,9 @@ function buildWeeklySeries(activeMap: LocalStore) {
 
   // por cada programa activo, sumamos tareas planificadas y hechas
   for (const [slug, prog] of Object.entries(activeMap)) {
-  const lp = prog as LocalProgram;
-  if (!lp?.startedAt) continue;
-  const json = tryGetProgramJson(slug);
+    const lp = prog as LocalProgram;
+    if (!lp?.startedAt) continue;
+    const json = tryGetProgramJson(slug);
     const totalDays: number = json?.days?.length ?? json?.durationDays ?? 0;
     if (!totalDays) continue;
 
@@ -311,16 +334,28 @@ function AchievementsStrip() {
   );
 }
 
+/* ===== Leyenda calendario ===== */
+function LegendDot({ cls, label }: { cls: string; label: string }) {
+  return (
+    <span className="inline-flex items-center gap-2">
+      <span className={`inline-block w-3 h-3 rounded-full ${cls}`} />
+      {label}
+    </span>
+  );
+}
+
 /* ===== Estados por día para calendario (colores) ===== */
 function getDayStatus(date: Date): 'none'|'some'|'all'|'missed' {
   const map = loadActive();
   let planned = 0, done = 0;
-for (const [slug, prog] of Object.entries(map)) {
-  const lp = prog as LocalProgram;
-  if (!lp?.startedAt) continue;
-  const json = tryGetProgramJson(slug);
+
+  for (const [slug, prog] of Object.entries(map)) {
+    const lp = prog as LocalProgram;
+    if (!lp?.startedAt) continue;
+    const json = tryGetProgramJson(slug);
     const totalDays: number = json?.days?.length ?? json?.durationDays ?? 0;
     if (!totalDays) continue;
+
     const dNum = dayIdxSince(lp.startedAt, date);
     if (dNum < 1 || dNum > totalDays) continue;
 
@@ -330,6 +365,7 @@ for (const [slug, prog] of Object.entries(map)) {
     const doneMap = (lp.progress?.[dNum] as Record<string, boolean> | undefined) ?? {};
     done += Object.values(doneMap).filter(Boolean).length;
   }
+
   if (planned === 0) return 'none';
   if (done === 0) {
     const isPast = startOfDay(date).getTime() < startOfDay(new Date()).getTime();

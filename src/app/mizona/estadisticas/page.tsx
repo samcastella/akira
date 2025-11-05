@@ -1,10 +1,25 @@
-// src/app/mizona/estadisticas/page.tsx
 'use client';
 
 import { useMemo, useState } from 'react';
 import CalendarLite from '@/components/mizona/CalendarLite';
 import Image from 'next/image';
 import { useTodayActivity } from '@/lib/activity/useTodayActivity';
+import { loadActive, type LocalStore, type LocalProgram } from '@/lib/programsLocal';
+
+// Helpers del resumen (simplificados aquí)
+function startOfDay(d: Date) { const x = new Date(d); x.setHours(0,0,0,0); return x; }
+function dayIdxSince(startedAt: number, when: Date) {
+  const a = startOfDay(new Date(startedAt)).getTime();
+  const b = startOfDay(when).getTime();
+  return Math.floor((b - a) / 86_400_000) + 1;
+}
+function tryGetProgramJson(slug: string): any | null {
+  try {
+    // @ts-ignore
+    const m = require(`@/data/programs/${slug}.json`);
+    return m?.default ?? m ?? null;
+  } catch { return null; }
+}
 
 /* Pequeño chart SVG (líneas) */
 const Chart = ({ labels, goal, actual }: { labels: string[]; goal: number[]; actual: number[] }) => {
@@ -15,7 +30,6 @@ const Chart = ({ labels, goal, actual }: { labels: string[]; goal: number[]; act
   const niceMax = Math.max(5, Math.ceil(maxY / 5) * 5);
   const ys = (v: number) => padT + (height - padT - padB) * (1 - v / (niceMax || 1));
   const pathFor = (arr: number[]) => arr.map((v, i) => `${i === 0 ? 'M' : 'L'} ${xs(i)} ${ys(v)}`).join(' ');
-
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto">
       <rect x="0" y="0" width={width} height={height} fill="white" />
@@ -33,10 +47,38 @@ const Chart = ({ labels, goal, actual }: { labels: string[]; goal: number[]; act
   );
 };
 
+// === Mismo dayStatus que en Resumen ===
+function getDayStatus(date: Date): 'none'|'some'|'all'|'missed' {
+  const map = loadActive();
+  let planned = 0, done = 0;
+  for (const [slug, prog] of Object.entries(map)) {
+    const lp = prog as LocalProgram;
+    if (!lp?.startedAt) continue;
+    const json = tryGetProgramJson(slug);
+    const totalDays: number = json?.days?.length ?? json?.durationDays ?? 0;
+    if (!totalDays) continue;
+    const dNum = dayIdxSince(lp.startedAt, date);
+    if (dNum < 1 || dNum > totalDays) continue;
+
+    const dayDef = json?.days?.find((x: any) => x.day === dNum) ?? json?.days?.[dNum - 1];
+    planned += Math.max(0, dayDef?.tasks?.length ?? 0);
+
+    const doneMap = (lp.progress?.[dNum] as Record<string, boolean> | undefined) ?? {};
+    done += Object.values(doneMap).filter(Boolean).length;
+  }
+  if (planned === 0) return 'none';
+  if (done === 0) {
+    const isPast = startOfDay(date).getTime() < startOfDay(new Date()).getTime();
+    return isPast ? 'missed' : 'none';
+  }
+  if (done < planned) return 'some';
+  return 'all';
+}
+
 export default function MiActividadStats() {
   const { historicalPoints, programsCompleted, weeklySeries } = useTodayActivity();
 
-  const [weekOffset, setWeekOffset] = useState(0); // 0 = última, 1 = penúltima, etc.
+  const [weekOffset, setWeekOffset] = useState(0);
   const current = useMemo(
     () =>
       weeklySeries[weekOffset] ??
@@ -56,14 +98,13 @@ export default function MiActividadStats() {
         <div className="text-[56px] leading-none font-extrabold tabular-nums">{historicalPoints}</div>
         <div className="text-sm text-neutral-600 mt-1">Puntuación histórica</div>
         <div className="mt-4 text-lg font-semibold">{programsCompleted} programas completados</div>
-        {/* Aire extra para evitar solapes en algunos navegadores móviles */}
-        <div className="mt-2" />
+        <div className="mt-2" /> {/* evita solapes */}
       </section>
 
-      {/* Calendario general */}
+      {/* Calendario general con colores */}
       <section>
         <h3 className="text-lg font-semibold mb-2">Calendario general</h3>
-        <CalendarLite />
+        <CalendarLite dayStatus={getDayStatus} />
       </section>
 
       {/* Estadísticas de check (selector de semanas) */}
