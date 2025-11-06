@@ -4,10 +4,9 @@
 import Link from 'next/link';
 import TodayWheel from '@/components/mizona/TodayWheel';
 import CalendarLite from '@/components/mizona/CalendarLite';
-// import StreakCard from '@/components/mizona/StreakCard'; // reemplazado por StreakCardFlash
 import { useTodayActivity } from '@/lib/activity/useTodayActivity';
 import { useUserProfile } from '@/lib/user';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, startTransition } from 'react';
 import { loadActive, type LocalStore, type LocalProgram } from '@/lib/programsLocal';
 import { ChevronRight } from 'lucide-react';
 
@@ -15,9 +14,9 @@ import { ChevronRight } from 'lucide-react';
 import {
   fetchGlobalProgramPoints,
   fetchMyMonthlyRank,
-  fetchUserStreakDays,            // ⬅️ NUEVO: racha real desde Supabase
-  readPointsCache, writePointsCache, // ⬅️ NUEVO: caché local puntos
-  readRankCache, writeRankCache,     // ⬅️ NUEVO: caché local ranking
+  fetchUserStreakDays,
+  readPointsCache, writePointsCache,
+  readRankCache, writeRankCache,
   type GlobalPointsTotal,
 } from '@/lib/programService';
 
@@ -73,7 +72,7 @@ export default function MiActividadResumen() {
     setAvatarSrc((f && String(f).trim()) || (a && String(a).trim()) || '/images/avatars/default.png');
   }, [user]);
 
-  // ====== PUNTOS GLOBALES + RANKING (RPC) con fallback inmediato + caché ======
+  // ====== PUNTOS GLOBALES + RANKING (cache-first) ======
   const cachedPts = typeof window !== 'undefined' ? readPointsCache() : null;
   const cachedRank = typeof window !== 'undefined' ? readRankCache() : null;
 
@@ -87,13 +86,17 @@ export default function MiActividadResumen() {
 
   useEffect(() => {
     let mounted = true;
-    (async () => {
-      try {
-        // 1) Racha real (rápida)
-        const s = await fetchUserStreakDays();
-        if (mounted) setStreak(s);
 
-        // 2) Puntos y ranking (con caché + refresco)
+    // 1) Racha real (rápida) con baja prioridad de render
+    startTransition(() => {
+      fetchUserStreakDays().then((s) => {
+        if (mounted) setStreak(s || 0);
+      }).catch(() => {});
+    });
+
+    // 2) Puntos y ranking (cache-first + refresh en background)
+    const run = async () => {
+      try {
         const to = startOfDay(new Date());
         const from = new Date(to);
         from.setDate(from.getDate() - 365);
@@ -107,7 +110,6 @@ export default function MiActividadResumen() {
           fetchGlobalProgramPoints(fromISO, toISO),
           fetchMyMonthlyRank(),
         ]);
-
         if (!mounted) return;
 
         if (gTotals) {
@@ -120,11 +122,29 @@ export default function MiActividadResumen() {
         }
       } catch (e) {
         // mantenemos valores cacheados/fallback sin bloquear UI
-        console.warn('[MiActividadResumen load]', e);
+        if (process.env.NODE_ENV !== 'production') {
+          console.warn('[MiActividadResumen] refresh error', e);
+        }
       }
-    })();
+    };
+
+    // Si la caché es fresca (< 5 min), difiere el refresh; si no, refresca ya.
+    const now = Date.now();
+    const freshEnough =
+      (cachedPts && typeof (cachedPts as any)._ts === 'number' && now - (cachedPts as any)._ts < 5 * 60_000) ||
+      (typeof cachedRank === 'number' && cachedRank !== null);
+
+    if (freshEnough) {
+      // refresco en background sin bloquear primer render
+      setTimeout(run, 0);
+    } else {
+      // refresco inmediato (ya se muestra caché/placeholder)
+      run();
+    }
+
     return () => { mounted = false; };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // cache-first only on mount
 
   const totalPoints = totals?.total_points ?? historicalPoints ?? 0;
   const rankLabelBig = typeof rank === 'number' ? `${rank}º` : '—';
@@ -142,16 +162,16 @@ export default function MiActividadResumen() {
         />
       </section>
 
-      {/* ===== Racha (nueva, más visual con confeti + contador animado) ===== */}
+      {/* ===== Racha (confeti + contador animado) ===== */}
       <StreakCardFlash value={streak} />
 
-      {/* ===== Perfil: avatar + (puntuación debajo del nombre) + ranking grande a la derecha ===== */}
+      {/* ===== Perfil: avatar + puntuación + ranking ===== */}
       <section className="rounded-2xl border border-neutral-200 p-4 flex items-center gap-4 bg-white">
         <div className="relative w-16 h-16 rounded-full overflow-hidden bg-neutral-100 ring-1 ring-white/70">
           <img
             src={avatarSrc}
             alt="Tu perfil"
-            className="object-cover w-full h-full scale-[2] origin-center"  /* ocupa toda la circunferencia */
+            className="object-cover w-full h-full scale-[2] origin-center"
             onError={() => setAvatarSrc('/images/avatars/default.png')}
             loading="lazy"
             decoding="async"
@@ -180,7 +200,7 @@ export default function MiActividadResumen() {
       <section>
         <div className="mb-2 flex items-baseline justify-between">
           <h3 className="text-lg font-semibold">Estadísticas</h3>
-        <Link href="/mizona/estadisticas" className="text-sm font-medium text-neutral-700 hover:underline">Ver todo</Link>
+          <Link href="/mizona/estadisticas" className="text-sm font-medium text-neutral-700 hover:underline">Ver todo</Link>
         </div>
         <p className="text-sm text-neutral-600 mb-3">Descubre tus estadísticas de esta semana</p>
         <MiniWeeklyChartReal />
@@ -335,7 +355,7 @@ function ActiveProgramsList() {
   );
 }
 
-/* ===== Imagen con fallback jpg → png (ocupa círculo completo, escala mayor) ===== */
+/* ===== Imagen con fallback jpg → png (ocupa círculo completo) ===== */
 function ThumbCircle({ alt, srcJpg, srcPng }: { alt: string; srcJpg: string; srcPng: string }) {
   const [src, setSrc] = useState(srcJpg);
   return (
@@ -343,7 +363,7 @@ function ThumbCircle({ alt, srcJpg, srcPng }: { alt: string; srcJpg: string; src
       <img
         src={src}
         alt={alt}
-        className="object-cover w-full h-full scale-[2] origin-center"  /* llena el círculo */
+        className="object-cover w-full h-full scale-[2] origin-center"
         onError={() => setSrc(srcPng)}
         loading="lazy"
         decoding="async"
@@ -454,7 +474,8 @@ function getDayStatus(date: Date): 'none'|'some'|'all'|'missed' {
     if (!totalDays) continue;
 
     const dNum = dayIdxSince(lp.startedAt, date);
-    if (dNum < 1 || dNum > totalDays) return 'none';
+    // ⬇️ No cortar a 'none' si un programa no está en rango: simplemente ignorar
+    if (dNum < 1 || dNum > totalDays) continue;
 
     const dayDef = json?.days?.find((x: any) => x.day === dNum) ?? json?.days?.[dNum - 1];
     planned += Math.max(0, dayDef?.tasks?.length ?? 0);
@@ -482,11 +503,12 @@ function AchievementsStrip() {
     <div className="grid grid-cols-3 gap-4">
       {items.map((b) => (
         <div key={b.key} className="flex flex-col items-center">
-          <div className="relative w-20 h-20 rounded-xl overflow-hidden border border-neutral-200 bg-neutral-50">
+          <div className="relative w-20 h-20 rounded-xl overflow-hidden border border-neutral-200 bg-white p-1">
             <img
               src={b.src}
               alt={b.title}
-              className="object-cover w-full h-full scale-[2] origin-center" /* llena el recuadro */
+              /* ⬇️ Insignias sin zoom, respetando tamaño original */
+              className="object-contain w-full h-full"
               loading="lazy"
               decoding="async"
             />
