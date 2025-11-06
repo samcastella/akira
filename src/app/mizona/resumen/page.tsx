@@ -15,6 +15,9 @@ import { ChevronRight } from 'lucide-react';
 import {
   fetchGlobalProgramPoints,
   fetchMyMonthlyRank,
+  fetchUserStreakDays,            // ⬅️ NUEVO: racha real desde Supabase
+  readPointsCache, writePointsCache, // ⬅️ NUEVO: caché local puntos
+  readRankCache, writeRankCache,     // ⬅️ NUEVO: caché local ranking
   type GlobalPointsTotal,
 } from '@/lib/programService';
 
@@ -70,15 +73,27 @@ export default function MiActividadResumen() {
     setAvatarSrc((f && String(f).trim()) || (a && String(a).trim()) || '/images/avatars/default.png');
   }, [user]);
 
-  // ====== PUNTOS GLOBALES + RANKING (RPC) con fallback inmediato ======
-  // Inicializa puntos con historicalPoints para pintar en <1ms y luego refrescar con RPC
-  const [totals, setTotals] = useState<GlobalPointsTotal | null>({ total_points: historicalPoints ?? 0 });
-  const [rank, setRank] = useState<number | null>(null);
+  // ====== PUNTOS GLOBALES + RANKING (RPC) con fallback inmediato + caché ======
+  const cachedPts = typeof window !== 'undefined' ? readPointsCache() : null;
+  const cachedRank = typeof window !== 'undefined' ? readRankCache() : null;
+
+  const [totals, setTotals] = useState<GlobalPointsTotal | null>(
+    cachedPts ?? { total_points: historicalPoints ?? 0 }
+  );
+  const [rank, setRank] = useState<number | null>(cachedRank ?? null);
+
+  // RACHA (real desde Supabase)
+  const [streak, setStreak] = useState<number>(0);
 
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
+        // 1) Racha real (rápida)
+        const s = await fetchUserStreakDays();
+        if (mounted) setStreak(s);
+
+        // 2) Puntos y ranking (con caché + refresco)
         const to = startOfDay(new Date());
         const from = new Date(to);
         from.setDate(from.getDate() - 365);
@@ -94,17 +109,22 @@ export default function MiActividadResumen() {
         ]);
 
         if (!mounted) return;
-        if (gTotals) setTotals(gTotals);
-        setRank(myRank?.rank_month ?? null);
-      } catch {
-        if (mounted) {
-          // mantenemos el fallback local ya pintado
-          setRank(null);
+
+        if (gTotals) {
+          setTotals(gTotals);
+          writePointsCache(gTotals);
         }
+        if (typeof myRank?.rank_month === 'number') {
+          setRank(myRank.rank_month);
+          writeRankCache(myRank.rank_month);
+        }
+      } catch (e) {
+        // mantenemos valores cacheados/fallback sin bloquear UI
+        console.warn('[MiActividadResumen load]', e);
       }
     })();
     return () => { mounted = false; };
-  }, []); // carga una vez
+  }, []);
 
   const totalPoints = totals?.total_points ?? historicalPoints ?? 0;
   const rankLabelBig = typeof rank === 'number' ? `${rank}º` : '—';
@@ -123,7 +143,7 @@ export default function MiActividadResumen() {
       </section>
 
       {/* ===== Racha (nueva, más visual con confeti + contador animado) ===== */}
-      <StreakCardFlash value={(user as any)?.streak_days ?? 0} />
+      <StreakCardFlash value={streak} />
 
       {/* ===== Perfil: avatar + (puntuación debajo del nombre) + ranking grande a la derecha ===== */}
       <section className="rounded-2xl border border-neutral-200 p-4 flex items-center gap-4 bg-white">
@@ -131,11 +151,10 @@ export default function MiActividadResumen() {
           <img
             src={avatarSrc}
             alt="Tu perfil"
-            className="object-cover w-full h-full scale-[1.6]" /* ocupa toda la circunferencia x~1.6 */
+            className="object-cover w-full h-full scale-[2] origin-center"  /* ocupa toda la circunferencia */
             onError={() => setAvatarSrc('/images/avatars/default.png')}
             loading="lazy"
             decoding="async"
-            srcSet={`${avatarSrc} 1x, ${avatarSrc} 2x`}
           />
         </div>
         <div className="flex-1 min-w-0">
@@ -161,7 +180,7 @@ export default function MiActividadResumen() {
       <section>
         <div className="mb-2 flex items-baseline justify-between">
           <h3 className="text-lg font-semibold">Estadísticas</h3>
-          <Link href="/mizona/estadisticas" className="text-sm font-medium text-neutral-700 hover:underline">Ver todo</Link>
+        <Link href="/mizona/estadisticas" className="text-sm font-medium text-neutral-700 hover:underline">Ver todo</Link>
         </div>
         <p className="text-sm text-neutral-600 mb-3">Descubre tus estadísticas de esta semana</p>
         <MiniWeeklyChartReal />
@@ -204,7 +223,7 @@ export default function MiActividadResumen() {
   );
 }
 
-/* ===== Racha con confeti + contador animado ===== */
+/* ===== Racha con confeti + contador animado + tagline ===== */
 function StreakCardFlash({ value }: { value: number }) {
   const [n, setN] = useState(0);
   const rafRef = useRef<number | null>(null);
@@ -223,6 +242,8 @@ function StreakCardFlash({ value }: { value: number }) {
     return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
   }, [value]);
 
+  const tagline = getStreakTagline(n);
+
   // fondo “confeti” sutil sobre amarillo suave
   const confettiBg =
     "radial-gradient(circle at 10% 20%, rgba(255,99,132,0.15) 0 6px, transparent 7px)," +
@@ -239,10 +260,18 @@ function StreakCardFlash({ value }: { value: number }) {
           <div className="text-sm text-neutral-600">Racha</div>
           <div className="text-3xl font-extrabold leading-none tabular-nums">{n} días</div>
         </div>
-        <div className="text-xs text-neutral-500">¡Sigue así! 🔥</div>
+        <div className="text-xs text-neutral-700 font-medium">{tagline} 🔥</div>
       </div>
     </div>
   );
+}
+
+function getStreakTagline(n: number) {
+  if (n <= 0) return 'Empieza hoy';
+  if (n < 3) return 'Calentando motores';
+  if (n < 7) return '¡En racha!';
+  if (n < 21) return '¡Imparable!';
+  return 'Leyenda viva';
 }
 
 /* ===== Programas activos — cards ===== */
@@ -314,11 +343,10 @@ function ThumbCircle({ alt, srcJpg, srcPng }: { alt: string; srcJpg: string; src
       <img
         src={src}
         alt={alt}
-        className="object-cover w-full h-full scale-[1.6]" /* x~1.6 para llenar el círculo */
+        className="object-cover w-full h-full scale-[2] origin-center"  /* llena el círculo */
         onError={() => setSrc(srcPng)}
         loading="lazy"
         decoding="async"
-        srcSet={`${src} 1x, ${src} 2x`}
       />
     </div>
   );
@@ -458,10 +486,9 @@ function AchievementsStrip() {
             <img
               src={b.src}
               alt={b.title}
-              className="object-cover w-full h-full scale-[1.6]" /* más grande para ocupar */
+              className="object-cover w-full h-full scale-[2] origin-center" /* llena el recuadro */
               loading="lazy"
               decoding="async"
-              srcSet={`${b.src} 1x, ${b.src} 2x`}
             />
           </div>
           <div className="mt-2 text-xs text-center text-neutral-800">{b.title}</div>

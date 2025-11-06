@@ -470,3 +470,80 @@ export async function fetchMyMonthlyRank(): Promise<MonthlyRank | null> {
   }
   return Array.isArray(data) ? (data[0] ?? null) : (data ?? null);
 }
+
+/* ========= NUEVO: Racha REAL desde Supabase + caché local para puntos/ranking ========= */
+
+/** Racha real de días consecutivos con actividad (RPC: get_user_streak_days) */
+export async function fetchUserStreakDays(): Promise<number> {
+  try {
+    const { data: auth } = await supabase.auth.getUser();
+    const uid = auth?.user?.id;
+    if (!uid) return 0;
+
+    const { data, error } = await supabase.rpc("get_user_streak_days", {
+      p_user_id: uid,
+      p_tz: "Europe/Madrid",
+    });
+
+    if (error) {
+      console.warn("[fetchUserStreakDays]", error);
+      return 0;
+    }
+    if (typeof data === "number") return data;
+    if (Array.isArray(data)) return Number(data[0] ?? 0) || 0;
+    return Number((data as any)?.streak ?? 0) || 0;
+  } catch (e) {
+    console.warn("[fetchUserStreakDays] unexpected", e);
+    return 0;
+  }
+}
+
+// -------- Caché local con TTL (puntos/ranking) --------
+const CACHE_TTL_MS = 1000 * 60 * 5; // 5 minutos
+
+type CacheEntry<T> = { v: T; ts: number };
+
+function isClient() {
+  return typeof window !== "undefined" && typeof localStorage !== "undefined";
+}
+
+function readCache<T>(key: string): T | null {
+  if (!isClient()) return null;
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as CacheEntry<T>;
+    if (!parsed || typeof parsed.ts !== "number") return null;
+    if (Date.now() - parsed.ts > CACHE_TTL_MS) return null;
+    return parsed.v ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCache<T>(key: string, v: T) {
+  if (!isClient()) return;
+  try {
+    localStorage.setItem(key, JSON.stringify({ v, ts: Date.now() } as CacheEntry<T>));
+  } catch {}
+}
+
+/** Lee puntos globales cacheados (si existen y no expirados) */
+export function readPointsCache(): { total_points: number } | null {
+  return readCache<{ total_points: number }>("akira_points_cache_v1");
+}
+
+/** Guarda puntos globales en caché */
+export function writePointsCache(v: { total_points: number }) {
+  writeCache("akira_points_cache_v1", v);
+}
+
+/** Lee ranking mensual cacheado (si existe y no expirado) */
+export function readRankCache(): number | null {
+  return readCache<number>("akira_rank_cache_v1");
+}
+
+/** Guarda ranking mensual en caché */
+export function writeRankCache(v: number) {
+  writeCache("akira_rank_cache_v1", v);
+}
