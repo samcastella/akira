@@ -1,3 +1,4 @@
+// src/lib/activity/useTodayActivity.ts
 'use client';
 
 import { useMemo, useState } from 'react';
@@ -20,8 +21,8 @@ export type HabitToday = { id: string; name: string; done: boolean; color?: stri
 
 export function useTodayActivity() {
   const uid = useAuthUserId();
-  const today = useISODate(new Date());
-  const [version, setVersion] = useState(0); // ← fuerza re-render tras toggle
+  const todayISO = useISODate(new Date());
+  const [version, setVersion] = useState(0); // fuerza re-render tras toggle
 
   /* ===== Programas activos (local store) ===== */
   const programs = useMemo<ProgramToday[]>(() => {
@@ -29,7 +30,12 @@ export function useTodayActivity() {
     const result: ProgramToday[] = [];
 
     Object.entries(store).forEach(([slug, p]) => {
-      const lp = p as any;
+      const lp = p as LocalProgram & {
+        progress?: Record<number, Record<string, boolean>>;
+        startedAt?: number;
+        completedAt?: number | null;
+      };
+
       const started = !!lp?.startedAt;
       const completed = !!lp?.completedAt;
       if (!started || completed) return; // terminado → fuera
@@ -38,8 +44,8 @@ export function useTodayActivity() {
       const totalDays = json?.days?.length ?? 0;
       if (!totalDays) return;
 
-      const day = clampDay(lp.startedAt, new Date(`${today}T00:00:00`), totalDays);
-      const dayDef = json!.days.find((d: any) => d.day === day) ?? json!.days[day - 1];
+      const day = clampDay(lp.startedAt!, new Date(`${todayISO}T00:00:00`), totalDays);
+      const dayDef = getDayDef(json, day);
       const progress = (lp.progress?.[day] as Record<string, boolean>) || {};
 
       const tasksRaw = (dayDef?.tasks ?? []) as Array<{ id?: string; label: string }>;
@@ -48,9 +54,9 @@ export function useTodayActivity() {
         return { id, label: t.label, done: !!progress[id] };
       });
 
-      // ⛳️ si es el ÚLTIMO día y está TODO HECHO, no lo mostramos en Checks
+      // Si es el último día y TODO está hecho, no mostrar en Checks
       const planned = tasks.length;
-      const done = tasks.filter(t => t.done).length;
+      const done = tasks.filter((t) => t.done).length;
       const lastDayAndComplete = planned > 0 && done >= planned && day >= totalDays;
       if (lastDayAndComplete) return;
 
@@ -64,7 +70,7 @@ export function useTodayActivity() {
     });
 
     return result;
-  }, [today, version]);
+  }, [todayISO, version]);
 
   /* ===== Retos con amigos (placeholder) ===== */
   const challengesToday = useMemo<ChallengeToday[]>(() => {
@@ -88,13 +94,13 @@ export function useTodayActivity() {
     habitsToday.filter((h) => !!h.done).length;
 
   /* ===== Históricos / series ===== */
-  const historicalPoints = 0;
-  const programsCompleted = 0;
-  const weeklySeries = useMemo(() => buildWeeklySeriesReal(), [today, version]);
+  const historicalPoints = 0; // fallback hasta conectar RPC/BD
+  const programsCompleted = 0; // fallback hasta conectar RPC/BD
+  const weeklySeries = useMemo(() => buildWeeklySeriesReal(), [todayISO, version]);
 
   return {
     uid,
-    today,
+    today: todayISO,
     programsToday: programs,
     challengesToday,
     habitsToday,
@@ -104,21 +110,41 @@ export function useTodayActivity() {
     programsCompleted,
     weeklySeries,
     toggleProgramTask: (slug: string, day: number, taskId: string) => {
-      // ✅ marca/desmarca en local y fuerza re-render
+      // Marca/desmarca en local
       const store = loadActive();
-      const lp = store[slug] as LocalProgram & { progress?: Record<number, Record<string, boolean>> };
+      const lp = store[slug] as LocalProgram & {
+        progress?: Record<number, Record<string, boolean>>;
+        startedAt?: number;
+        completedAt?: number | null;
+      };
       if (!lp) return;
+
       lp.progress = lp.progress || {};
       lp.progress[day] = lp.progress[day] || {};
       lp.progress[day][taskId] = !lp.progress[day][taskId];
+
+      // Si al marcar desencadenamos "todo listo" en el último día → sellar completedAt
+      const json = tryGetProgramJson(slug);
+      const totalDays = json?.days?.length ?? 0;
+      if (totalDays > 0) {
+        const isLastDay = day >= totalDays;
+        if (isLastDay) {
+          const dayDef = getDayDef(json, day);
+          const ids = ((dayDef?.tasks ?? []) as Array<{ id?: string }>).map((t, i) => t.id ?? `task_${i}`);
+          const allDone = ids.length > 0 && ids.every((id) => lp.progress![day]?.[id]);
+          if (allDone) {
+            lp.completedAt = Date.now();
+          }
+        }
+      }
+
       saveActive(store);
-      setVersion(v => v + 1);
-      // (opcional) window.dispatchEvent(new StorageEvent('storage', { key: 'akira_programs_active_v1' }));
+      setVersion((v) => v + 1);
     },
   };
 }
 
-/* ===== helpers ===== */
+/* ===== Helpers ===== */
 function useISODate(d: Date) {
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
@@ -163,6 +189,9 @@ function tryGetProgramJson(slug: string): any | null {
     return null;
   }
 }
+function getDayDef(json: any, day: number) {
+  return json?.days?.find((x: any) => x.day === day) ?? json?.days?.[day - 1];
+}
 
 /* ===== weeklySeries real (4 semanas, Lun→Dom) ===== */
 function buildWeeklySeriesReal() {
@@ -182,7 +211,11 @@ function buildWeeklySeriesReal() {
       const d = addDays(start, i);
 
       for (const [slug, prog] of Object.entries(store)) {
-        const lp = prog as LocalProgram & { progress?: Record<number, Record<string, boolean>>; startedAt?: number };
+        const lp = prog as LocalProgram & {
+          progress?: Record<number, Record<string, boolean>>;
+          startedAt?: number;
+          completedAt?: number | null;
+        };
         if (!lp?.startedAt) continue;
 
         const json = tryGetProgramJson(slug);
@@ -192,7 +225,7 @@ function buildWeeklySeriesReal() {
         const dayNum = dayIdxSince(lp.startedAt!, d);
         if (dayNum < 1 || dayNum > totalDays) continue;
 
-        const dayDef = json?.days?.find((x: any) => x.day === dayNum) ?? json?.days?.[dayNum - 1];
+        const dayDef = getDayDef(json, dayNum);
         const planned = Math.max(0, dayDef?.tasks?.length ?? 0);
         goal[i] += planned;
 

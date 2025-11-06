@@ -6,7 +6,6 @@ import Link from 'next/link';
 import TodayWheel from '@/components/mizona/TodayWheel';
 import CalendarLite from '@/components/mizona/CalendarLite';
 import StreakCard from '@/components/mizona/StreakCard';
-import SubHeaderTabs from '@/components/SubHeaderTabs';
 import { useTodayActivity } from '@/lib/activity/useTodayActivity';
 import { useUserProfile } from '@/lib/user';
 import { useEffect, useMemo, useState } from 'react';
@@ -49,22 +48,19 @@ const THUMB_MAP: Record<string, string> = {
   'detox-tecnologico': '/images/programs/detox-tecnologico-hero.jpg',
 };
 
-/* ===== Tabs ===== */
-const TABS = [
-  { href: '/mizona/resumen', label: 'Resumen', exact: true },
-  { href: '/mizona/checks', label: 'Checks del día' },
-  { href: '/mizona/estadisticas', label: 'Estadísticas' },
-] as const;
-
 export default function MiActividadResumen() {
   const { totalGoal, totalDone, historicalPoints } = useTodayActivity();
   const pct = totalGoal ? Math.round((totalDone / totalGoal) * 100) : 0;
 
   const user = useUserProfile();
-  const name =
+  const displayName =
     (user?.nombre && user.nombre.trim()) ||
     (user?.username && user.username.trim()) ||
     'Tú';
+  const avatarUrl =
+    (user as any)?.foto ||
+    (user as any)?.avatar_url ||
+    '/images/avatars/default.png';
 
   // ====== puntos (RPC con fallback) ======
   const [totals, setTotals] = useState<ProgramPointsTotals | null>(null);
@@ -73,7 +69,8 @@ export default function MiActividadResumen() {
     (async () => {
       try {
         const to = startOfDay(new Date());
-        const from = new Date(to); from.setDate(from.getDate() - 365);
+        const from = new Date(to);
+        from.setDate(from.getDate() - 365);
         const y = to.getFullYear(), m = String(to.getMonth() + 1).padStart(2,'0'), d = String(to.getDate()).padStart(2,'0');
         const y2 = from.getFullYear(), m2 = String(from.getMonth() + 1).padStart(2,'0'), d2 = String(from.getDate()).padStart(2,'0');
         const t = await fetchProgramPoints(`${y2}-${m2}-${d2}`, `${y}-${m}-${d}`);
@@ -90,92 +87,81 @@ export default function MiActividadResumen() {
   const rankLabel = typeof rankMonthly === 'number' ? `#${rankMonthly}` : 'No disponible';
 
   return (
-    <div className="pb-6">
-      {/* Submenú */}
-      <div className="sticky top-0 z-20 bg-white border-b">
-        <SubHeaderTabs tabs={TABS as any} size="compact" ariaLabel="Navegación Mi actividad" />
-      </div>
+    <div className="pt-3 pb-6 space-y-8">
+      {/* ===== Rueda ===== */}
+      <section className="flex justify-center">
+        <TodayWheel
+          value={pct}
+          title="ACTIVIDADES PARA HOY"
+          totalDone={totalDone}
+          totalGoal={totalGoal}
+          size={260}
+        />
+      </section>
 
-      <div className="px-4 pt-3 pb-6 space-y-8">
-        {/* ===== Rueda ===== */}
-        <section>
-          <div className="w-full flex items-center justify-center">
-            <TodayWheel
-              value={pct}
-              title="ACTIVIDADES PARA HOY"
-              totalDone={totalDone}
-              totalGoal={totalGoal}
-              size={260}
-            />
-          </div>
-        </section>
+      {/* ===== Racha ===== */}
+      <StreakCard />
 
-        {/* ===== Racha ===== */}
-        <StreakCard />
+      {/* ===== Perfil: avatar + puntos + ranking ===== */}
+      <section className="rounded-2xl border border-neutral-200 p-4 flex items-center gap-4 bg-white">
+        <div className="relative w-16 h-16 rounded-full overflow-hidden bg-neutral-100">
+          <Image
+            src={avatarUrl}
+            alt="Tu perfil"
+            fill
+            className="object-cover"
+            sizes="64px"
+            priority
+          />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-[15px] font-semibold text-neutral-900 truncate">{displayName}</div>
+          <div className="mt-1 text-sm text-neutral-600">
+            Ranking mensual: <b>{rankLabel}</b>
+          </div>
+        </div>
+        <div className="text-2xl font-extrabold tabular-nums">{totalPoints}</div>
+      </section>
 
-        {/* ===== Perfil: avatar + puntos + ranking ===== */}
-        <section className="rounded-2xl border border-neutral-200 p-4 flex items-center gap-4 bg-white">
-          <div className="relative w-16 h-16 rounded-full overflow-hidden bg-neutral-100">
-            <Image
-              src={user?.foto || (user as any)?.avatar_url || '/images/avatars/default.png'}
-              alt="Tu perfil"
-              fill
-              className="object-cover"
-              sizes="64px"
-              priority
-            />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-[15px] font-semibold text-neutral-900 truncate">{name}</div>
-            <div className="mt-1 text-sm text-neutral-600">
-              Ranking mensual: <b>{rankLabel}</b>
-            </div>
-          </div>
-          <div className="text-2xl font-extrabold tabular-nums">{totalPoints}</div>
-        </section>
+      {/* ===== Programas activos ===== */}
+      <section>
+        <div className="mb-1 flex items-baseline justify-between">
+          <h3 className="text-lg font-semibold">Programas activos</h3>
+          <Link href="/programas" className="text-sm font-medium text-neutral-700 hover:underline">Ver todos</Link>
+        </div>
+        <p className="text-sm text-neutral-600 mb-3">Sigue con tus programas activos.</p>
+        <ActiveProgramsList />
+      </section>
 
-        {/* ===== Programas activos ===== */}
-        <section>
-          <div className="mb-1 flex items-baseline justify-between">
-            <h3 className="text-lg font-semibold">Programas activos</h3>
-            <Link href="/programas" className="text-sm font-medium text-neutral-700 hover:underline">Ver todos</Link>
-          </div>
-          <p className="text-sm text-neutral-600 mb-3">Sigue con tus programas activos.</p>
-          <ActiveProgramsList />
-        </section>
+      {/* ===== Estadísticas ===== */}
+      <section>
+        <div className="mb-2 flex items-baseline justify-between">
+          <h3 className="text-lg font-semibold">Estadísticas</h3>
+          <Link href="/mizona/estadisticas" className="text-sm font-medium text-neutral-700 hover:underline">Ver todo</Link>
+        </div>
+        <p className="text-sm text-neutral-600 mb-3">Descubre tus estadísticas de esta semana</p>
+        <MiniWeeklyChartReal />
+      </section>
 
-        {/* ===== Estadísticas (minigráfico real) ===== */}
-        <section>
-          <div className="mb-2 flex items-baseline justify-between">
-            <h3 className="text-lg font-semibold">Estadísticas</h3>
-            <Link href="/mizona/estadisticas" className="text-sm font-medium text-neutral-700 hover:underline">Ver todo</Link>
-          </div>
-          <p className="text-sm text-neutral-600 mb-3">Descubre tus estadísticas de esta semana</p>
-          <MiniWeeklyChartReal />
-        </section>
+      {/* ===== Calendario (círculos perfectos) + leyenda ===== */}
+      <section>
+        <h3 className="text-lg font-semibold mb-2">Calendario</h3>
+        <div className="[&_.ak-calendar-day]:flex [&_.ak-calendar-day]:items-center [&_.ak-calendar-day]:justify-center [&_.ak-calendar-day]:aspect-square [&_.ak-calendar-day]:rounded-full">
+          <CalendarLite dayStatus={getDayStatus} />
+        </div>
+        <div className="mt-3 flex items-center gap-4 text-xs text-neutral-600">
+          <LegendDot cls="bg-neutral-300" label="Sin tareas / sin actividad" />
+          <LegendDot cls="bg-orange-300" label="Algunas hechas" />
+          <LegendDot cls="bg-green-300" label="Todo hecho" />
+          <LegendDot cls="bg-red-300" label="Día sin hacer ningún reto" />
+        </div>
+      </section>
 
-        {/* ===== Calendario con leyenda ===== */}
-        <section>
-          <div className="mb-2 flex items-baseline justify-between">
-            <h3 className="text-lg font-semibold">Calendario</h3>
-          </div>
-          <div className="[&_.ak-calendar-day]:flex [&_.ak-calendar-day]:items-center [&_.ak-calendar-day]:justify-center">
-            <CalendarLite dayStatus={getDayStatus} />
-          </div>
-          <div className="mt-3 flex items-center gap-4 text-xs text-neutral-600">
-            <LegendDot cls="bg-neutral-300" label="Sin tareas / sin actividad" />
-            <LegendDot cls="bg-orange-300" label="Algunas hechas" />
-            <LegendDot cls="bg-green-300" label="Todo hecho" />
-            <LegendDot cls="bg-red-300" label="Día sin hacer ningún reto" />
-          </div>
-        </section>
-
-        {/* ===== Logros ===== */}
-        <section>
-          <h3 className="text-lg font-semibold mb-3">Logros</h3>
-          <AchievementsStrip />
-        </section>
-      </div>
+      {/* ===== Logros ===== */}
+      <section>
+        <h3 className="text-lg font-semibold mb-3">Logros</h3>
+        <AchievementsStrip />
+      </section>
     </div>
   );
 }
@@ -210,7 +196,7 @@ function ActiveProgramsList() {
 
         const rslug = routeSlug(slug);
 
-        // ✅ thumbnail: usa mapa si existe; luego jpg→png fallback
+        // thumbnail: usa mapa si existe; luego jpg→png fallback
         const mapped = THUMB_MAP[rslug];
         const base = `/images/programs/${rslug}-hero`;
         const srcJpg = mapped || `${base}.jpg`;
