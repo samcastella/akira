@@ -1,4 +1,3 @@
-// src/components/habits/CreateHabitBar.tsx
 'use client';
 
 import React, { useEffect, useRef } from 'react';
@@ -162,6 +161,13 @@ export default function CreateHabitBar(props: Props) {
           onMouseDown={(e) => {
             lastXY.current = { x: e.clientX, y: e.clientY };
             (window as any).__akiraLastXY = { x: e.clientX, y: e.clientY };
+          }}
+          onTouchStart={(e) => {
+            const t = e.touches?.[0];
+            if (t) {
+              lastXY.current = { x: t.clientX, y: t.clientY };
+              (window as any).__akiraLastXY = { x: t.clientX, y: t.clientY };
+            }
           }}
           onClick={onToggle}
           onKeyDown={(e) => {

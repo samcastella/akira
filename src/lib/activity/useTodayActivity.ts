@@ -1,4 +1,3 @@
-// src/lib/activity/useTodayActivity.ts
 'use client';
 
 import { useMemo } from 'react';
@@ -29,8 +28,7 @@ export function useTodayActivity() {
     const result: ProgramToday[] = [];
 
     Object.entries(store).forEach(([slug, p]) => {
-      // usamos any para evitar error de tipo con completedAt
-      const lp = p as any;
+      const lp = p as any; // evitar error con completedAt inexistente en tipo LocalProgram
       const started = !!lp?.startedAt;
       const completed = !!lp?.completedAt;
       if (!started || completed) return; // terminado → oculto
@@ -39,7 +37,7 @@ export function useTodayActivity() {
       const totalDays = json?.days?.length ?? 0;
       if (!totalDays) return;
 
-      const day = Math.min(totalDays, Math.max(1, daysBetween(lp.startedAt, today) + 1));
+      const day = clampDay(lp.startedAt, new Date(`${today}T00:00:00`), totalDays);
       const dayTasks = json!.days.find((d: any) => d.day === day) ?? json!.days[day - 1];
       const progress = (lp.progress?.[day] as Record<string, boolean>) || {};
 
@@ -60,14 +58,14 @@ export function useTodayActivity() {
     return result;
   }, [today]);
 
-  /* ===== Retos con amigos (tipado explícito, de momento vacío) ===== */
+  /* ===== Retos con amigos (placeholder) ===== */
   const challengesToday = useMemo<ChallengeToday[]>(() => {
-    return []; // ← conecta aquí challenge_days/checks
+    return []; // ← conectar con challenge_days / checks
   }, []);
 
-  /* ===== Hábitos personalizados (tipado explícito, de momento vacío) ===== */
+  /* ===== Hábitos personalizados (placeholder) ===== */
   const habitsToday = useMemo<HabitToday[]>(() => {
-    return []; // ← conecta aquí habit_masters/habit_ticks
+    return []; // ← conectar con habit_masters / habit_ticks
   }, []);
 
   /* ===== Totales para rueda ===== */
@@ -81,10 +79,10 @@ export function useTodayActivity() {
     challengesToday.reduce((a, c) => a + c.tasks.filter((t) => t.done).length, 0) +
     habitsToday.filter((h) => !!h.done).length;
 
-  /* ===== Históricos (placeholders) ===== */
-  const historicalPoints = 0;
-  const programsCompleted = 0;
-  const weeklySeries = buildWeeklySeries(programs);
+  /* ===== Históricos / series ===== */
+  const historicalPoints = 0;  // RPC real fuera de este hook
+  const programsCompleted = 0; // RPC/consulta real fuera de este hook
+  const weeklySeries = useMemo(() => buildWeeklySeriesReal(), [today]);
 
   return {
     uid,
@@ -98,28 +96,42 @@ export function useTodayActivity() {
     programsCompleted,
     weeklySeries,
     toggleProgramTask: (_slug: string, _day: number, _taskId: string) => {
-      // noop por ahora; puedes reutilizar tu upsert real
-      // si quieres marcar desde /mizona/checks
+      // noop por ahora; conecta con upsert real si quieres marcar desde /mizona/checks
       console.info('toggleProgramTask noop — conectar con upsert real si es necesario');
     },
   };
 }
 
-/* ===== helpers ===== */
+/* ===== helpers de fecha / json ===== */
 function useISODate(d: Date) {
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   return `${d.getFullYear()}-${mm}-${dd}`;
 }
-function daysBetween(startMs: number, endISOyyyyMmDd: string) {
-  const a = startOfDay(new Date(startMs));
-  const b = startOfDay(new Date(`${endISOyyyyMmDd}T00:00:00`));
-  return Math.floor((b.getTime() - a.getTime()) / 86_400_000);
-}
 function startOfDay(d: Date) {
   const c = new Date(d);
   c.setHours(0, 0, 0, 0);
   return c;
+}
+function startOfWeekMonday(d: Date) {
+  const x = startOfDay(d);
+  const day = (x.getDay() + 6) % 7; // L=0..D=6
+  x.setDate(x.getDate() - day);
+  return x;
+}
+function addDays(d: Date, n: number) {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
+function clampDay(startedAt: number, when: Date, totalDays: number) {
+  const idx = dayIdxSince(startedAt, when);
+  return Math.min(totalDays, Math.max(1, idx));
+}
+function dayIdxSince(startedAt: number, when: Date) {
+  const a = startOfDay(new Date(startedAt)).getTime();
+  const b = startOfDay(when).getTime();
+  return Math.floor((b - a) / 86_400_000) + 1; // 1..N
 }
 function colorFor(slug: string) {
   if (slug.includes('detox')) return '#0a7cff';
@@ -135,12 +147,51 @@ function tryGetProgramJson(slug: string): any | null {
     return null;
   }
 }
-function buildWeeklySeries(_programs: Array<{ day: number; tasks: { done: boolean }[] }>) {
-  const mk = () => ({
-    labels: ['L', 'M', 'X', 'J', 'V', 'S', 'D'],
-    goal: Array(7).fill(0),
-    actual: Array(7).fill(0),
-    range: ['--', '--'] as [string, string],
-  });
-  return [mk(), mk(), mk(), mk()];
+
+/* ===== weeklySeries real (4 semanas, Lun→Dom) ===== */
+function buildWeeklySeriesReal() {
+  const labels = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+  const store = loadActive();
+  const today = new Date();
+  const week0Start = startOfWeekMonday(today);
+
+  const out: Array<{ labels: string[]; goal: number[]; actual: number[]; range: [string, string] }> = [];
+
+  for (let w = 0; w < 4; w++) {
+    const start = addDays(week0Start, -7 * w);
+    const goal = Array(7).fill(0);
+    const actual = Array(7).fill(0);
+
+    // Sumar por día y programa
+    for (let i = 0; i < 7; i++) {
+      const d = addDays(start, i);
+
+      for (const [slug, prog] of Object.entries(store)) {
+        const lp = prog as LocalProgram & { progress?: Record<number, Record<string, boolean>>; startedAt?: number };
+        if (!lp?.startedAt) continue;
+
+        const json = tryGetProgramJson(slug);
+        const totalDays: number = json?.days?.length ?? json?.durationDays ?? 0;
+        if (!totalDays) continue;
+
+        const dayNum = dayIdxSince(lp.startedAt!, d);
+        if (dayNum < 1 || dayNum > totalDays) continue;
+
+        const dayDef = json?.days?.find((x: any) => x.day === dayNum) ?? json?.days?.[dayNum - 1];
+        const planned = Math.max(0, dayDef?.tasks?.length ?? 0);
+        goal[i] += planned;
+
+        const doneMap = (lp.progress?.[dayNum] as Record<string, boolean> | undefined) ?? {};
+        const done = Object.values(doneMap).filter(Boolean).length;
+        actual[i] += done;
+      }
+    }
+
+    const fmt = (d: Date) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const range: [string, string] = [fmt(start), fmt(addDays(start, 6))];
+
+    out.push({ labels, goal, actual, range });
+  }
+
+  return out;
 }

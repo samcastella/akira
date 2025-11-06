@@ -6,7 +6,8 @@ import Link from 'next/link';
 import TodayWheel from '@/components/mizona/TodayWheel';
 import CalendarLite from '@/components/mizona/CalendarLite';
 import StreakCard from '@/components/mizona/StreakCard';
-import SubHeaderTabs from '@/components/SubHeaderTabs';
+// ⛔️ SubHeaderTabs se elimina aquí para evitar duplicado; lo debe renderizar el layout
+// import SubHeaderTabs from '@/components/SubHeaderTabs';
 import { useTodayActivity } from '@/lib/activity/useTodayActivity';
 import { useUserProfile } from '@/lib/user';
 import { useMemo, useState } from 'react';
@@ -44,7 +45,8 @@ const THUMB_MAP: Record<string, string> = {
   'detox-tecnologico': '/images/programs/detox-tecnologico-hero.jpg',
 };
 
-/* ===== Tabs ===== */
+/* ===== Tabs (informativo) ===== */
+// Se gestionan en layout; aquí NO se renderizan para evitar duplicado
 const TABS = [
   { href: '/mizona/resumen', label: 'Resumen', exact: true },
   { href: '/mizona/checks', label: 'Checks del día' },
@@ -67,13 +69,9 @@ export default function MiActividadResumen() {
   const rankMonthly = (user as any)?.rank_month ?? '-';
 
   return (
-    <div className="pb-6">
-      {/* Submenú estilo /amigos */}
-      <div className="sticky top-0 z-20 bg-white border-b">
-        <SubHeaderTabs tabs={TABS as any} size="compact" ariaLabel="Navegación Mi actividad" />
-      </div>
-
-      <div className="pt-3 pb-6 space-y-8">
+    <div className="pb-8">
+      {/* Contenedor con aire lateral */}
+      <div className="pt-3 pb-6 px-4 space-y-8">
         {/* ===== Rueda ===== */}
         <section>
           <div className="w-full flex items-center justify-center">
@@ -91,8 +89,8 @@ export default function MiActividadResumen() {
         <StreakCard />
 
         {/* ===== Perfil: avatar + puntos + ranking ===== */}
-        <section className="rounded-2xl border border-neutral-200 p-4 flex items-center gap-4">
-          <div className="relative w-16 h-16 rounded-full overflow-hidden bg-neutral-100">
+        <section className="rounded-2xl border border-neutral-200 p-4 flex items-center gap-4 bg-white">
+          <div className="relative w-16 h-16 rounded-full overflow-hidden bg-neutral-100 shrink-0">
             <Image
               src={user?.foto || '/images/avatars/default.png'}
               alt="Tu perfil"
@@ -134,14 +132,15 @@ export default function MiActividadResumen() {
             <h3 className="text-lg font-semibold">Calendario</h3>
             <Link href="#stats" className="text-sm font-medium text-neutral-700 hover:underline">Ver todo</Link>
           </div>
-          <div className="[&_.ak-calendar-day]:flex [&_.ak-calendar-day]:items-center [&_.ak-calendar-day]:justify-center">
+          {/* Forzamos que el día sea un círculo perfecto desde fuera si CalendarLite aplica clases .ak-calendar-day */}
+          <div className="[&_.ak-calendar-day]:flex [&_.ak-calendar-day]:items-center [&_.ak-calendar-day]:justify-center [&_.ak-calendar-day]:aspect-square [&_.ak-calendar-day]:rounded-full">
             <CalendarLite dayStatus={getDayStatus} />
           </div>
-          <div className="mt-3 flex items-center gap-4 text-xs text-neutral-600">
+          <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-neutral-600">
             <LegendDot cls="bg-neutral-300" label="Sin tareas / sin actividad" />
             <LegendDot cls="bg-orange-300" label="Algunas hechas" />
             <LegendDot cls="bg-green-300" label="Todo hecho" />
-            <LegendDot cls="bg-red-300" label="Día perdido" />
+            <LegendDot cls="bg-red-300" label="Día sin hacer ningún reto" />
           </div>
         </section>
 

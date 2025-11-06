@@ -20,13 +20,22 @@ export default function TodayWheel({
   const pct = Math.max(0, Math.min(100, Math.round(value)));
   const off = c * (1 - pct / 100);
 
+  // Cabeza de la barra (ángulo desde -90º + progreso)
+  const theta = (-90 + (pct / 100) * 360) * (Math.PI / 180);
+  const cx = size / 2;
+  const cy = size / 2;
+  const headX = cx + r * Math.cos(theta);
+  const headY = cy + r * Math.sin(theta);
+
   return (
     <div className="relative" style={{ width: size, height: size }}>
       <svg width={size} height={size}>
-        <circle cx={size / 2} cy={size / 2} r={r} stroke="#e5e7eb" strokeWidth={stroke} fill="none" />
+        {/* Pista */}
+        <circle cx={cx} cy={cy} r={r} stroke="#e5e7eb" strokeWidth={stroke} fill="none" />
+        {/* Progreso */}
         <circle
-          cx={size / 2}
-          cy={size / 2}
+          cx={cx}
+          cy={cy}
           r={r}
           stroke="#f59e0b"
           strokeWidth={stroke}
@@ -34,28 +43,27 @@ export default function TodayWheel({
           strokeDasharray={c}
           strokeDashoffset={off}
           strokeLinecap="round"
-          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+          transform={`rotate(-90 ${cx} ${cy})`}
         />
       </svg>
 
-      {/* Fuego en cabeza de la circunferencia */}
+      {/* Fuego en la cabeza del progreso */}
       <div
         aria-hidden
-        className="absolute z-[1]"
+        className="absolute z-[2] pointer-events-none select-none"
         style={{
-          left: '50%',
-          top: 2,
-          transform: 'translateX(-50%)',
+          left: headX,
+          top: headY,
+          transform: 'translate(-50%, -50%)',
         }}
       >
-        <span className="select-none text-xl">🔥</span>
+        <span className="text-2xl">🔥</span>
       </div>
 
       {/* Contenido centrado */}
-      <div className="absolute inset-0 flex items-center justify-center">
+      <div className="absolute inset-0 flex items-center justify-center z-[1]">
         <div className="text-center leading-tight">
           <div className="text-[10px] tracking-[0.12em] text-neutral-500">{title}</div>
-          {/* % en UNA sola línea */}
           <div className="mt-1 text-xl font-extrabold tabular-nums whitespace-nowrap">
             {pct}% completado
           </div>

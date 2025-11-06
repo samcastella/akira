@@ -18,16 +18,16 @@ export default function MiActividadChecks() {
     programsToday.length > 0 || challengesToday.length > 0 || habitsToday.length > 0;
 
   return (
-    <div className="py-6 space-y-8">
+    <div className="py-6 space-y-6">
       {!hasAny && (
-        <div className="rounded-2xl border border-neutral-200 p-4 text-sm text-neutral-600">
+        <div className="rounded-2xl border border-neutral-200 p-4 text-sm text-neutral-600 bg-white">
           Todavía no has comenzado ninguno
         </div>
       )}
 
       {/* Programas activos */}
       {programsToday.length > 0 && (
-        <section className="space-y-3">
+        <section className="space-y-3 rounded-2xl border border-neutral-200 bg-white p-4">
           <h3 className="text-lg font-semibold">Programas activos</h3>
           {programsToday.map((prog) => (
             <div key={prog.slug} className="space-y-2">
@@ -40,6 +40,7 @@ export default function MiActividadChecks() {
                   checked={t.done}
                   color={prog.color}
                   onToggle={() => toggleProgramTask(prog.slug, prog.day, t.id)}
+                  showInfoButton={true} // “+” visible sin necesidad de onInfo
                 />
               ))}
             </div>
@@ -49,7 +50,7 @@ export default function MiActividadChecks() {
 
       {/* Retos con amigos */}
       {challengesToday.length > 0 && (
-        <section className="space-y-3">
+        <section className="space-y-3 rounded-2xl border border-neutral-200 bg-white p-4">
           <h3 className="text-lg font-semibold">Retos con amigos</h3>
           {challengesToday.map((ch) => (
             <div key={ch.id} className="space-y-2">
@@ -62,6 +63,7 @@ export default function MiActividadChecks() {
                   checked={t.done}
                   color="#111"
                   onToggle={t.onToggle ?? NOOP}
+                  showInfoButton={true} // “+” visible
                 />
               ))}
             </div>
@@ -71,7 +73,7 @@ export default function MiActividadChecks() {
 
       {/* Hábitos personalizados */}
       {habitsToday.length > 0 && (
-        <section className="space-y-3">
+        <section className="space-y-3 rounded-2xl border border-neutral-200 bg-white p-4">
           <h3 className="text-lg font-semibold">Hábitos personalizados</h3>
           {habitsToday.map((h) => (
             <div key={h.id} className="space-y-2">
@@ -82,6 +84,7 @@ export default function MiActividadChecks() {
                 checked={!!h.done}
                 color={h.color || '#111'}
                 onToggle={h.onToggle ?? NOOP}
+                showInfoButton={true} // “+” visible
               />
             </div>
           ))}

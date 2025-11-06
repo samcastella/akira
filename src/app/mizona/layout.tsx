@@ -1,3 +1,4 @@
+// src/app/mizona/layout.tsx
 'use client';
 
 import React from 'react';
@@ -17,8 +18,10 @@ export default function MiZonaLayout({ children }: { children: React.ReactNode }
         <SubHeaderTabs tabs={TABS as any} size="compact" ariaLabel="Submenú Mi zona" />
       </div>
 
-      {/* Contenido */}
-      <div className="pb-4">{children}</div>
+      {/* Contenido con aire lateral consistente */}
+      <div className="px-4 pt-2 pb-4">
+        {children}
+      </div>
     </div>
   );
 }
