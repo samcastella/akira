@@ -1,7 +1,6 @@
 // src/app/mizona/resumen/page.tsx
 'use client';
 
-import Image from 'next/image';
 import Link from 'next/link';
 import TodayWheel from '@/components/mizona/TodayWheel';
 import CalendarLite from '@/components/mizona/CalendarLite';
@@ -45,7 +44,8 @@ function routeSlug(slug: string) {
 /* Mini mapa explícito de thumbnails */
 const THUMB_MAP: Record<string, string> = {
   lectura: '/images/programs/lectura-hero.jpg',
-  'detox-tecnologico': '/images/programs/detox-tecnologico-hero.jpg',
+  // 🔧 Ajustado al path real que pasaste:
+  'detox-tecnologico': '/images/programs/detox-hero.jpg',
 };
 
 export default function MiActividadResumen() {
@@ -57,10 +57,18 @@ export default function MiActividadResumen() {
     (user?.nombre && user.nombre.trim()) ||
     (user?.username && user.username.trim()) ||
     'Tú';
-  const avatarUrl =
-    (user as any)?.foto ||
-    (user as any)?.avatar_url ||
-    '/images/avatars/default.png';
+
+  // Avatar robusto: <img> con fallback local si falla (sin dependencia de next/image/domains)
+  const [avatarSrc, setAvatarSrc] = useState<string>(() => {
+    const f = (user as any)?.foto;
+    const a = (user as any)?.avatar_url;
+    return (f && String(f).trim()) || (a && String(a).trim()) || '/images/avatars/default.png';
+  });
+  useEffect(() => {
+    const f = (user as any)?.foto;
+    const a = (user as any)?.avatar_url;
+    setAvatarSrc((f && String(f).trim()) || (a && String(a).trim()) || '/images/avatars/default.png');
+  }, [user]);
 
   // ====== puntos (RPC con fallback) ======
   const [totals, setTotals] = useState<ProgramPointsTotals | null>(null);
@@ -104,14 +112,14 @@ export default function MiActividadResumen() {
 
       {/* ===== Perfil: avatar + puntos + ranking ===== */}
       <section className="rounded-2xl border border-neutral-200 p-4 flex items-center gap-4 bg-white">
-        <div className="relative w-16 h-16 rounded-full overflow-hidden bg-neutral-100">
-          <Image
-            src={avatarUrl}
+        <div className="relative w-16 h-16 rounded-full overflow-hidden bg-neutral-100 ring-1 ring-white/70">
+          <img
+            src={avatarSrc}
             alt="Tu perfil"
-            fill
-            className="object-cover"
-            sizes="64px"
-            priority
+            className="object-cover w-full h-full"
+            onError={() => setAvatarSrc('/images/avatars/default.png')}
+            loading="lazy"
+            decoding="async"
           />
         </div>
         <div className="flex-1 min-w-0">
@@ -137,7 +145,7 @@ export default function MiActividadResumen() {
       <section>
         <div className="mb-2 flex items-baseline justify-between">
           <h3 className="text-lg font-semibold">Estadísticas</h3>
-          <Link href="/mizona/estadisticas" className="text-sm font-medium text-neutral-700 hover:underline">Ver todo</Link>
+        <Link href="/mizona/estadisticas" className="text-sm font-medium text-neutral-700 hover:underline">Ver todo</Link>
         </div>
         <p className="text-sm text-neutral-600 mb-3">Descubre tus estadísticas de esta semana</p>
         <MiniWeeklyChartReal />
@@ -146,7 +154,26 @@ export default function MiActividadResumen() {
       {/* ===== Calendario (círculos perfectos) + leyenda ===== */}
       <section>
         <h3 className="text-lg font-semibold mb-2">Calendario</h3>
-        <div className="[&_.ak-calendar-day]:flex [&_.ak-calendar-day]:items-center [&_.ak-calendar-day]:justify-center [&_.ak-calendar-day]:aspect-square [&_.ak-calendar-day]:rounded-full">
+        {/* 
+          Forzamos círculos perfectos:
+          - fijamos w/h al contenedor que CalendarLite asigna a cada día (.ak-calendar-day)
+          - centramos contenido y eliminamos posibles paddings que deformen
+        */}
+        <div className="
+          [&_.ak-calendar-day]:w-9
+          [&_.ak-calendar-day]:h-9
+          [&_.ak-calendar-day]:rounded-full
+          [&_.ak-calendar-day]:flex
+          [&_.ak-calendar-day]:items-center
+          [&_.ak-calendar-day]:justify-center
+          [&_.ak-calendar-day]:p-0
+          [&_.ak-calendar-day>*]:w-full
+          [&_.ak-calendar-day>*]:h-full
+          [&_.ak-calendar-day>*]:rounded-full
+          [&_.ak-calendar-day>*]:flex
+          [&_.ak-calendar-day>*]:items-center
+          [&_.ak-calendar-day>*]:justify-center
+        ">
           <CalendarLite dayStatus={getDayStatus} />
         </div>
         <div className="mt-3 flex items-center gap-4 text-xs text-neutral-600">
@@ -375,7 +402,7 @@ function AchievementsStrip() {
       {items.map((b) => (
         <div key={b.key} className="flex flex-col items-center">
           <div className="relative w-20 h-20 rounded-xl overflow-hidden border border-neutral-200 bg-neutral-50">
-            <Image src={b.src} alt={b.title} fill className="object-cover" sizes="80px" />
+            <img src={b.src} alt={b.title} className="object-cover w-full h-full" loading="lazy" decoding="async" />
           </div>
           <div className="mt-2 text-xs text-center text-neutral-800">{b.title}</div>
         </div>
