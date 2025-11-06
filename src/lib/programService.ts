@@ -6,7 +6,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getBySlug, type ProgramMeta } from "@/data/programs";
-import { supabase } from "@/lib/supabaseClient"; // para helpers opcionales (no rompe nada)
+import { supabase } from "@/lib/supabaseClient";
 
 // JSON del programa Lectura
 import lecturaProgramRaw from "../data/programs/lectura-30.json";
@@ -65,7 +65,7 @@ function normalizeProgramDef(slug: string, input: any): ProgramDef {
     ? input.days.map((d: any, idx: number) => ({
         day: typeof d?.day === "number" ? d.day : idx + 1,
         tasks: Array.isArray(d?.tasks)
-          ? d.tasks.map((t: any, tIdx: number) => ({
+          ? d?.tasks.map((t: any, tIdx: number) => ({
               id: String(t?.id ?? `d${idx + 1}-t${tIdx + 1}`),
               label: String(t?.label ?? "Tarea"),
               detail: String(t?.detail ?? ""),
@@ -75,18 +75,11 @@ function normalizeProgramDef(slug: string, input: any): ProgramDef {
       }))
     : [];
 
-  return {
-    ...meta,
-    howItWorks,
-    daysDef,
-  };
+  return { ...meta, howItWorks, daysDef };
 }
 
 // Solo tenemos lectura por ahora
-const lecturaProgram: ProgramDef = normalizeProgramDef(
-  "lectura-30",
-  lecturaProgramRaw as any
-);
+const lecturaProgram: ProgramDef = normalizeProgramDef("lectura-30", lecturaProgramRaw as any);
 
 // Acepta tanto slugRoute (ej. "lectura") como slugData (ej. "lectura-30")
 export function getProgramDef(slug: string): ProgramDef {
@@ -94,35 +87,47 @@ export function getProgramDef(slug: string): ProgramDef {
   throw new Error(`Programa no soportado: ${slug}`);
 }
 
-// ---------- Helpers de cache local ----------
-const LS_ACTIVE_KEY = "akira_program_active"; // { slug, startedAt, currentDay }
+// ---------- Helpers de cache local (puntos/rank) ----------
+const LS_POINTS_KEY = "akira_points_cache_v1";
+const LS_RANK_KEY = "akira_rank_cache_v1";
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
 
-function writeLocalActive(slug: string, startedAt: string, currentDay: number) {
+export function readPointsCache(): { total_points: number } | null {
   try {
-    localStorage.setItem(
-      LS_ACTIVE_KEY,
-      JSON.stringify({ slug, startedAt, currentDay, ts: Date.now() })
-    );
-  } catch {}
-}
-export function readLocalActive():
-  | { slug: string; startedAt: string; currentDay: number; ts?: number }
-  | null {
-  try {
-    const raw = localStorage.getItem(LS_ACTIVE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    const raw = localStorage.getItem(LS_POINTS_KEY);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (!obj || typeof obj.ts !== "number") return null;
+    if (Date.now() - obj.ts > CACHE_TTL_MS) return null;
+    return obj.value as { total_points: number };
   } catch {
     return null;
   }
 }
-export function clearLocalActive() {
+export function writePointsCache(v: { total_points: number }) {
   try {
-    localStorage.removeItem(LS_ACTIVE_KEY);
+    localStorage.setItem(LS_POINTS_KEY, JSON.stringify({ ts: Date.now(), value: v }));
+  } catch {}
+}
+export function readRankCache(): number | null {
+  try {
+    const raw = localStorage.getItem(LS_RANK_KEY);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (!obj || typeof obj.ts !== "number") return null;
+    if (Date.now() - obj.ts > CACHE_TTL_MS) return null;
+    return typeof obj.value === "number" ? obj.value : null;
+  } catch {
+    return null;
+  }
+}
+export function writeRankCache(rank: number) {
+  try {
+    localStorage.setItem(LS_RANK_KEY, JSON.stringify({ ts: Date.now(), value: rank }));
   } catch {}
 }
 
 // ---------- Servicios de estado Supabase ----------
-
 export async function getActiveProgram(
   sb: SupabaseClient,
   userId: string,
@@ -135,12 +140,16 @@ export async function getActiveProgram(
     .eq("program_slug", slug)
     .eq("is_active", true)
     .maybeSingle();
-
   if (error && (error as any).code !== "PGRST116") throw error;
   if (!data) return null;
 
   const row = data as unknown as ActiveProgramRow;
-  writeLocalActive(slug, row.started_at, row.current_day);
+  try {
+    localStorage.setItem(
+      "akira_program_active",
+      JSON.stringify({ slug, startedAt: row.started_at, currentDay: row.current_day, ts: Date.now() })
+    );
+  } catch {}
   return row;
 }
 
@@ -163,11 +172,8 @@ export async function startProgram(
     )
     .select("*")
     .single();
-
   if (error) throw error;
-  const row = data as unknown as ActiveProgramRow;
-  writeLocalActive(slug, row.started_at, row.current_day);
-  return row;
+  return data as unknown as ActiveProgramRow;
 }
 
 export async function resetProgram(
@@ -195,12 +201,9 @@ export async function resetProgram(
       { onConflict: "user_id,program_slug" }
     );
   if (upErr) throw upErr;
-
-  writeLocalActive(slug, new Date().toISOString(), 1);
 }
 
 // ---------- Gestión de tareas ----------
-
 async function ensureDayTaskRows(
   sb: SupabaseClient,
   userId: string,
@@ -217,7 +220,6 @@ async function ensureDayTaskRows(
     .eq("user_id", userId)
     .eq("program_slug", slug)
     .eq("day", day);
-
   if (exErr) throw exErr;
   if (existing && existing.length >= dayDef.tasks.length) return;
 
@@ -259,14 +261,10 @@ export async function getDayTasks(
     .eq("user_id", userId)
     .eq("program_slug", slug)
     .eq("day", day);
-
   if (error) throw error;
 
   const dayDef = def.daysDef.find((d) => d.day === day)!;
-  const map = new Map(
-    (rows as UserTaskRow[] | null)?.map((r) => [r.task_id, r]) || []
-  );
-
+  const map = new Map((rows as UserTaskRow[] | null)?.map((r) => [r.task_id, r]) || []);
   return dayDef.tasks.map((t) => {
     const r = map.get(t.id);
     return {
@@ -286,7 +284,6 @@ export async function toggleTask(
   taskId: string,
   completed: boolean
 ): Promise<{ advanced: boolean; nextDay: number | null }> {
-  // ⬇️ IMPORTANTE: ON CONFLICT ahora incluye "day" (PK = user_id, program_slug, day, task_id)
   const { error: upErr } = await sb
     .from(TABLE_TASKS)
     .upsert(
@@ -302,7 +299,6 @@ export async function toggleTask(
     );
   if (upErr) throw upErr;
 
-  // ¿Queda alguna tarea pendiente en el día?
   const { data: pending, error: pendErr } = await sb
     .from(TABLE_TASKS)
     .select("task_id")
@@ -310,11 +306,9 @@ export async function toggleTask(
     .eq("program_slug", slug)
     .eq("day", day)
     .eq("completed", false);
-
   if (pendErr) throw pendErr;
 
   if (!pending || pending.length === 0) {
-    // Avanza current_day si corresponde
     const { data: prog, error: selErr } = await sb
       .from(TABLE_PROGRAMS)
       .select("*")
@@ -323,11 +317,7 @@ export async function toggleTask(
       .maybeSingle();
     if (selErr) throw selErr;
 
-    const next = Math.max(
-      day + 1,
-      (prog as ActiveProgramRow | null)?.current_day ?? day + 1
-    );
-
+    const next = Math.max(day + 1, (prog as ActiveProgramRow | null)?.current_day ?? day + 1);
     const { error: updErr } = await sb
       .from(TABLE_PROGRAMS)
       .update({ current_day: next, updated_at: new Date().toISOString() })
@@ -335,14 +325,8 @@ export async function toggleTask(
       .eq("program_slug", slug);
     if (updErr) throw updErr;
 
-    writeLocalActive(
-      slug,
-      (prog as ActiveProgramRow | null)?.started_at ?? new Date().toISOString(),
-      next
-    );
     return { advanced: true, nextDay: next };
   }
-
   return { advanced: false, nextDay: null };
 }
 
@@ -386,22 +370,17 @@ export async function getProgress(
 
   return {
     daysCompleted,
-    totalDays: def.days, // viene del ProgramMeta
+    totalDays: def.days,
     currentDay: (prog as ActiveProgramRow | null)?.current_day ?? 1,
   };
 }
 
-/* ========= Helpers opcionales de PUNTUACIÓN (RPC por PROGRAMA) =========
-   Mantienen compatibilidad con tu UI actual que lee puntos por programa
-   (ProgramDetail): +5 por check y +10 por día completo.
-*/
-
+/* ========= PUNTUACIÓN (RPC por PROGRAMA) ========= */
 export type ProgramPointsTotals = {
   total_points: number;
   checks_done: number;
   days_completed: number;
 };
-
 export type ProgramPointsByDayRow = {
   day_index: number;
   tasks_total: number;
@@ -410,38 +389,25 @@ export type ProgramPointsByDayRow = {
   day_points: number;
 };
 
-/** Totales de puntos por PROGRAMA (usa RPC get_program_points) */
 export async function fetchProgramPoints(uid: string, slug: string): Promise<ProgramPointsTotals> {
-  const { data, error } = await supabase.rpc("get_program_points", {
-    p_user: uid,
-    p_slug: slug,
-  });
+  const { data, error } = await supabase.rpc("get_program_points", { p_user: uid, p_slug: slug });
   if (error) throw error;
-  return (data?.[0] ??
-    { total_points: 0, checks_done: 0, days_completed: 0 }) as ProgramPointsTotals;
+  return (data?.[0] ?? { total_points: 0, checks_done: 0, days_completed: 0 }) as ProgramPointsTotals;
 }
-
-/** Desglose por día por PROGRAMA (usa RPC get_program_points_by_day) */
 export async function fetchProgramPointsByDay(uid: string, slug: string): Promise<ProgramPointsByDayRow[]> {
-  const { data, error } = await supabase.rpc("get_program_points_by_day", {
-    p_user: uid,
-    p_slug: slug,
-  });
+  const { data, error } = await supabase.rpc("get_program_points_by_day", { p_user: uid, p_slug: slug });
   if (error) throw error;
   return (data ?? []) as ProgramPointsByDayRow[];
 }
 
-/* ========= NUEVO: Puntuación GLOBAL (todos los programas) y RANKING =========
-   Basado en las vistas/funciones SQL creadas:
-   - get_user_program_points_total(p_user_id, p_from, p_to)
-   - get_monthly_rank_for_user(p_user_id)
-*/
-
+/* ========= Puntuación GLOBAL (todos los programas) y RANKING ========= */
 export type GlobalPointsTotal = { total_points: number };
+
 export async function fetchGlobalProgramPoints(fromISO: string, toISO: string): Promise<GlobalPointsTotal | null> {
   const { data: auth } = await supabase.auth.getUser();
   const uid = auth.user?.id;
   if (!uid) return { total_points: 0 };
+
   const { data, error } = await supabase.rpc("get_user_program_points_total", {
     p_user_id: uid,
     p_from: fromISO,
@@ -451,19 +417,17 @@ export async function fetchGlobalProgramPoints(fromISO: string, toISO: string): 
     console.warn("[fetchGlobalProgramPoints]", error);
     return null;
   }
-  return Array.isArray(data)
-    ? (data[0] ?? { total_points: 0 })
-    : (data ?? { total_points: 0 });
+  return Array.isArray(data) ? (data[0] ?? { total_points: 0 }) : (data ?? { total_points: 0 });
 }
 
-export type MonthlyRank = { rank_month: number; total_points: number };
-export async function fetchMyMonthlyRank(): Promise<MonthlyRank | null> {
+export type MonthlyRank = { rank_month: number; total_points: number } | null;
+
+export async function fetchMyMonthlyRank(): Promise<MonthlyRank> {
   const { data: auth } = await supabase.auth.getUser();
   const uid = auth.user?.id;
   if (!uid) return null;
-  const { data, error } = await supabase.rpc("get_monthly_rank_for_user", {
-    p_user_id: uid,
-  });
+
+  const { data, error } = await supabase.rpc("get_monthly_rank_for_user", { p_user_id: uid });
   if (error) {
     console.warn("[fetchMyMonthlyRank]", error);
     return null;
@@ -471,79 +435,19 @@ export async function fetchMyMonthlyRank(): Promise<MonthlyRank | null> {
   return Array.isArray(data) ? (data[0] ?? null) : (data ?? null);
 }
 
-/* ========= NUEVO: Racha REAL desde Supabase + caché local para puntos/ranking ========= */
-
-/** Racha real de días consecutivos con actividad (RPC: get_user_streak_days) */
+/* ========= Racha real de días (todas las tareas de un día > 0) =========
+   RPC esperada: get_user_streak_days(p_user_id uuid) RETURNS integer
+*/
 export async function fetchUserStreakDays(): Promise<number> {
-  try {
-    const { data: auth } = await supabase.auth.getUser();
-    const uid = auth?.user?.id;
-    if (!uid) return 0;
+  const { data: auth } = await supabase.auth.getUser();
+  const uid = auth.user?.id;
+  if (!uid) return 0;
 
-    const { data, error } = await supabase.rpc("get_user_streak_days", {
-      p_user_id: uid,
-      p_tz: "Europe/Madrid",
-    });
-
-    if (error) {
-      console.warn("[fetchUserStreakDays]", error);
-      return 0;
-    }
-    if (typeof data === "number") return data;
-    if (Array.isArray(data)) return Number(data[0] ?? 0) || 0;
-    return Number((data as any)?.streak ?? 0) || 0;
-  } catch (e) {
-    console.warn("[fetchUserStreakDays] unexpected", e);
+  const { data, error } = await supabase.rpc("get_user_streak_days", { p_user_id: uid });
+  if (error) {
+    console.warn("[fetchUserStreakDays]", error);
     return 0;
   }
-}
-
-// -------- Caché local con TTL (puntos/ranking) --------
-const CACHE_TTL_MS = 1000 * 60 * 5; // 5 minutos
-
-type CacheEntry<T> = { v: T; ts: number };
-
-function isClient() {
-  return typeof window !== "undefined" && typeof localStorage !== "undefined";
-}
-
-function readCache<T>(key: string): T | null {
-  if (!isClient()) return null;
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as CacheEntry<T>;
-    if (!parsed || typeof parsed.ts !== "number") return null;
-    if (Date.now() - parsed.ts > CACHE_TTL_MS) return null;
-    return parsed.v ?? null;
-  } catch {
-    return null;
-  }
-}
-
-function writeCache<T>(key: string, v: T) {
-  if (!isClient()) return;
-  try {
-    localStorage.setItem(key, JSON.stringify({ v, ts: Date.now() } as CacheEntry<T>));
-  } catch {}
-}
-
-/** Lee puntos globales cacheados (si existen y no expirados) */
-export function readPointsCache(): { total_points: number } | null {
-  return readCache<{ total_points: number }>("akira_points_cache_v1");
-}
-
-/** Guarda puntos globales en caché */
-export function writePointsCache(v: { total_points: number }) {
-  writeCache("akira_points_cache_v1", v);
-}
-
-/** Lee ranking mensual cacheado (si existe y no expirado) */
-export function readRankCache(): number | null {
-  return readCache<number>("akira_rank_cache_v1");
-}
-
-/** Guarda ranking mensual en caché */
-export function writeRankCache(v: number) {
-  writeCache("akira_rank_cache_v1", v);
+  const v = Array.isArray(data) ? (data[0] as any)?.streak_days : (data as any)?.streak_days ?? data;
+  return typeof v === "number" ? v : 0;
 }
