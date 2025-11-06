@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { Settings } from 'lucide-react';
 import { useUserProfile } from '@/lib/user';
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { isBootCacheFresh } from '@/lib/programService';
 
 /* ========= Helpers saludo/avatar ========= */
 function useDisplayUser() {
@@ -146,20 +148,31 @@ function ProgramCard({
 
 /* ========= Página ========= */
 export default function HomePage() {
-  // 🔒 Gate de hidratación: evita mostrar HTML prerenderizado antiguo
+  const router = useRouter();
+
+  // Redirección a preload si la caché está fría (y el flag está activo)
+  useEffect(() => {
+    const flag = (process.env.NEXT_PUBLIC_BOOT_PRELOAD ?? '1') !== '0';
+    if (!flag) return;
+    try {
+      const fresh = isBootCacheFresh(); // TTL 5 min
+      if (!fresh) {
+        const target = encodeURIComponent('/');
+        router.replace(`/preload?redirect=${target}`);
+      }
+    } catch {
+      // si algo falla, seguimos en Home
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 🔒 Gate de hidratación: evita mostrar HTML prerender anticuado
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => setHydrated(true), []);
 
   if (!hydrated) {
-    // Esqueleto con misma altura/fondo para que no haya “salto”
     return (
-      <main
-        className="relative z-0"
-        style={{
-          minHeight: '100dvh',
-          backgroundColor: '#FAFAFA',
-        }}
-      />
+      <main className="relative z-0" style={{ minHeight: '100dvh', backgroundColor: '#FAFAFA' }} />
     );
   }
 

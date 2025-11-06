@@ -4,12 +4,12 @@
 // Fuente de contenidos detallados: JSON local (ej. lectura-30.json).
 // Fuente de estado: Supabase (multi-dispositivo).
 
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { getBySlug, type ProgramMeta } from "@/data/programs";
-import { supabase } from "@/lib/supabaseClient";
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { getBySlug, type ProgramMeta } from '@/data/programs';
+import { supabase } from '@/lib/supabaseClient';
 
 // JSON del programa Lectura
-import lecturaProgramRaw from "../data/programs/lectura-30.json";
+import lecturaProgramRaw from '../data/programs/lectura-30.json';
 
 // ---------- Tipos de contenido (JSON) ----------
 export type ProgramTaskDef = {
@@ -45,8 +45,8 @@ export type UserTaskRow = {
 };
 
 // ---------- Constantes ----------
-export const TABLE_PROGRAMS = "user_programs";
-export const TABLE_TASKS = "user_program_tasks";
+export const TABLE_PROGRAMS = 'user_programs';
+export const TABLE_TASKS = 'user_program_tasks';
 
 // Helper: compara contra slugRoute o slugData
 function matchesSlug(meta: ProgramMeta, slug: string) {
@@ -59,16 +59,16 @@ function normalizeProgramDef(slug: string, input: any): ProgramDef {
   if (!meta) throw new Error(`No se encontró metadato para ${slug}`);
 
   const howItWorks = String(
-    input?.howItWorks ?? "Completa las mini-tareas diarias y avanza automáticamente."
+    input?.howItWorks ?? 'Completa las mini-tareas diarias y avanza automáticamente.'
   );
   const daysDef: ProgramDayDef[] = Array.isArray(input?.days)
     ? input.days.map((d: any, idx: number) => ({
-        day: typeof d?.day === "number" ? d.day : idx + 1,
+        day: typeof d?.day === 'number' ? d.day : idx + 1,
         tasks: Array.isArray(d?.tasks)
           ? d?.tasks.map((t: any, tIdx: number) => ({
               id: String(t?.id ?? `d${idx + 1}-t${tIdx + 1}`),
-              label: String(t?.label ?? "Tarea"),
-              detail: String(t?.detail ?? ""),
+              label: String(t?.label ?? 'Tarea'),
+              detail: String(t?.detail ?? ''),
               tags: Array.isArray(t?.tags) ? t.tags.map(String) : undefined,
             }))
           : [],
@@ -79,7 +79,7 @@ function normalizeProgramDef(slug: string, input: any): ProgramDef {
 }
 
 // Solo tenemos lectura por ahora
-const lecturaProgram: ProgramDef = normalizeProgramDef("lectura-30", lecturaProgramRaw as any);
+const lecturaProgram: ProgramDef = normalizeProgramDef('lectura-30', lecturaProgramRaw as any);
 
 // Acepta tanto slugRoute (ej. "lectura") como slugData (ej. "lectura-30")
 export function getProgramDef(slug: string): ProgramDef {
@@ -87,44 +87,91 @@ export function getProgramDef(slug: string): ProgramDef {
   throw new Error(`Programa no soportado: ${slug}`);
 }
 
-// ---------- Helpers de cache local (puntos/rank) ----------
-const LS_POINTS_KEY = "akira_points_cache_v1";
-const LS_RANK_KEY = "akira_rank_cache_v1";
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
+// ---------- Helpers de cache local (puntos/rank/streak) ----------
+const LS_POINTS_KEY = 'akira_points_cache_v1';
+const LS_RANK_KEY = 'akira_rank_cache_v1';
+const LS_STREAK_KEY = 'akira_streak_cache_v1';
+export const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
+
+type PointsCacheFormat =
+  | { ts: number; value: { total_points: number } }
+  | { _ts: number; total_points: number }; // compat con prewarm
+
+function nowTs() {
+  return Date.now();
+}
 
 export function readPointsCache(): { total_points: number } | null {
   try {
     const raw = localStorage.getItem(LS_POINTS_KEY);
     if (!raw) return null;
-    const obj = JSON.parse(raw);
-    if (!obj || typeof obj.ts !== "number") return null;
-    if (Date.now() - obj.ts > CACHE_TTL_MS) return null;
-    return obj.value as { total_points: number };
+    const obj: PointsCacheFormat = JSON.parse(raw);
+    const ts = (obj as any).ts ?? (obj as any)._ts;
+    const value =
+      'value' in (obj as any) ? (obj as any).value : { total_points: (obj as any).total_points };
+    if (typeof ts !== 'number') return null;
+    if (nowTs() - ts > CACHE_TTL_MS) return null;
+    if (!value || typeof value.total_points !== 'number') return null;
+    return value;
   } catch {
     return null;
   }
 }
-export function writePointsCache(v: { total_points: number }) {
+
+export function writePointsCache(v: { total_points: number } & Record<string, any>) {
   try {
-    localStorage.setItem(LS_POINTS_KEY, JSON.stringify({ ts: Date.now(), value: v }));
+    // Siempre persistimos en formato { ts, value } y conservamos props extra
+    const payload = { ts: nowTs(), value: { total_points: Number(v.total_points) } };
+    localStorage.setItem(LS_POINTS_KEY, JSON.stringify(payload));
   } catch {}
 }
+
 export function readRankCache(): number | null {
   try {
     const raw = localStorage.getItem(LS_RANK_KEY);
     if (!raw) return null;
     const obj = JSON.parse(raw);
-    if (!obj || typeof obj.ts !== "number") return null;
-    if (Date.now() - obj.ts > CACHE_TTL_MS) return null;
-    return typeof obj.value === "number" ? obj.value : null;
+    const ts = obj?.ts ?? obj?._ts;
+    if (typeof ts !== 'number') return null;
+    if (nowTs() - ts > CACHE_TTL_MS) return null;
+    const val = obj?.value;
+    return typeof val === 'number' ? val : null;
   } catch {
     return null;
   }
 }
+
 export function writeRankCache(rank: number) {
   try {
-    localStorage.setItem(LS_RANK_KEY, JSON.stringify({ ts: Date.now(), value: rank }));
+    localStorage.setItem(LS_RANK_KEY, JSON.stringify({ ts: nowTs(), value: Number(rank) }));
   } catch {}
+}
+
+export function readStreakCache(): number | null {
+  try {
+    const raw = localStorage.getItem(LS_STREAK_KEY);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    const ts = obj?._ts ?? obj?.ts;
+    if (typeof ts !== 'number') return null;
+    if (nowTs() - ts > CACHE_TTL_MS) return null;
+    const v = obj?.v;
+    return typeof v === 'number' ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Devuelve true si la caché mínima para entrar “caliente” está fresca. */
+export function isBootCacheFresh(): boolean {
+  try {
+    const pts = readPointsCache();
+    const rank = readRankCache();
+    // Consideramos “fresco” si tenemos puntos y (ranking o streak) recientes.
+    return !!pts && (typeof rank === 'number' || readStreakCache() !== null);
+  } catch {
+    return false;
+  }
 }
 
 // ---------- Servicios de estado Supabase ----------
@@ -135,19 +182,19 @@ export async function getActiveProgram(
 ): Promise<ActiveProgramRow | null> {
   const { data, error } = await sb
     .from(TABLE_PROGRAMS)
-    .select("*")
-    .eq("user_id", userId)
-    .eq("program_slug", slug)
-    .eq("is_active", true)
+    .select('*')
+    .eq('user_id', userId)
+    .eq('program_slug', slug)
+    .eq('is_active', true)
     .maybeSingle();
-  if (error && (error as any).code !== "PGRST116") throw error;
+  if (error && (error as any).code !== 'PGRST116') throw error;
   if (!data) return null;
 
   const row = data as unknown as ActiveProgramRow;
   try {
     localStorage.setItem(
-      "akira_program_active",
-      JSON.stringify({ slug, startedAt: row.started_at, currentDay: row.current_day, ts: Date.now() })
+      'akira_program_active',
+      JSON.stringify({ slug, startedAt: row.started_at, currentDay: row.current_day, ts: nowTs() })
     );
   } catch {}
   return row;
@@ -168,9 +215,9 @@ export async function startProgram(
         current_day: 1,
         is_active: true,
       },
-      { onConflict: "user_id,program_slug" }
+      { onConflict: 'user_id,program_slug' }
     )
-    .select("*")
+    .select('*')
     .single();
   if (error) throw error;
   return data as unknown as ActiveProgramRow;
@@ -184,8 +231,8 @@ export async function resetProgram(
   const { error: delErr } = await sb
     .from(TABLE_TASKS)
     .delete()
-    .eq("user_id", userId)
-    .eq("program_slug", slug);
+    .eq('user_id', userId)
+    .eq('program_slug', slug);
   if (delErr) throw delErr;
 
   const { error: upErr } = await sb
@@ -198,7 +245,7 @@ export async function resetProgram(
         current_day: 1,
         is_active: true,
       },
-      { onConflict: "user_id,program_slug" }
+      { onConflict: 'user_id,program_slug' }
     );
   if (upErr) throw upErr;
 }
@@ -216,10 +263,10 @@ async function ensureDayTaskRows(
 
   const { data: existing, error: exErr } = await sb
     .from(TABLE_TASKS)
-    .select("task_id")
-    .eq("user_id", userId)
-    .eq("program_slug", slug)
-    .eq("day", day);
+    .select('task_id')
+    .eq('user_id', userId)
+    .eq('program_slug', slug)
+    .eq('day', day);
   if (exErr) throw exErr;
   if (existing && existing.length >= dayDef.tasks.length) return;
 
@@ -257,10 +304,10 @@ export async function getDayTasks(
 
   const { data: rows, error } = await sb
     .from(TABLE_TASKS)
-    .select("*")
-    .eq("user_id", userId)
-    .eq("program_slug", slug)
-    .eq("day", day);
+    .select('*')
+    .eq('user_id', userId)
+    .eq('program_slug', slug)
+    .eq('day', day);
   if (error) throw error;
 
   const dayDef = def.daysDef.find((d) => d.day === day)!;
@@ -295,25 +342,25 @@ export async function toggleTask(
         completed,
         completed_at: completed ? new Date().toISOString() : null,
       },
-      { onConflict: "user_id,program_slug,day,task_id" }
+      { onConflict: 'user_id,program_slug,day,task_id' }
     );
   if (upErr) throw upErr;
 
   const { data: pending, error: pendErr } = await sb
     .from(TABLE_TASKS)
-    .select("task_id")
-    .eq("user_id", userId)
-    .eq("program_slug", slug)
-    .eq("day", day)
-    .eq("completed", false);
+    .select('task_id')
+    .eq('user_id', userId)
+    .eq('program_slug', slug)
+    .eq('day', day)
+    .eq('completed', false);
   if (pendErr) throw pendErr;
 
   if (!pending || pending.length === 0) {
     const { data: prog, error: selErr } = await sb
       .from(TABLE_PROGRAMS)
-      .select("*")
-      .eq("user_id", userId)
-      .eq("program_slug", slug)
+      .select('*')
+      .eq('user_id', userId)
+      .eq('program_slug', slug)
       .maybeSingle();
     if (selErr) throw selErr;
 
@@ -321,8 +368,8 @@ export async function toggleTask(
     const { error: updErr } = await sb
       .from(TABLE_PROGRAMS)
       .update({ current_day: next, updated_at: new Date().toISOString() })
-      .eq("user_id", userId)
-      .eq("program_slug", slug);
+      .eq('user_id', userId)
+      .eq('program_slug', slug);
     if (updErr) throw updErr;
 
     return { advanced: true, nextDay: next };
@@ -339,17 +386,17 @@ export async function getProgress(
 
   const { data: prog, error: pErr } = await sb
     .from(TABLE_PROGRAMS)
-    .select("*")
-    .eq("user_id", userId)
-    .eq("program_slug", slug)
+    .select('*')
+    .eq('user_id', userId)
+    .eq('program_slug', slug)
     .maybeSingle();
   if (pErr) throw pErr;
 
   const { data: rows, error: rErr } = await sb
     .from(TABLE_TASKS)
-    .select("day, completed")
-    .eq("user_id", userId)
-    .eq("program_slug", slug);
+    .select('day, completed')
+    .eq('user_id', userId)
+    .eq('program_slug', slug);
   if (rErr) throw rErr;
 
   const byDay = new Map<number, { total: number; done: number }>();
@@ -390,12 +437,12 @@ export type ProgramPointsByDayRow = {
 };
 
 export async function fetchProgramPoints(uid: string, slug: string): Promise<ProgramPointsTotals> {
-  const { data, error } = await supabase.rpc("get_program_points", { p_user: uid, p_slug: slug });
+  const { data, error } = await supabase.rpc('get_program_points', { p_user: uid, p_slug: slug });
   if (error) throw error;
   return (data?.[0] ?? { total_points: 0, checks_done: 0, days_completed: 0 }) as ProgramPointsTotals;
 }
 export async function fetchProgramPointsByDay(uid: string, slug: string): Promise<ProgramPointsByDayRow[]> {
-  const { data, error } = await supabase.rpc("get_program_points_by_day", { p_user: uid, p_slug: slug });
+  const { data, error } = await supabase.rpc('get_program_points_by_day', { p_user: uid, p_slug: slug });
   if (error) throw error;
   return (data ?? []) as ProgramPointsByDayRow[];
 }
@@ -405,16 +452,16 @@ export type GlobalPointsTotal = { total_points: number };
 
 export async function fetchGlobalProgramPoints(fromISO: string, toISO: string): Promise<GlobalPointsTotal | null> {
   const { data: auth } = await supabase.auth.getUser();
-  const uid = auth.user?.id;
+  const uid = auth?.user?.id;
   if (!uid) return { total_points: 0 };
 
-  const { data, error } = await supabase.rpc("get_user_program_points_total", {
+  const { data, error } = await supabase.rpc('get_user_program_points_total', {
     p_user_id: uid,
     p_from: fromISO,
     p_to: toISO,
   });
   if (error) {
-    console.warn("[fetchGlobalProgramPoints]", error);
+    console.warn('[fetchGlobalProgramPoints]', error);
     return null;
   }
   return Array.isArray(data) ? (data[0] ?? { total_points: 0 }) : (data ?? { total_points: 0 });
@@ -424,12 +471,12 @@ export type MonthlyRank = { rank_month: number; total_points: number } | null;
 
 export async function fetchMyMonthlyRank(): Promise<MonthlyRank> {
   const { data: auth } = await supabase.auth.getUser();
-  const uid = auth.user?.id;
+  const uid = auth?.user?.id;
   if (!uid) return null;
 
-  const { data, error } = await supabase.rpc("get_monthly_rank_for_user", { p_user_id: uid });
+  const { data, error } = await supabase.rpc('get_monthly_rank_for_user', { p_user_id: uid });
   if (error) {
-    console.warn("[fetchMyMonthlyRank]", error);
+    console.warn('[fetchMyMonthlyRank]', error);
     return null;
   }
   return Array.isArray(data) ? (data[0] ?? null) : (data ?? null);
@@ -440,14 +487,14 @@ export async function fetchMyMonthlyRank(): Promise<MonthlyRank> {
 */
 export async function fetchUserStreakDays(): Promise<number> {
   const { data: auth } = await supabase.auth.getUser();
-  const uid = auth.user?.id;
+  const uid = auth?.user?.id;
   if (!uid) return 0;
 
-  const { data, error } = await supabase.rpc("get_user_streak_days", { p_user_id: uid });
+  const { data, error } = await supabase.rpc('get_user_streak_days', { p_user_id: uid });
   if (error) {
-    console.warn("[fetchUserStreakDays]", error);
+    console.warn('[fetchUserStreakDays]', error);
     return 0;
   }
   const v = Array.isArray(data) ? (data[0] as any)?.streak_days : (data as any)?.streak_days ?? data;
-  return typeof v === "number" ? v : 0;
+  return typeof v === 'number' ? v : 0;
 }
