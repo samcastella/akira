@@ -4,10 +4,10 @@
 import Link from 'next/link';
 import TodayWheel from '@/components/mizona/TodayWheel';
 import CalendarLite from '@/components/mizona/CalendarLite';
-import StreakCard from '@/components/mizona/StreakCard';
+// import StreakCard from '@/components/mizona/StreakCard'; // reemplazado por StreakCardFlash
 import { useTodayActivity } from '@/lib/activity/useTodayActivity';
 import { useUserProfile } from '@/lib/user';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { loadActive, type LocalStore, type LocalProgram } from '@/lib/programsLocal';
 import { ChevronRight } from 'lucide-react';
 
@@ -70,8 +70,9 @@ export default function MiActividadResumen() {
     setAvatarSrc((f && String(f).trim()) || (a && String(a).trim()) || '/images/avatars/default.png');
   }, [user]);
 
-  // ====== PUNTOS GLOBALES + RANKING (RPC) con fallback ======
-  const [totals, setTotals] = useState<GlobalPointsTotal | null>(null);
+  // ====== PUNTOS GLOBALES + RANKING (RPC) con fallback inmediato ======
+  // Inicializa puntos con historicalPoints para pintar en <1ms y luego refrescar con RPC
+  const [totals, setTotals] = useState<GlobalPointsTotal | null>({ total_points: historicalPoints ?? 0 });
   const [rank, setRank] = useState<number | null>(null);
 
   useEffect(() => {
@@ -93,20 +94,20 @@ export default function MiActividadResumen() {
         ]);
 
         if (!mounted) return;
-        setTotals(gTotals ?? { total_points: 0 });
+        if (gTotals) setTotals(gTotals);
         setRank(myRank?.rank_month ?? null);
       } catch {
         if (mounted) {
-          setTotals(null);
+          // mantenemos el fallback local ya pintado
           setRank(null);
         }
       }
     })();
     return () => { mounted = false; };
-  }, []);
+  }, []); // carga una vez
 
   const totalPoints = totals?.total_points ?? historicalPoints ?? 0;
-  const rankLabel = typeof rank === 'number' ? `#${rank}` : 'No disponible';
+  const rankLabelBig = typeof rank === 'number' ? `${rank}º` : '—';
 
   return (
     <div className="pt-3 pb-6 space-y-8">
@@ -121,16 +122,16 @@ export default function MiActividadResumen() {
         />
       </section>
 
-      {/* ===== Racha ===== */}
-      <StreakCard />
+      {/* ===== Racha (nueva, más visual con confeti + contador animado) ===== */}
+      <StreakCardFlash value={(user as any)?.streak_days ?? 0} />
 
-      {/* ===== Perfil: avatar + puntos + ranking ===== */}
+      {/* ===== Perfil: avatar + (puntuación debajo del nombre) + ranking grande a la derecha ===== */}
       <section className="rounded-2xl border border-neutral-200 p-4 flex items-center gap-4 bg-white">
         <div className="relative w-16 h-16 rounded-full overflow-hidden bg-neutral-100 ring-1 ring-white/70">
           <img
             src={avatarSrc}
             alt="Tu perfil"
-            className="object-cover w-full h-full scale-[1.1]" /* ocupa toda la circunferencia */
+            className="object-cover w-full h-full scale-[1.6]" /* ocupa toda la circunferencia x~1.6 */
             onError={() => setAvatarSrc('/images/avatars/default.png')}
             loading="lazy"
             decoding="async"
@@ -139,11 +140,11 @@ export default function MiActividadResumen() {
         </div>
         <div className="flex-1 min-w-0">
           <div className="text-[15px] font-semibold text-neutral-900 truncate">{displayName}</div>
-          <div className="mt-1 text-sm text-neutral-600">
-            Ranking mensual: <b>{rankLabel}</b>
+          <div className="mt-1 text-sm text-neutral-700">
+            Puntuación: <b className="tabular-nums">{totalPoints}</b> pts
           </div>
         </div>
-        <div className="text-2xl font-extrabold tabular-nums">{totalPoints}</div>
+        <div className="text-3xl sm:text-4xl font-extrabold tabular-nums leading-none">{rankLabelBig}</div>
       </section>
 
       {/* ===== Programas activos ===== */}
@@ -160,7 +161,7 @@ export default function MiActividadResumen() {
       <section>
         <div className="mb-2 flex items-baseline justify-between">
           <h3 className="text-lg font-semibold">Estadísticas</h3>
-        <Link href="/mizona/estadisticas" className="text-sm font-medium text-neutral-700 hover:underline">Ver todo</Link>
+          <Link href="/mizona/estadisticas" className="text-sm font-medium text-neutral-700 hover:underline">Ver todo</Link>
         </div>
         <p className="text-sm text-neutral-600 mb-3">Descubre tus estadísticas de esta semana</p>
         <MiniWeeklyChartReal />
@@ -199,6 +200,47 @@ export default function MiActividadResumen() {
         <h3 className="text-lg font-semibold mb-3">Logros</h3>
         <AchievementsStrip />
       </section>
+    </div>
+  );
+}
+
+/* ===== Racha con confeti + contador animado ===== */
+function StreakCardFlash({ value }: { value: number }) {
+  const [n, setN] = useState(0);
+  const rafRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const target = Math.max(0, Math.floor(value || 0));
+    const duration = 700; // ms
+    const start = performance.now();
+    const tick = (t: number) => {
+      const p = Math.min(1, (t - start) / duration);
+      const eased = 1 - Math.pow(1 - p, 3); // easeOutCubic
+      setN(Math.round(eased * target));
+      if (p < 1) rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, [value]);
+
+  // fondo “confeti” sutil sobre amarillo suave
+  const confettiBg =
+    "radial-gradient(circle at 10% 20%, rgba(255,99,132,0.15) 0 6px, transparent 7px)," +
+    "radial-gradient(circle at 80% 30%, rgba(54,162,235,0.15) 0 6px, transparent 7px)," +
+    "radial-gradient(circle at 30% 80%, rgba(255,206,86,0.18) 0 6px, transparent 7px)";
+
+  return (
+    <div
+      className="rounded-2xl p-4 border"
+      style={{ background: `linear-gradient(0deg, #FFFBEB, #FFFBEB), ${confettiBg}`, borderColor: '#F5E6A7' }}
+    >
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-sm text-neutral-600">Racha</div>
+          <div className="text-3xl font-extrabold leading-none tabular-nums">{n} días</div>
+        </div>
+        <div className="text-xs text-neutral-500">¡Sigue así! 🔥</div>
+      </div>
     </div>
   );
 }
@@ -264,7 +306,7 @@ function ActiveProgramsList() {
   );
 }
 
-/* ===== Imagen con fallback jpg → png (ocupa círculo completo) ===== */
+/* ===== Imagen con fallback jpg → png (ocupa círculo completo, escala mayor) ===== */
 function ThumbCircle({ alt, srcJpg, srcPng }: { alt: string; srcJpg: string; srcPng: string }) {
   const [src, setSrc] = useState(srcJpg);
   return (
@@ -272,7 +314,7 @@ function ThumbCircle({ alt, srcJpg, srcPng }: { alt: string; srcJpg: string; src
       <img
         src={src}
         alt={alt}
-        className="object-cover w-full h-full scale-[1.1]" /* ocupa toda la circunferencia */
+        className="object-cover w-full h-full scale-[1.6]" /* x~1.6 para llenar el círculo */
         onError={() => setSrc(srcPng)}
         loading="lazy"
         decoding="async"
@@ -416,7 +458,7 @@ function AchievementsStrip() {
             <img
               src={b.src}
               alt={b.title}
-              className="object-cover w-full h-full scale-[1.1]"
+              className="object-cover w-full h-full scale-[1.6]" /* más grande para ocupar */
               loading="lazy"
               decoding="async"
               srcSet={`${b.src} 1x, ${b.src} 2x`}
