@@ -11,10 +11,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { loadActive, type LocalStore, type LocalProgram } from '@/lib/programsLocal';
 import { ChevronRight } from 'lucide-react';
 
-/* === Puntuación (RPC) === */
+/* === Puntuación GLOBAL + Ranking (RPC) === */
 import {
-  fetchProgramPoints,
-  type ProgramPointsTotals,
+  fetchGlobalProgramPoints,
+  fetchMyMonthlyRank,
+  type GlobalPointsTotal,
 } from '@/lib/programService';
 
 /* ===== helpers JSON / fechas ===== */
@@ -41,10 +42,9 @@ function routeSlug(slug: string) {
   return slug.replace(/-30$/, '');
 }
 
-/* Mini mapa explícito de thumbnails */
+/* Mini mapa explícito de thumbnails (ajustado Detox) */
 const THUMB_MAP: Record<string, string> = {
   lectura: '/images/programs/lectura-hero.jpg',
-  // 🔧 Ajustado al path real que pasaste:
   'detox-tecnologico': '/images/programs/detox-hero.jpg',
 };
 
@@ -58,7 +58,7 @@ export default function MiActividadResumen() {
     (user?.username && user.username.trim()) ||
     'Tú';
 
-  // Avatar robusto: <img> con fallback local si falla (sin dependencia de next/image/domains)
+  /* ===== Avatar robusto (ocupa círculo completo) ===== */
   const [avatarSrc, setAvatarSrc] = useState<string>(() => {
     const f = (user as any)?.foto;
     const a = (user as any)?.avatar_url;
@@ -70,8 +70,10 @@ export default function MiActividadResumen() {
     setAvatarSrc((f && String(f).trim()) || (a && String(a).trim()) || '/images/avatars/default.png');
   }, [user]);
 
-  // ====== puntos (RPC con fallback) ======
-  const [totals, setTotals] = useState<ProgramPointsTotals | null>(null);
+  // ====== PUNTOS GLOBALES + RANKING (RPC) con fallback ======
+  const [totals, setTotals] = useState<GlobalPointsTotal | null>(null);
+  const [rank, setRank] = useState<number | null>(null);
+
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -79,20 +81,32 @@ export default function MiActividadResumen() {
         const to = startOfDay(new Date());
         const from = new Date(to);
         from.setDate(from.getDate() - 365);
+
         const y = to.getFullYear(), m = String(to.getMonth() + 1).padStart(2,'0'), d = String(to.getDate()).padStart(2,'0');
         const y2 = from.getFullYear(), m2 = String(from.getMonth() + 1).padStart(2,'0'), d2 = String(from.getDate()).padStart(2,'0');
-        const t = await fetchProgramPoints(`${y2}-${m2}-${d2}`, `${y}-${m}-${d}`);
-        if (mounted) setTotals(t ?? null);
+        const toISO = `${y}-${m}-${d}`;
+        const fromISO = `${y2}-${m2}-${d2}`;
+
+        const [gTotals, myRank] = await Promise.all([
+          fetchGlobalProgramPoints(fromISO, toISO),
+          fetchMyMonthlyRank(),
+        ]);
+
+        if (!mounted) return;
+        setTotals(gTotals ?? { total_points: 0 });
+        setRank(myRank?.rank_month ?? null);
       } catch {
-        if (mounted) setTotals(null);
+        if (mounted) {
+          setTotals(null);
+          setRank(null);
+        }
       }
     })();
     return () => { mounted = false; };
   }, []);
 
   const totalPoints = totals?.total_points ?? historicalPoints ?? 0;
-  const rankMonthly = (user as any)?.rank_month;
-  const rankLabel = typeof rankMonthly === 'number' ? `#${rankMonthly}` : 'No disponible';
+  const rankLabel = typeof rank === 'number' ? `#${rank}` : 'No disponible';
 
   return (
     <div className="pt-3 pb-6 space-y-8">
@@ -116,10 +130,11 @@ export default function MiActividadResumen() {
           <img
             src={avatarSrc}
             alt="Tu perfil"
-            className="object-cover w-full h-full"
+            className="object-cover w-full h-full scale-[1.1]" /* ocupa toda la circunferencia */
             onError={() => setAvatarSrc('/images/avatars/default.png')}
             loading="lazy"
             decoding="async"
+            srcSet={`${avatarSrc} 1x, ${avatarSrc} 2x`}
           />
         </div>
         <div className="flex-1 min-w-0">
@@ -154,11 +169,6 @@ export default function MiActividadResumen() {
       {/* ===== Calendario (círculos perfectos) + leyenda ===== */}
       <section>
         <h3 className="text-lg font-semibold mb-2">Calendario</h3>
-        {/* 
-          Forzamos círculos perfectos:
-          - fijamos w/h al contenedor que CalendarLite asigna a cada día (.ak-calendar-day)
-          - centramos contenido y eliminamos posibles paddings que deformen
-        */}
         <div className="
           [&_.ak-calendar-day]:w-9
           [&_.ak-calendar-day]:h-9
@@ -254,7 +264,7 @@ function ActiveProgramsList() {
   );
 }
 
-/* ===== Imagen con fallback jpg → png ===== */
+/* ===== Imagen con fallback jpg → png (ocupa círculo completo) ===== */
 function ThumbCircle({ alt, srcJpg, srcPng }: { alt: string; srcJpg: string; srcPng: string }) {
   const [src, setSrc] = useState(srcJpg);
   return (
@@ -262,10 +272,11 @@ function ThumbCircle({ alt, srcJpg, srcPng }: { alt: string; srcJpg: string; src
       <img
         src={src}
         alt={alt}
-        className="object-cover w-full h-full"
+        className="object-cover w-full h-full scale-[1.1]" /* ocupa toda la circunferencia */
         onError={() => setSrc(srcPng)}
         loading="lazy"
         decoding="async"
+        srcSet={`${src} 1x, ${src} 2x`}
       />
     </div>
   );
@@ -373,7 +384,7 @@ function getDayStatus(date: Date): 'none'|'some'|'all'|'missed' {
     if (!totalDays) continue;
 
     const dNum = dayIdxSince(lp.startedAt, date);
-    if (dNum < 1 || dNum > totalDays) continue;
+    if (dNum < 1 || dNum > totalDays) return 'none';
 
     const dayDef = json?.days?.find((x: any) => x.day === dNum) ?? json?.days?.[dNum - 1];
     planned += Math.max(0, dayDef?.tasks?.length ?? 0);
@@ -402,7 +413,14 @@ function AchievementsStrip() {
       {items.map((b) => (
         <div key={b.key} className="flex flex-col items-center">
           <div className="relative w-20 h-20 rounded-xl overflow-hidden border border-neutral-200 bg-neutral-50">
-            <img src={b.src} alt={b.title} className="object-cover w-full h-full" loading="lazy" decoding="async" />
+            <img
+              src={b.src}
+              alt={b.title}
+              className="object-cover w-full h-full scale-[1.1]"
+              loading="lazy"
+              decoding="async"
+              srcSet={`${b.src} 1x, ${b.src} 2x`}
+            />
           </div>
           <div className="mt-2 text-xs text-center text-neutral-800">{b.title}</div>
         </div>

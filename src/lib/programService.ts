@@ -391,9 +391,9 @@ export async function getProgress(
   };
 }
 
-/* ========= Helpers opcionales de PUNTUACIÓN (RPC) =========
-   No rompen APIs existentes. Los usamos desde el frontend para
-   mostrar +5 por check y +10 por día completo.
+/* ========= Helpers opcionales de PUNTUACIÓN (RPC por PROGRAMA) =========
+   Mantienen compatibilidad con tu UI actual que lee puntos por programa
+   (ProgramDetail): +5 por check y +10 por día completo.
 */
 
 export type ProgramPointsTotals = {
@@ -410,7 +410,7 @@ export type ProgramPointsByDayRow = {
   day_points: number;
 };
 
-/** Totales de puntos (usa RPC get_program_points) */
+/** Totales de puntos por PROGRAMA (usa RPC get_program_points) */
 export async function fetchProgramPoints(uid: string, slug: string): Promise<ProgramPointsTotals> {
   const { data, error } = await supabase.rpc("get_program_points", {
     p_user: uid,
@@ -421,7 +421,7 @@ export async function fetchProgramPoints(uid: string, slug: string): Promise<Pro
     { total_points: 0, checks_done: 0, days_completed: 0 }) as ProgramPointsTotals;
 }
 
-/** Desglose por día (usa RPC get_program_points_by_day) */
+/** Desglose por día por PROGRAMA (usa RPC get_program_points_by_day) */
 export async function fetchProgramPointsByDay(uid: string, slug: string): Promise<ProgramPointsByDayRow[]> {
   const { data, error } = await supabase.rpc("get_program_points_by_day", {
     p_user: uid,
@@ -429,4 +429,44 @@ export async function fetchProgramPointsByDay(uid: string, slug: string): Promis
   });
   if (error) throw error;
   return (data ?? []) as ProgramPointsByDayRow[];
+}
+
+/* ========= NUEVO: Puntuación GLOBAL (todos los programas) y RANKING =========
+   Basado en las vistas/funciones SQL creadas:
+   - get_user_program_points_total(p_user_id, p_from, p_to)
+   - get_monthly_rank_for_user(p_user_id)
+*/
+
+export type GlobalPointsTotal = { total_points: number };
+export async function fetchGlobalProgramPoints(fromISO: string, toISO: string): Promise<GlobalPointsTotal | null> {
+  const { data: auth } = await supabase.auth.getUser();
+  const uid = auth.user?.id;
+  if (!uid) return { total_points: 0 };
+  const { data, error } = await supabase.rpc("get_user_program_points_total", {
+    p_user_id: uid,
+    p_from: fromISO,
+    p_to: toISO,
+  });
+  if (error) {
+    console.warn("[fetchGlobalProgramPoints]", error);
+    return null;
+  }
+  return Array.isArray(data)
+    ? (data[0] ?? { total_points: 0 })
+    : (data ?? { total_points: 0 });
+}
+
+export type MonthlyRank = { rank_month: number; total_points: number };
+export async function fetchMyMonthlyRank(): Promise<MonthlyRank | null> {
+  const { data: auth } = await supabase.auth.getUser();
+  const uid = auth.user?.id;
+  if (!uid) return null;
+  const { data, error } = await supabase.rpc("get_monthly_rank_for_user", {
+    p_user_id: uid,
+  });
+  if (error) {
+    console.warn("[fetchMyMonthlyRank]", error);
+    return null;
+  }
+  return Array.isArray(data) ? (data[0] ?? null) : (data ?? null);
 }
