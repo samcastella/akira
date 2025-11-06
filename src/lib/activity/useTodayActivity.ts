@@ -1,7 +1,7 @@
 'use client';
 
-import { useMemo } from 'react';
-import { loadActive, type LocalProgram } from '@/lib/programsLocal';
+import { useMemo, useState } from 'react';
+import { loadActive, saveActive, type LocalProgram } from '@/lib/programsLocal';
 import { useAuthUserId } from '@/lib/user';
 
 /* ===== Tipos públicos para hoy ===== */
@@ -21,6 +21,7 @@ export type HabitToday = { id: string; name: string; done: boolean; color?: stri
 export function useTodayActivity() {
   const uid = useAuthUserId();
   const today = useISODate(new Date());
+  const [version, setVersion] = useState(0); // ← fuerza re-render tras toggle
 
   /* ===== Programas activos (local store) ===== */
   const programs = useMemo<ProgramToday[]>(() => {
@@ -28,23 +29,30 @@ export function useTodayActivity() {
     const result: ProgramToday[] = [];
 
     Object.entries(store).forEach(([slug, p]) => {
-      const lp = p as any; // evitar error con completedAt inexistente en tipo LocalProgram
+      const lp = p as any;
       const started = !!lp?.startedAt;
       const completed = !!lp?.completedAt;
-      if (!started || completed) return; // terminado → oculto
+      if (!started || completed) return; // terminado → fuera
 
       const json = tryGetProgramJson(slug);
       const totalDays = json?.days?.length ?? 0;
       if (!totalDays) return;
 
       const day = clampDay(lp.startedAt, new Date(`${today}T00:00:00`), totalDays);
-      const dayTasks = json!.days.find((d: any) => d.day === day) ?? json!.days[day - 1];
+      const dayDef = json!.days.find((d: any) => d.day === day) ?? json!.days[day - 1];
       const progress = (lp.progress?.[day] as Record<string, boolean>) || {};
 
-      const tasks = (dayTasks?.tasks ?? []).map((t: any, i: number) => {
+      const tasksRaw = (dayDef?.tasks ?? []) as Array<{ id?: string; label: string }>;
+      const tasks = tasksRaw.map((t, i) => {
         const id = t.id ?? `task_${i}`;
         return { id, label: t.label, done: !!progress[id] };
       });
+
+      // ⛳️ si es el ÚLTIMO día y está TODO HECHO, no lo mostramos en Checks
+      const planned = tasks.length;
+      const done = tasks.filter(t => t.done).length;
+      const lastDayAndComplete = planned > 0 && done >= planned && day >= totalDays;
+      if (lastDayAndComplete) return;
 
       result.push({
         slug,
@@ -56,17 +64,17 @@ export function useTodayActivity() {
     });
 
     return result;
-  }, [today]);
+  }, [today, version]);
 
   /* ===== Retos con amigos (placeholder) ===== */
   const challengesToday = useMemo<ChallengeToday[]>(() => {
-    return []; // ← conectar con challenge_days / checks
-  }, []);
+    return [];
+  }, [version]);
 
   /* ===== Hábitos personalizados (placeholder) ===== */
   const habitsToday = useMemo<HabitToday[]>(() => {
-    return []; // ← conectar con habit_masters / habit_ticks
-  }, []);
+    return [];
+  }, [version]);
 
   /* ===== Totales para rueda ===== */
   const totalGoal =
@@ -80,9 +88,9 @@ export function useTodayActivity() {
     habitsToday.filter((h) => !!h.done).length;
 
   /* ===== Históricos / series ===== */
-  const historicalPoints = 0;  // RPC real fuera de este hook
-  const programsCompleted = 0; // RPC/consulta real fuera de este hook
-  const weeklySeries = useMemo(() => buildWeeklySeriesReal(), [today]);
+  const historicalPoints = 0;
+  const programsCompleted = 0;
+  const weeklySeries = useMemo(() => buildWeeklySeriesReal(), [today, version]);
 
   return {
     uid,
@@ -95,14 +103,22 @@ export function useTodayActivity() {
     historicalPoints,
     programsCompleted,
     weeklySeries,
-    toggleProgramTask: (_slug: string, _day: number, _taskId: string) => {
-      // noop por ahora; conecta con upsert real si quieres marcar desde /mizona/checks
-      console.info('toggleProgramTask noop — conectar con upsert real si es necesario');
+    toggleProgramTask: (slug: string, day: number, taskId: string) => {
+      // ✅ marca/desmarca en local y fuerza re-render
+      const store = loadActive();
+      const lp = store[slug] as LocalProgram & { progress?: Record<number, Record<string, boolean>> };
+      if (!lp) return;
+      lp.progress = lp.progress || {};
+      lp.progress[day] = lp.progress[day] || {};
+      lp.progress[day][taskId] = !lp.progress[day][taskId];
+      saveActive(store);
+      setVersion(v => v + 1);
+      // (opcional) window.dispatchEvent(new StorageEvent('storage', { key: 'akira_programs_active_v1' }));
     },
   };
 }
 
-/* ===== helpers de fecha / json ===== */
+/* ===== helpers ===== */
 function useISODate(d: Date) {
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
@@ -131,7 +147,7 @@ function clampDay(startedAt: number, when: Date, totalDays: number) {
 function dayIdxSince(startedAt: number, when: Date) {
   const a = startOfDay(new Date(startedAt)).getTime();
   const b = startOfDay(when).getTime();
-  return Math.floor((b - a) / 86_400_000) + 1; // 1..N
+  return Math.floor((b - a) / 86_400_000) + 1;
 }
 function colorFor(slug: string) {
   if (slug.includes('detox')) return '#0a7cff';
@@ -162,7 +178,6 @@ function buildWeeklySeriesReal() {
     const goal = Array(7).fill(0);
     const actual = Array(7).fill(0);
 
-    // Sumar por día y programa
     for (let i = 0; i < 7; i++) {
       const d = addDays(start, i);
 

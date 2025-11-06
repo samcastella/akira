@@ -4,18 +4,21 @@
 import { useTodayActivity } from '@/lib/activity/useTodayActivity';
 import CreateHabitBar from '@/components/habits/CreateHabitBar';
 
-const NOOP = () => {};
-
 export default function MiActividadChecks() {
   const {
     programsToday,
     challengesToday,
     habitsToday,
-    toggleProgramTask, // sólo para programas; los otros exponen callbacks propios/mocks
+    toggleProgramTask,
   } = useTodayActivity();
 
   const hasAny =
     programsToday.length > 0 || challengesToday.length > 0 || habitsToday.length > 0;
+
+  const handleInfo = (progTitle: string, taskLabel: string) => {
+    // Placeholder: sustituiremos por modal bonito
+    alert(`${progTitle}\n\n${taskLabel}`);
+  };
 
   return (
     <div className="py-6 space-y-6">
@@ -40,7 +43,8 @@ export default function MiActividadChecks() {
                   checked={t.done}
                   color={prog.color}
                   onToggle={() => toggleProgramTask(prog.slug, prog.day, t.id)}
-                  showInfoButton={true} // “+” visible sin necesidad de onInfo
+                  onInfo={() => handleInfo(prog.title, t.label)}
+                  showInfoButton={true}
                 />
               ))}
             </div>
@@ -62,8 +66,9 @@ export default function MiActividadChecks() {
                   label={t.label}
                   checked={t.done}
                   color="#111"
-                  onToggle={t.onToggle ?? NOOP}
-                  showInfoButton={true} // “+” visible
+                  onToggle={t.onToggle ?? (() => {})}
+                  onInfo={() => handleInfo(ch.title, t.label)}
+                  showInfoButton={true}
                 />
               ))}
             </div>
@@ -83,8 +88,9 @@ export default function MiActividadChecks() {
                 label="Check de hoy"
                 checked={!!h.done}
                 color={h.color || '#111'}
-                onToggle={h.onToggle ?? NOOP}
-                showInfoButton={true} // “+” visible
+                onToggle={h.onToggle ?? (() => {})}
+                onInfo={() => handleInfo(h.name, 'Check de hoy')}
+                showInfoButton={true}
               />
             </div>
           ))}

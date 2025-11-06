@@ -99,7 +99,6 @@ export default function MiActividadStats() {
     let mounted = true;
     (async () => {
       try {
-        // ✅ Rango por defecto: últimos 365 días
         const to = startOfDay(new Date());
         const from = addDays(to, -365);
         const t = await fetchProgramPoints(toISO(from), toISO(to));
@@ -113,7 +112,7 @@ export default function MiActividadStats() {
 
   const score = totals?.total_points ?? historicalPoints ?? 0;
 
-  // ===== Selector de semanas (máx 4, desde hook real) =====
+  // ===== Semanas (select) =====
   const series4 = (weeklySeries ?? []).slice(0, 4);
   const [weekIdx, setWeekIdx] = useState(0);
   const current = useMemo(
@@ -157,9 +156,6 @@ export default function MiActividadStats() {
     return Math.round((done / planned) * 100);
   }, []);
 
-  // ===== Toggle de calendario: Mes / Últimas 4 semanas =====
-  const [calMode, setCalMode] = useState<'month' | 'rolling4w'>('month');
-
   return (
     <div className="py-6 space-y-8">
       {/* Puntuación histórica (RPC) */}
@@ -171,30 +167,12 @@ export default function MiActividadStats() {
         </div>
       </section>
 
-      {/* Calendario general con colores (mismo que Resumen) + toggle + leyenda */}
+      {/* Calendario general con colores (mismo que Resumen) + leyenda */}
       <section>
-        <div className="mb-2 flex items-center justify-between">
-          <h3 className="text-lg font-semibold">Calendario general</h3>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setCalMode('month')}
-              className={`px-3 py-1.5 rounded-xl text-sm border ${calMode==='month' ? 'bg-black text-white border-black' : 'border-neutral-300 hover:bg-neutral-50'}`}
-            >
-              Mes
-            </button>
-            <button
-              onClick={() => setCalMode('rolling4w')}
-              className={`px-3 py-1.5 rounded-xl text-sm border ${calMode==='rolling4w' ? 'bg-black text-white border-black' : 'border-neutral-300 hover:bg-neutral-50'}`}
-            >
-              Últimas 4 semanas
-            </button>
-          </div>
-        </div>
-
+        <h3 className="text-lg font-semibold mb-2">Calendario general</h3>
         <div className="[&_.ak-calendar-day]:flex [&_.ak-calendar-day]:items-center [&_.ak-calendar-day]:justify-center [&_.ak-calendar-day]:aspect-square [&_.ak-calendar-day]:rounded-full">
-          <CalendarLite dayStatus={getDayStatus} mode={calMode} />
+          <CalendarLite dayStatus={getDayStatus} />
         </div>
-
         <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-neutral-600">
           <LegendDot cls="bg-neutral-300" label="Sin tareas / sin actividad" />
           <LegendDot cls="bg-orange-300" label="Algunas hechas" />
@@ -203,22 +181,24 @@ export default function MiActividadStats() {
         </div>
       </section>
 
-      {/* Estadísticas de check (selector hasta 4 semanas) */}
+      {/* Estadísticas (select de semanas) */}
       <section className="rounded-2xl border border-neutral-200 overflow-hidden">
-        <div className="px-4 py-3 text-sm font-semibold bg-neutral-50">Estadísticas de check</div>
+        <div className="px-4 py-3 text-sm font-semibold bg-neutral-50">Estadísticas</div>
         <div className="p-4 space-y-3">
-          <div className="flex gap-2 flex-wrap">
-            {series4.map((w, i) => (
-              <button
-                key={i}
-                onClick={() => setWeekIdx(i)}
-                className={`px-3 py-1.5 rounded-xl text-sm border ${
-                  i === weekIdx ? 'bg-black text-white border-black' : 'border-neutral-300 hover:bg-neutral-50'
-                }`}
-              >
-                {i === 0 ? 'Última semana' : `Semana ${w.range?.[0] ?? '—'} → ${w.range?.[1] ?? '—'}`}
-              </button>
-            ))}
+          <div>
+            <label htmlFor="weekSel" className="mr-2 text-sm text-neutral-700">Semana:</label>
+            <select
+              id="weekSel"
+              className="border border-neutral-300 rounded-lg px-2 py-1 text-sm"
+              value={weekIdx}
+              onChange={(e) => setWeekIdx(Number(e.target.value))}
+            >
+              {series4.map((w, i) => (
+                <option key={i} value={i}>
+                  {i === 0 ? 'Última semana' : `Semana ${w.range?.[0] ?? '—'} → ${w.range?.[1] ?? '—'}`}
+                </option>
+              ))}
+            </select>
           </div>
 
           <Chart labels={current.labels} goal={current.goal} actual={current.actual} />
@@ -230,7 +210,7 @@ export default function MiActividadStats() {
         </div>
       </section>
 
-      {/* Logros / Insignias (placeholder) */}
+      {/* Logros / Insignias */}
       <section>
         <h3 className="text-lg font-semibold mb-3">Logros</h3>
         <div className="grid grid-cols-3 gap-12">
