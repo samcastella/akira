@@ -1,4 +1,3 @@
-// src/app/mizona/resumen/page.tsx
 'use client';
 
 import Link from 'next/link';
@@ -43,12 +42,31 @@ function clampDay(startedAt: number, when: Date, totalDays: number) {
 function routeSlug(slug: string) {
   return slug.replace(/-30$/, '');
 }
-
-/* Mini mapa explícito de thumbnails (ajustado Detox) */
+/* Mini mapa explícito de thumbnails */
 const THUMB_MAP: Record<string, string> = {
   lectura: '/images/programs/lectura-hero.jpg',
   'detox-tecnologico': '/images/programs/detox-hero.jpg',
 };
+
+/* ====== Cálculo instantáneo local de puntos (optimista) ======
+   Suma todos los checks hechos en local (programsLocal) sin esperar RPC. */
+function computeLocalPointsTotal(): number {
+  const active = loadActive();
+  let pts = 0;
+  for (const [slug, prog] of Object.entries(active)) {
+    const lp = prog as LocalProgram;
+    if (!lp?.progress || !lp.startedAt) continue;
+    const json = tryGetProgramJson(slug);
+    const totalDays: number = json?.days?.length ?? json?.durationDays ?? 0;
+    if (!totalDays) continue;
+    // Recorre días conocidos
+    for (let d = 1; d <= totalDays; d++) {
+      const doneMap = (lp.progress?.[d] as Record<string, boolean> | undefined) ?? {};
+      pts += Object.values(doneMap).filter(Boolean).length;
+    }
+  }
+  return pts;
+}
 
 export default function MiActividadResumen() {
   const { totalGoal, totalDone, historicalPoints } = useTodayActivity();
@@ -60,7 +78,7 @@ export default function MiActividadResumen() {
     (user?.username && user.username.trim()) ||
     'Tú';
 
-  /* ===== Avatar robusto (ocupa círculo completo) ===== */
+  /* ===== Avatar ===== */
   const [avatarSrc, setAvatarSrc] = useState<string>(() => {
     const f = (user as any)?.foto;
     const a = (user as any)?.avatar_url;
@@ -72,30 +90,44 @@ export default function MiActividadResumen() {
     setAvatarSrc((f && String(f).trim()) || (a && String(a).trim()) || '/images/avatars/default.png');
   }, [user]);
 
-  // ====== PUNTOS GLOBALES + RANKING (cache-first) ======
+  // ====== PUNTOS + RANKING (cache-first + optimista local) ======
   const cachedPts = typeof window !== 'undefined' ? readPointsCache() : null;
   const cachedRank = typeof window !== 'undefined' ? readRankCache() : null;
+  const localInstant = computeLocalPointsTotal();
 
-  const [totals, setTotals] = useState<GlobalPointsTotal | null>(
-    cachedPts ?? { total_points: historicalPoints ?? 0 }
-  );
+  const [totals, setTotals] = useState<GlobalPointsTotal | null>(() => {
+    const seed =
+      (cachedPts?.total_points ?? 0) > 0
+        ? cachedPts!.total_points
+        : (historicalPoints ?? 0);
+    // Mostrar el mayor entre caché/ histórico y local (optimista)
+    return { total_points: Math.max(seed, localInstant) };
+  });
   const [rank, setRank] = useState<number | null>(cachedRank ?? null);
-
-  // RACHA (real desde Supabase)
   const [streak, setStreak] = useState<number>(0);
+
+  // 🔁 Recalcular puntos optimistas cuando el usuario marca checks (useTodayActivity cambia)
+  useEffect(() => {
+    const nowLocal = computeLocalPointsTotal();
+    setTotals((prev) => {
+      const prevVal = prev?.total_points ?? 0;
+      // Si el local es mayor, lo mostramos para dar sensación de inmediatez
+      return { total_points: Math.max(prevVal, nowLocal) };
+    });
+  }, [totalDone, totalGoal]);
 
   useEffect(() => {
     let mounted = true;
 
-    // 1) Racha real (rápida) con baja prioridad de render
+    // 1) Racha real (rápida)
     startTransition(() => {
       fetchUserStreakDays().then((s) => {
         if (mounted) setStreak(s || 0);
       }).catch(() => {});
     });
 
-    // 2) Puntos y ranking (cache-first + refresh en background)
-    const run = async () => {
+    // 2) Puntos y ranking (autoritativos) en idle/background
+    const refresh = async () => {
       try {
         const to = startOfDay(new Date());
         const from = new Date(to);
@@ -113,38 +145,34 @@ export default function MiActividadResumen() {
         if (!mounted) return;
 
         if (gTotals) {
-          setTotals(gTotals);
-          writePointsCache(gTotals);
+          setTotals((prev) => {
+            const optimistic = prev?.total_points ?? 0;
+            // Mantén el mayor entre optimista y server para evitar “saltos hacia abajo”
+            return { total_points: Math.max(optimistic, gTotals.total_points) };
+          });
+          writePointsCache({ ...gTotals, _ts: Date.now() } as any);
         }
         if (typeof myRank?.rank_month === 'number') {
           setRank(myRank.rank_month);
           writeRankCache(myRank.rank_month);
         }
       } catch (e) {
-        // mantenemos valores cacheados/fallback sin bloquear UI
-        if (process.env.NODE_ENV !== 'production') {
-          console.warn('[MiActividadResumen] refresh error', e);
-        }
+        if (process.env.NODE_ENV !== 'production') console.warn('[MiActividadResumen] refresh error', e);
       }
     };
 
-    // Si la caché es fresca (< 5 min), difiere el refresh; si no, refresca ya.
-    const now = Date.now();
-    const freshEnough =
-      (cachedPts && typeof (cachedPts as any)._ts === 'number' && now - (cachedPts as any)._ts < 5 * 60_000) ||
-      (typeof cachedRank === 'number' && cachedRank !== null);
+    const idle = (cb: () => void) =>
+      (typeof (window as any).requestIdleCallback === 'function'
+        ? (window as any).requestIdleCallback(cb, { timeout: 800 })
+        : setTimeout(cb, 0));
 
-    if (freshEnough) {
-      // refresco en background sin bloquear primer render
-      setTimeout(run, 0);
-    } else {
-      // refresco inmediato (ya se muestra caché/placeholder)
-      run();
-    }
+    // Si la caché es fresca, difiere; si no, ejecuta ya.
+    const fresh = cachedPts && (cachedPts as any)._ts && Date.now() - (cachedPts as any)._ts < 5 * 60_000;
+    fresh ? idle(refresh) : refresh();
 
     return () => { mounted = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // cache-first only on mount
+  }, []);
 
   const totalPoints = totals?.total_points ?? historicalPoints ?? 0;
   const rankLabelBig = typeof rank === 'number' ? `${rank}º` : '—';
@@ -162,10 +190,10 @@ export default function MiActividadResumen() {
         />
       </section>
 
-      {/* ===== Racha (confeti + contador animado) ===== */}
+      {/* ===== Racha ===== */}
       <StreakCardFlash value={streak} />
 
-      {/* ===== Perfil: avatar + puntuación + ranking ===== */}
+      {/* ===== Perfil ===== */}
       <section className="rounded-2xl border border-neutral-200 p-4 flex items-center gap-4 bg-white">
         <div className="relative w-16 h-16 rounded-full overflow-hidden bg-neutral-100 ring-1 ring-white/70">
           <img
@@ -206,7 +234,7 @@ export default function MiActividadResumen() {
         <MiniWeeklyChartReal />
       </section>
 
-      {/* ===== Calendario (círculos perfectos) + leyenda ===== */}
+      {/* ===== Calendario + leyenda ===== */}
       <section>
         <h3 className="text-lg font-semibold mb-2">Calendario</h3>
         <div className="
@@ -243,7 +271,7 @@ export default function MiActividadResumen() {
   );
 }
 
-/* ===== Racha con confeti + contador animado + tagline ===== */
+/* ===== Racha ===== */
 function StreakCardFlash({ value }: { value: number }) {
   const [n, setN] = useState(0);
   const rafRef = useRef<number | null>(null);
@@ -263,8 +291,6 @@ function StreakCardFlash({ value }: { value: number }) {
   }, [value]);
 
   const tagline = getStreakTagline(n);
-
-  // fondo “confeti” sutil sobre amarillo suave
   const confettiBg =
     "radial-gradient(circle at 10% 20%, rgba(255,99,132,0.15) 0 6px, transparent 7px)," +
     "radial-gradient(circle at 80% 30%, rgba(54,162,235,0.15) 0 6px, transparent 7px)," +
@@ -285,7 +311,6 @@ function StreakCardFlash({ value }: { value: number }) {
     </div>
   );
 }
-
 function getStreakTagline(n: number) {
   if (n <= 0) return 'Empieza hoy';
   if (n < 3) return 'Calentando motores';
@@ -294,7 +319,7 @@ function getStreakTagline(n: number) {
   return 'Leyenda viva';
 }
 
-/* ===== Programas activos — cards ===== */
+/* ===== Programas activos ===== */
 function ActiveProgramsList() {
   const activeMap = useMemo<LocalStore>(() => loadActive(), []);
   const entries = Object.entries(activeMap).filter(([slug, p]) => {
@@ -303,10 +328,8 @@ function ActiveProgramsList() {
     const json = tryGetProgramJson(slug);
     const totalDays: number = json?.days?.length ?? json?.durationDays ?? 0;
     if (!totalDays) return false;
-
     const rawIdx = dayIdxSince(lp.startedAt, new Date());
     if (rawIdx > totalDays) return false;
-
     return true;
   });
 
@@ -323,8 +346,6 @@ function ActiveProgramsList() {
         const pct = totalDays ? Math.round((today / totalDays) * 100) : 0;
 
         const rslug = routeSlug(slug);
-
-        // thumbnail: usa mapa si existe; luego jpg→png fallback
         const mapped = THUMB_MAP[rslug];
         const base = `/images/programs/${rslug}-hero`;
         const srcJpg = mapped || `${base}.jpg`;
@@ -355,7 +376,7 @@ function ActiveProgramsList() {
   );
 }
 
-/* ===== Imagen con fallback jpg → png (ocupa círculo completo) ===== */
+/* ===== Thumb ===== */
 function ThumbCircle({ alt, srcJpg, srcPng }: { alt: string; srcJpg: string; srcPng: string }) {
   const [src, setSrc] = useState(srcJpg);
   return (
@@ -372,13 +393,12 @@ function ThumbCircle({ alt, srcJpg, srcPng }: { alt: string; srcJpg: string; src
   );
 }
 
-/* ===== Estadísticas reales (últimos 7 días, global) ===== */
+/* ===== Estadísticas semanales (local real) ===== */
 function MiniWeeklyChartReal() {
   const activeMap = useMemo<LocalStore>(() => loadActive(), []);
   const series = useMemo(() => buildWeeklySeries(activeMap), [activeMap]);
   return <MiniChart labels={series.labels} goal={series.goal} actual={series.actual} />;
 }
-
 function buildWeeklySeries(activeMap: LocalStore) {
   const labels = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
   const goal = Array(7).fill(0);
@@ -411,8 +431,6 @@ function buildWeeklySeries(activeMap: LocalStore) {
 
   return { labels, goal, actual };
 }
-
-/* ===== MiniChart SVG ===== */
 function MiniChart({ labels, goal, actual }: { labels: string[]; goal: number[]; actual: number[] }) {
   const width = 640, height = 220, padL = 28, padR = 16, padT = 20, padB = 28;
   const n = 7;
@@ -451,11 +469,11 @@ function MiniChart({ labels, goal, actual }: { labels: string[]; goal: number[];
   );
 }
 
-/* ===== Leyenda calendario ===== */
+/* ===== Leyenda calendario (círculos perfectos en iOS) ===== */
 function LegendDot({ cls, label }: { cls: string; label: string }) {
   return (
-    <span className="inline-flex items-center gap-2">
-      <span className={`inline-block w-3 h-3 rounded-full ${cls}`} />
+    <span className="inline-flex items-center gap-2 leading-none">
+      <span className={`inline-block w-3 h-3 aspect-square rounded-full ${cls} shrink-0 align-middle`} />
       {label}
     </span>
   );
@@ -474,8 +492,7 @@ function getDayStatus(date: Date): 'none'|'some'|'all'|'missed' {
     if (!totalDays) continue;
 
     const dNum = dayIdxSince(lp.startedAt, date);
-    // ⬇️ No cortar a 'none' si un programa no está en rango: simplemente ignorar
-    if (dNum < 1 || dNum > totalDays) continue;
+    if (dNum < 1 || dNum > totalDays) continue; // no cortar todo el cálculo
 
     const dayDef = json?.days?.find((x: any) => x.day === dNum) ?? json?.days?.[dNum - 1];
     planned += Math.max(0, dayDef?.tasks?.length ?? 0);
@@ -493,7 +510,7 @@ function getDayStatus(date: Date): 'none'|'some'|'all'|'missed' {
   return 'all';
 }
 
-/* ===== Logros ===== */
+/* ===== Logros (sin borde) ===== */
 function AchievementsStrip() {
   const items = [
     { key: 'superlector', title: 'Superlector', src: '/images/badges/superlector.png' },
@@ -503,11 +520,10 @@ function AchievementsStrip() {
     <div className="grid grid-cols-3 gap-4">
       {items.map((b) => (
         <div key={b.key} className="flex flex-col items-center">
-          <div className="relative w-20 h-20 rounded-xl overflow-hidden border border-neutral-200 bg-white p-1">
+          <div className="relative w-20 h-20 rounded-xl overflow-hidden bg-white">
             <img
               src={b.src}
               alt={b.title}
-              /* ⬇️ Insignias sin zoom, respetando tamaño original */
               className="object-contain w-full h-full"
               loading="lazy"
               decoding="async"
