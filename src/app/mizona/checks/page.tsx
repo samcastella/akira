@@ -166,12 +166,17 @@ export default function MiActividadChecks() {
     for (const [slug, p] of Object.entries(activeMap)) {
       const lp = p as LocalProgram;
       if (!lp?.startedAt) continue;
-      // ✅ excluir completados (sin depender del tipo)
-      if ('completedAt' in (lp as any) && (lp as any).completedAt) continue;
+// ✅ espejo de lógica de Resumen: excluir si ya pasó de duración
+     // (usamos solo jsonBySlug; si aún no cargó, temporalmente se omite y se recalculará al cargar)
+      const json = jsonBySlug[slug];
+      const totalDays: number = json?.days?.length ?? json?.durationDays ?? 0;
+      if (!totalDays) continue;
+      const rawIdx = daysBetweenFromMs(lp.startedAt, todayKey()) + 1; // 1..N (sin clamp)
+      if (rawIdx > totalDays) continue; // => completado → fuera
       out.push(slug);
     }
     return out;
-  }, [activeMap]);
+  }, [activeMap, jsonBySlug]);
 
   // ======= Cargar JSON solo de los slugs activos con loaders rápidos =======
   useEffect(() => {
@@ -207,12 +212,14 @@ export default function MiActividadChecks() {
       if (!lp?.startedAt) continue;
       // ✅ defensa extra sin romper tipos
 if (lp && 'completedAt' in (lp as any) && (lp as any).completedAt) continue;
-      const json = jsonBySlug[slug];
-      const totalDays = json?.days?.length ?? json?.durationDays ?? 0;
+     const json = jsonBySlug[slug];
+     const totalDays = json?.days?.length ?? json?.durationDays ?? 0;
       if (!totalDays) continue;
 
-      const currentDay = Math.min(totalDays, Math.max(1, daysBetweenFromMs(lp.startedAt, todayISO) + 1));
-      if (currentDay > totalDays) continue;
+      // ✅ usa rawIdx para decidir si está pasado, tal como en Resumen
+     const rawIdx = daysBetweenFromMs(lp.startedAt, todayISO) + 1;
+      if (rawIdx > totalDays) continue; // completado → fuera
+      const currentDay = Math.min(totalDays, Math.max(1, rawIdx));
 
       const dayDef = json?.days?.find((d) => d.day === currentDay) ?? json?.days?.[currentDay - 1];
       const plannedTasks = (dayDef?.tasks ?? []) as JsonTask[];
