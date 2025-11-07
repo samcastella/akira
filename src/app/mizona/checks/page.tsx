@@ -1,7 +1,7 @@
 // src/app/mizona/checks/page.tsx
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import CreateHabitBar from '@/components/habits/CreateHabitBar';
 import { useTodayActivity } from '@/lib/activity/useTodayActivity';
 
@@ -15,6 +15,7 @@ function tryGetProgramJson(slug: string): any | null {
     return null;
   }
 }
+
 function findTaskDetail(slug: string, day: number, taskId: string): string | undefined {
   const json = tryGetProgramJson(slug);
   if (!json?.days) return undefined;
@@ -90,8 +91,25 @@ export default function MiActividadChecks() {
     toggleProgramTask,
   } = useTodayActivity();
 
-  const hasAny =
-    programsToday.length > 0 || challengesToday.length > 0 || habitsToday.length > 0;
+  /* === Filtro defensivo: ocultar programas completados ===
+     Considera varias banderas/estados que pueden existir en la app */
+  const visiblePrograms = useMemo(() => {
+    return (programsToday ?? []).filter((p: any) => {
+      const isCompleted =
+        p?.completed === true ||
+        p?.isCompleted === true ||
+        (typeof p?.progress === 'number' && typeof p?.totalDays === 'number' && p.progress >= p.totalDays) ||
+        (typeof p?.day === 'number' && typeof p?.totalDays === 'number' && p.day > p.totalDays);
+
+      const hasTasks = Array.isArray(p?.tasks) && p.tasks.length > 0;
+      return !isCompleted && hasTasks;
+    });
+  }, [programsToday]);
+
+  // Secciones vacías
+  const hasPrograms = visiblePrograms.length > 0;
+  const hasChallenges = (challengesToday ?? []).length > 0;
+  const hasHabits = (habitsToday ?? []).length > 0;
 
   // Estado del modal
   const [infoOpen, setInfoOpen] = useState(false);
@@ -105,87 +123,103 @@ export default function MiActividadChecks() {
   };
   const closeInfo = () => setInfoOpen(false);
 
+  // Wrapper para toggle que notifica a otras vistas que deben refrescar puntos
+  const handleToggleProgramTask = useCallback(async (slug: string, day: number, taskId: string) => {
+    try {
+      await toggleProgramTask(slug, day, taskId);
+    } finally {
+      // Evento global para refrescar puntuaciones en Resumen/Estadísticas de forma inmediata
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('akira:points:refresh', { detail: { source: 'checks' } }));
+      }
+    }
+  }, [toggleProgramTask]);
+
+  const nothingAtAll = !hasPrograms && !hasChallenges && !hasHabits;
+
   return (
     <div className="py-6 space-y-6">
-      {!hasAny && (
+      {nothingAtAll && (
         <div className="rounded-2xl border border-neutral-200 p-4 text-sm text-neutral-600 bg-white">
-          Todavía no has comenzado ninguno
+          Todavía no hay nada creado
         </div>
       )}
 
       {/* Programas activos */}
-      {programsToday.length > 0 && (
-        <section className="space-y-3 rounded-2xl border border-neutral-200 bg-white p-4">
-          <h3 className="text-lg font-semibold">Programas activos</h3>
-          {programsToday.map((prog) => (
-            <div key={prog.slug} className="space-y-2">
-              <div className="text-sm font-medium">{prog.title}</div>
-              {prog.tasks.map((t) => (
+      <section className="space-y-3 rounded-2xl border border-neutral-200 bg-white p-4">
+        <h3 className="text-lg font-semibold">Programas activos</h3>
+        {!hasPrograms && (
+          <p className="text-sm text-neutral-500">Todavía no hay nada creado</p>
+        )}
+        {hasPrograms && visiblePrograms.map((prog: any) => (
+          <div key={prog.slug} className="space-y-2">
+            <div className="text-sm font-medium">{prog.title}</div>
+            {prog.tasks.map((t: any) => {
+              const detail = findTaskDetail(prog.slug, prog.day, t.id);
+              const showInfo = Boolean(detail);
+              return (
                 <CreateHabitBar
                   key={t.id}
                   variant="task"
                   label={t.label}
                   checked={t.done}
                   color={prog.color}
-                  onToggle={() => toggleProgramTask(prog.slug, prog.day, t.id)}
-                  onInfo={() =>
-                    openInfo(
-                      `${prog.title} · ${t.label}`,
-                      findTaskDetail(prog.slug, prog.day, t.id)
-                    )
-                  }
-                  showInfoButton={true}
+                  onToggle={() => handleToggleProgramTask(prog.slug, prog.day, t.id)}
+                  onInfo={showInfo ? (() => openInfo(`${prog.title} · ${t.label}`, detail)) : undefined}
+                  showInfoButton={showInfo}
                 />
-              ))}
-            </div>
-          ))}
-        </section>
-      )}
+              );
+            })}
+          </div>
+        ))}
+      </section>
 
-      {/* Retos con amigos (placeholder) */}
-      {challengesToday.length > 0 && (
-        <section className="space-y-3 rounded-2xl border border-neutral-200 bg-white p-4">
-          <h3 className="text-lg font-semibold">Retos con amigos</h3>
-          {challengesToday.map((ch) => (
-            <div key={ch.id} className="space-y-2">
-              <div className="text-sm font-medium">{ch.title}</div>
-              {ch.tasks.map((t) => (
-                <CreateHabitBar
-                  key={t.id}
-                  variant="task"
-                  label={t.label}
-                  checked={t.done}
-                  color="#111"
-                  onToggle={t.onToggle ?? (() => {})}
-                  onInfo={() => openInfo(`${ch.title} · ${t.label}`, undefined)}
-                  showInfoButton={true}
-                />
-              ))}
-            </div>
-          ))}
-        </section>
-      )}
-
-      {/* Hábitos personalizados (placeholder) */}
-      {habitsToday.length > 0 && (
-        <section className="space-y-3 rounded-2xl border border-neutral-200 bg-white p-4">
-          <h3 className="text-lg font-semibold">Hábitos personalizados</h3>
-          {habitsToday.map((h) => (
-            <div key={h.id} className="space-y-2">
-              <div className="text-sm font-medium">{h.name}</div>
+      {/* Retos con amigos */}
+      <section className="space-y-3 rounded-2xl border border-neutral-200 bg-white p-4">
+        <h3 className="text-lg font-semibold">Retos con amigos</h3>
+        {!hasChallenges && (
+          <p className="text-sm text-neutral-500">Todavía no hay nada creado</p>
+        )}
+        {hasChallenges && challengesToday.map((ch: any) => (
+          <div key={ch.id} className="space-y-2">
+            <div className="text-sm font-medium">{ch.title}</div>
+            {ch.tasks.map((t: any) => (
               <CreateHabitBar
+                key={t.id}
                 variant="task"
-                label="Check de hoy"
-                checked={!!h.done}
-                color={h.color || '#111'}
-                onToggle={h.onToggle ?? (() => {})}
-                onInfo={() => openInfo(`${h.name} · Check de hoy`, undefined)}
-                showInfoButton={true}
+                label={t.label}
+                checked={t.done}
+                color={ch.color || '#111'}
+                onToggle={t.onToggle ?? (() => {})}
+                onInfo={t.detail ? (() => openInfo(`${ch.title} · ${t.label}`, t.detail)) : undefined}
+                showInfoButton={Boolean(t.detail)}
               />
-            </div>
-          ))}
-        </section>
-      )}
+            ))}
+          </div>
+        ))}
+      </section>
+
+      {/* Hábitos personalizados */}
+      <section className="space-y-3 rounded-2xl border border-neutral-200 bg-white p-4">
+        <h3 className="text-lg font-semibold">Hábitos personalizados</h3>
+        {!hasHabits && (
+          <p className="text-sm text-neutral-500">Todavía no hay nada creado</p>
+        )}
+        {hasHabits && habitsToday.map((h: any) => (
+          <div key={h.id} className="space-y-2">
+            <div className="text-sm font-medium">{h.name}</div>
+            <CreateHabitBar
+              variant="task"
+              label="Check de hoy"
+              checked={!!h.done}
+              color={h.color || '#111'}
+              onToggle={h.onToggle ?? (() => {})}
+              onInfo={h.detail ? (() => openInfo(`${h.name} · Check de hoy`, h.detail)) : undefined}
+              showInfoButton={Boolean(h.detail)}
+            />
+          </div>
+        ))}
+      </section>
 
       {/* Modal de detalles */}
       <InfoModal open={infoOpen} title={infoTitle} detail={infoDetail} onClose={closeInfo} />
