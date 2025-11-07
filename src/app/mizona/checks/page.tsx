@@ -160,13 +160,14 @@ export default function MiActividadChecks() {
     };
   }, [uid]);
 
-  // ======= Slugs activos (iniciados y no completados) =======
+  // ======= Slugs activos (iniciados y NO completados) =======
   const activeSlugs = useMemo(() => {
     const out: string[] = [];
     for (const [slug, p] of Object.entries(activeMap)) {
       const lp = p as LocalProgram;
       if (!lp?.startedAt) continue;
-      // JSON aún puede no estar cargado: lo inferimos después
+      // ✅ excluir completados (sin depender del tipo)
+      if ('completedAt' in (lp as any) && (lp as any).completedAt) continue;
       out.push(slug);
     }
     return out;
@@ -204,7 +205,8 @@ export default function MiActividadChecks() {
     for (const slug of activeSlugs) {
       const lp = activeMap[slug] as LocalProgram | undefined;
       if (!lp?.startedAt) continue;
-
+      // ✅ defensa extra sin romper tipos
+if (lp && 'completedAt' in (lp as any) && (lp as any).completedAt) continue;
       const json = jsonBySlug[slug];
       const totalDays = json?.days?.length ?? json?.durationDays ?? 0;
       if (!totalDays) continue;
@@ -222,7 +224,7 @@ export default function MiActividadChecks() {
         return { id, label: t.label, done: !!mapForDay[id], detail: t.detail };
       });
 
-      // Si último día y todo hecho, oculta (igual que antes)
+      // Si último día y TODO hecho, oculta (defensa adicional)
       const planned = tasks.length;
       const done = tasks.filter(x => x.done).length;
       const lastDayAndComplete = planned > 0 && done >= planned && currentDay >= totalDays;
