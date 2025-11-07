@@ -48,24 +48,55 @@ const THUMB_MAP: Record<string, string> = {
   'detox-tecnologico': '/images/programs/detox-hero.jpg',
 };
 
-/* ====== Cálculo instantáneo local de puntos (optimista) ======
-   Suma todos los checks hechos en local (programsLocal) sin esperar RPC. */
-function computeLocalPointsTotal(): number {
+/* ====== Cálculo instantáneo local de puntos (optimista; SOLO programas oficiales) ====== */
+function computeLocalProgramPoints(): number {
   const active = loadActive();
   let pts = 0;
   for (const [slug, prog] of Object.entries(active)) {
     const lp = prog as LocalProgram;
     if (!lp?.progress || !lp.startedAt) continue;
-    const json = tryGetProgramJson(slug);
+    const json = tryGetProgramJson(slug); // Solo contamos si existe JSON oficial
     const totalDays: number = json?.days?.length ?? json?.durationDays ?? 0;
     if (!totalDays) continue;
-    // Recorre días conocidos
     for (let d = 1; d <= totalDays; d++) {
       const doneMap = (lp.progress?.[d] as Record<string, boolean> | undefined) ?? {};
       pts += Object.values(doneMap).filter(Boolean).length;
     }
   }
   return pts;
+}
+
+/* === Helper para refrescar puntos y ranking (RPC + caché) === */
+async function refreshTotalsAndRank(setTotals: any, setRank: any) {
+  try {
+    const to = startOfDay(new Date());
+    const from = new Date(to);
+    from.setDate(from.getDate() - 365);
+
+    const y = to.getFullYear(), m = String(to.getMonth() + 1).padStart(2, '0'), d = String(to.getDate()).padStart(2, '0');
+    const y2 = from.getFullYear(), m2 = String(from.getMonth() + 1).padStart(2, '0'), d2 = String(from.getDate()).padStart(2, '0');
+    const toISO = `${y}-${m}-${d}`;
+    const fromISO = `${y2}-${m2}-${d2}`;
+
+    const [gTotals, myRank] = await Promise.all([
+      fetchGlobalProgramPoints(fromISO, toISO),
+      fetchMyMonthlyRank(),
+    ]);
+
+    if (gTotals) {
+      setTotals((prev: GlobalPointsTotal | null) => {
+        const optimistic = prev?.total_points ?? 0;
+        return { total_points: Math.max(optimistic, gTotals.total_points) };
+      });
+      writePointsCache({ ...gTotals, _ts: Date.now() } as any);
+    }
+    if (typeof myRank?.rank_month === 'number') {
+      setRank(myRank.rank_month);
+      writeRankCache(myRank.rank_month);
+    }
+  } catch (e) {
+    if (process.env.NODE_ENV !== 'production') console.warn('[MiActividadResumen] refreshTotalsAndRank error', e);
+  }
 }
 
 export default function MiActividadResumen() {
@@ -93,84 +124,62 @@ export default function MiActividadResumen() {
   // ====== PUNTOS + RANKING (cache-first + optimista local) ======
   const cachedPts = typeof window !== 'undefined' ? readPointsCache() : null;
   const cachedRank = typeof window !== 'undefined' ? readRankCache() : null;
-  const localInstant = computeLocalPointsTotal();
+  const localInstant = computeLocalProgramPoints();
 
   const [totals, setTotals] = useState<GlobalPointsTotal | null>(() => {
     const seed =
       (cachedPts?.total_points ?? 0) > 0
         ? cachedPts!.total_points
         : (historicalPoints ?? 0);
-    // Mostrar el mayor entre caché/ histórico y local (optimista)
     return { total_points: Math.max(seed, localInstant) };
   });
   const [rank, setRank] = useState<number | null>(cachedRank ?? null);
   const [streak, setStreak] = useState<number>(0);
 
-  // 🔁 Recalcular puntos optimistas cuando el usuario marca checks (useTodayActivity cambia)
+  // 🔁 Recalcular puntos optimistas cuando el usuario marca checks (programas oficiales)
   useEffect(() => {
-    const nowLocal = computeLocalPointsTotal();
+    const nowLocal = computeLocalProgramPoints();
     setTotals((prev) => {
       const prevVal = prev?.total_points ?? 0;
-      // Si el local es mayor, lo mostramos para dar sensación de inmediatez
       return { total_points: Math.max(prevVal, nowLocal) };
     });
   }, [totalDone, totalGoal]);
 
+  // 🔁 Refresh en montaje y al dispararse eventos globales
   useEffect(() => {
     let mounted = true;
 
-    // 1) Racha real (rápida)
+    // Racha rápida
     startTransition(() => {
-      fetchUserStreakDays().then((s) => {
-        if (mounted) setStreak(s || 0);
-      }).catch(() => {});
+      fetchUserStreakDays().then((s) => { if (mounted) setStreak(s || 0); }).catch(() => {});
     });
 
-    // 2) Puntos y ranking (autoritativos) en idle/background
-    const refresh = async () => {
-      try {
-        const to = startOfDay(new Date());
-        const from = new Date(to);
-        from.setDate(from.getDate() - 365);
-
-        const y = to.getFullYear(), m = String(to.getMonth() + 1).padStart(2,'0'), d = String(to.getDate()).padStart(2,'0');
-        const y2 = from.getFullYear(), m2 = String(from.getMonth() + 1).padStart(2,'0'), d2 = String(from.getDate()).padStart(2,'0');
-        const toISO = `${y}-${m}-${d}`;
-        const fromISO = `${y2}-${m2}-${d2}`;
-
-        const [gTotals, myRank] = await Promise.all([
-          fetchGlobalProgramPoints(fromISO, toISO),
-          fetchMyMonthlyRank(),
-        ]);
-        if (!mounted) return;
-
-        if (gTotals) {
-          setTotals((prev) => {
-            const optimistic = prev?.total_points ?? 0;
-            // Mantén el mayor entre optimista y server para evitar “saltos hacia abajo”
-            return { total_points: Math.max(optimistic, gTotals.total_points) };
-          });
-          writePointsCache({ ...gTotals, _ts: Date.now() } as any);
-        }
-        if (typeof myRank?.rank_month === 'number') {
-          setRank(myRank.rank_month);
-          writeRankCache(myRank.rank_month);
-        }
-      } catch (e) {
-        if (process.env.NODE_ENV !== 'production') console.warn('[MiActividadResumen] refresh error', e);
-      }
+    const doRefresh = () => {
+      const nowLocal = computeLocalProgramPoints();
+      setTotals((prev) => ({ total_points: Math.max(prev?.total_points ?? 0, nowLocal) }));
+      refreshTotalsAndRank(setTotals, setRank);
     };
 
-    const idle = (cb: () => void) =>
-      (typeof (window as any).requestIdleCallback === 'function'
-        ? (window as any).requestIdleCallback(cb, { timeout: 800 })
-        : setTimeout(cb, 0));
+    const cachedFresh = cachedPts && (cachedPts as any)._ts && Date.now() - (cachedPts as any)._ts < 5 * 60_000;
+    if (cachedFresh) {
+      const idle = (cb: () => void) =>
+        (typeof (window as any).requestIdleCallback === 'function'
+          ? (window as any).requestIdleCallback(cb, { timeout: 800 })
+          : setTimeout(cb, 0));
+      idle(doRefresh);
+    } else {
+      doRefresh();
+    }
 
-    // Si la caché es fresca, difiere; si no, ejecuta ya.
-    const fresh = cachedPts && (cachedPts as any)._ts && Date.now() - (cachedPts as any)._ts < 5 * 60_000;
-    fresh ? idle(refresh) : refresh();
+    const handler = () => doRefresh();
+    window.addEventListener('akira:points:refresh', handler);
+    window.addEventListener('akira:activity:changed', handler);
 
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+      window.removeEventListener('akira:points:refresh', handler);
+      window.removeEventListener('akira:activity:changed', handler);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -228,7 +237,7 @@ export default function MiActividadResumen() {
       <section>
         <div className="mb-2 flex items-baseline justify-between">
           <h3 className="text-lg font-semibold">Estadísticas</h3>
-          <Link href="/mizona/estadisticas" className="text-sm font-medium text-neutral-700 hover:underline">Ver todo</Link>
+        <Link href="/mizona/estadisticas" className="text-sm font-medium text-neutral-700 hover:underline">Ver todo</Link>
         </div>
         <p className="text-sm text-neutral-600 mb-3">Descubre tus estadísticas de esta semana</p>
         <MiniWeeklyChartReal />
@@ -492,7 +501,7 @@ function getDayStatus(date: Date): 'none'|'some'|'all'|'missed' {
     if (!totalDays) continue;
 
     const dNum = dayIdxSince(lp.startedAt, date);
-    if (dNum < 1 || dNum > totalDays) continue; // no cortar todo el cálculo
+    if (dNum < 1 || dNum > totalDays) continue;
 
     const dayDef = json?.days?.find((x: any) => x.day === dNum) ?? json?.days?.[dNum - 1];
     planned += Math.max(0, dayDef?.tasks?.length ?? 0);
