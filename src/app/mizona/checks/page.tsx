@@ -2,6 +2,7 @@
 'use client';
 
 import React, { useMemo, useState, useCallback } from 'react';
+import Link from 'next/link';
 import CreateHabitBar from '@/components/habits/CreateHabitBar';
 import { useTodayActivity } from '@/lib/activity/useTodayActivity';
 import { loadActive, type LocalStore, type LocalProgram } from '@/lib/programsLocal';
@@ -43,23 +44,48 @@ function InfoModal({
 }: { open: boolean; title: string; detail?: string; onClose: () => void; }) {
   if (!open) return null;
   return (
-    <div role="dialog" aria-modal="true" className="fixed inset-0 z-[2000] flex items-end sm:items-center justify-center">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} aria-hidden />
-      <div className="relative z-[2001] w-full sm:max-w-md sm:rounded-2xl bg-white border border-neutral-200 p-4 sm:p-5 shadow-xl">
-        <div className="text-sm text-neutral-500 mb-1">Detalle</div>
-        <div className="text-lg font-semibold mb-2">{title}</div>
-        <div className="text-[15px] leading-relaxed text-neutral-800 whitespace-pre-wrap">
-          {detail ? <InlineMarkdown text={detail} /> : 'Sin detalles.'}
-        </div>
-        <div className="mt-4 flex justify-end">
-          <button onClick={onClose} className="px-4 py-2 rounded-xl border border-neutral-300 hover:bg-neutral-50 text-sm">
-            Cerrar
-          </button>
+    // ✅ Centrado + margen superior/inferior + permitir scroll del viewport si hiciera falta
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-[2000] overflow-y-auto"
+    >
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-black/40"
+        onClick={onClose}
+        aria-hidden
+      />
+
+      {/* Wrapper para centrar y dar aire */}
+      <div className="relative z-[2001] min-h-full flex items-center justify-center p-4">
+        {/* Panel del modal */}
+        <div
+          className="w-full sm:max-w-md sm:rounded-2xl bg-white border border-neutral-200 shadow-xl"
+          // ✅ Limite de altura + scroll interno del contenido
+          style={{ maxHeight: '85vh' }}
+        >
+          <div className="p-4 sm:p-5 overflow-y-auto">
+            <div className="text-sm text-neutral-500 mb-1">Detalle</div>
+            <div className="text-lg font-semibold mb-2">{title}</div>
+            <div className="text-[15px] leading-relaxed text-neutral-800 whitespace-pre-wrap">
+              {detail ? <InlineMarkdown text={detail} /> : 'Sin detalles.'}
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={onClose}
+                className="px-4 py-2 rounded-xl border border-neutral-300 hover:bg-neutral-50 text-sm"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
   );
 }
+
 
 /* ===== Detalles de tarea desde JSON ===== */
 function findTaskDetail(slug: string, day: number, taskId: string): string | undefined {
@@ -73,11 +99,7 @@ function findTaskDetail(slug: string, day: number, taskId: string): string | und
 export default function MiActividadChecks() {
   const { programsToday, challengesToday, habitsToday, toggleProgramTask } = useTodayActivity();
 
-  /* ======= MISMA LÓGICA DE FILTRADO QUE EN RESUMEN =======
-     - Leemos programsLocal
-     - Calculamos totalDays desde el JSON del programa
-     - Marcamos como ACTIVO si rawIdx (día actual) <= totalDays
-  */
+  /* ======= MISMA LÓGICA DE FILTRADO QUE EN RESUMEN ======= */
   const activeSlugSet = useMemo(() => {
     const map: LocalStore = loadActive();
     const set = new Set<string>();
@@ -94,8 +116,8 @@ export default function MiActividadChecks() {
     return set;
   }, []);
 
-  // Filtrado 1: Solo programas cuyo slug está activo según programsLocal (idéntico a Resumen)
-  // Filtrado 2 (defensa): excluir si el day reportado por useTodayActivity > totalDays
+  // Filtrado 1: Solo programas activos según programsLocal
+  // Filtrado 2: defensa si day > totalDays
   const visiblePrograms = useMemo(() => {
     return (programsToday ?? [])
       .filter((p: any) => activeSlugSet.has(p.slug))
@@ -120,13 +142,14 @@ export default function MiActividadChecks() {
   const openInfo = (title: string, detail?: string) => { setInfoTitle(title); setInfoDetail(detail); setInfoOpen(true); };
   const closeInfo = () => setInfoOpen(false);
 
-  // Toggle con evento global para refrescar puntuación al instante
+  // Toggle programa + evento global de puntos
   const handleToggleProgramTask = useCallback(async (slug: string, day: number, taskId: string) => {
     try {
       await toggleProgramTask(slug, day, taskId);
     } finally {
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('akira:points:refresh', { detail: { source: 'checks' } }));
+        window.dispatchEvent(new CustomEvent('akira:activity:changed', { detail: { source: 'checks' } }));
       }
     }
   }, [toggleProgramTask]);
@@ -167,25 +190,33 @@ export default function MiActividadChecks() {
         ))}
       </section>
 
-      {/* Retos con amigos */}
+      {/* Retos con amigos → fila con CTA "Ver" (sin toggle aquí) */}
       <section className="space-y-3 rounded-2xl border border-neutral-200 bg-white p-4">
         <h3 className="text-lg font-semibold">Retos con amigos</h3>
         {!hasChallenges && <p className="text-sm text-neutral-500">Todavía no hay nada creado</p>}
         {hasChallenges && challengesToday.map((ch: any) => (
           <div key={ch.id} className="space-y-2">
             <div className="text-sm font-medium">{ch.title}</div>
-            {ch.tasks.map((t: any) => (
-              <CreateHabitBar
-                key={t.id}
-                variant="task"
-                label={t.label}
-                checked={t.done}
-                color={ch.color || '#111'}
-                onToggle={t.onToggle ?? (() => {})}
-                onInfo={t.detail ? (() => openInfo(`${ch.title} · ${t.label}`, t.detail)) : undefined}
-                showInfoButton={Boolean(t.detail)}
-              />
-            ))}
+
+            {/* opcional: marca como hecho si traes estado desde challengesToday */}
+            <CreateHabitBar
+              variant="task"
+              label="Check de hoy (sube tu foto)"
+              checked={Boolean(ch.done)}
+              color={ch.color || '#111'}
+              onToggle={() => { /* sin toggle aquí */ }}
+              showInfoButton={false}
+              className="habitbar-hide-check"
+              rightSlot={
+                <Link
+                  href={`/amigos/retos/${ch.id}`}
+                  className="btn-pill-black px-4 py-2 text-xs font-semibold inline-flex items-center gap-2 active:scale-95"
+                  aria-label="Abrir reto con amigos"
+                >
+                  Ver
+                </Link>
+              }
+            />
           </div>
         ))}
       </section>

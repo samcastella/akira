@@ -440,6 +440,7 @@ export default function RetoDetallePage() {
       setShowUploadOk(true);
       await refreshMyTodayCheck();
       await loadQueues();
+      broadcastActivityAndPoints();
     } catch (err: any) {
       console.error(err);
       alert(`No se pudo subir la foto. ${err?.message || 'Intenta de nuevo.'}`);
@@ -1209,6 +1210,12 @@ function labelStatus(s: QueueItem['status']) {
     case 'invalid': return 'No válido';
     case 'auto_valid': return 'Válido (auto)';
   }
+}
+
+function broadcastActivityAndPoints() {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('akira:activity:changed', { detail: { source: 'challenge' } }));
+  window.dispatchEvent(new CustomEvent('akira:points:refresh',   { detail: { source: 'challenge' } }));
 }
 
 // ——— Modal reutilizable (éxitos) ———
