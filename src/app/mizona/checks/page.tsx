@@ -4,8 +4,9 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import CreateHabitBar from '@/components/habits/CreateHabitBar';
 import { useTodayActivity } from '@/lib/activity/useTodayActivity';
+import { loadActive, type LocalStore, type LocalProgram } from '@/lib/programsLocal';
 
-/* === Helpers para leer detalles desde el JSON del programa === */
+/* ===== Helpers JSON / fechas (idénticos a Resumen) ===== */
 function tryGetProgramJson(slug: string): any | null {
   try {
     // @ts-ignore
@@ -15,13 +16,11 @@ function tryGetProgramJson(slug: string): any | null {
     return null;
   }
 }
-
-function findTaskDetail(slug: string, day: number, taskId: string): string | undefined {
-  const json = tryGetProgramJson(slug);
-  if (!json?.days) return undefined;
-  const dayDef = json.days.find((d: any) => d.day === day) ?? json.days[day - 1];
-  const t = (dayDef?.tasks ?? []).find((x: any, i: number) => (x.id ?? `task_${i}`) === taskId);
-  return t?.detail ?? t?.description ?? undefined;
+function startOfDay(d: Date) { const x = new Date(d); x.setHours(0,0,0,0); return x; }
+function dayIdxSince(startedAt: number, when: Date) {
+  const a = startOfDay(new Date(startedAt)).getTime();
+  const b = startOfDay(when).getTime();
+  return Math.floor((b - a) / 86_400_000) + 1; // 1..N
 }
 
 /* === Modal ligero con soporte **negritas** === */
@@ -40,30 +39,12 @@ function InlineMarkdown({ text }: { text: string }) {
 }
 
 function InfoModal({
-  open,
-  title,
-  detail,
-  onClose,
-}: {
-  open: boolean;
-  title: string;
-  detail?: string;
-  onClose: () => void;
-}) {
+  open, title, detail, onClose,
+}: { open: boolean; title: string; detail?: string; onClose: () => void; }) {
   if (!open) return null;
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      className="fixed inset-0 z-[2000] flex items-end sm:items-center justify-center"
-    >
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/40"
-        onClick={onClose}
-        aria-hidden
-      />
-      {/* Sheet / Modal */}
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-[2000] flex items-end sm:items-center justify-center">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} aria-hidden />
       <div className="relative z-[2001] w-full sm:max-w-md sm:rounded-2xl bg-white border border-neutral-200 p-4 sm:p-5 shadow-xl">
         <div className="text-sm text-neutral-500 mb-1">Detalle</div>
         <div className="text-lg font-semibold mb-2">{title}</div>
@@ -71,10 +52,7 @@ function InfoModal({
           {detail ? <InlineMarkdown text={detail} /> : 'Sin detalles.'}
         </div>
         <div className="mt-4 flex justify-end">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded-xl border border-neutral-300 hover:bg-neutral-50 text-sm"
-          >
+          <button onClick={onClose} className="px-4 py-2 rounded-xl border border-neutral-300 hover:bg-neutral-50 text-sm">
             Cerrar
           </button>
         </div>
@@ -83,59 +61,75 @@ function InfoModal({
   );
 }
 
+/* ===== Detalles de tarea desde JSON ===== */
+function findTaskDetail(slug: string, day: number, taskId: string): string | undefined {
+  const json = tryGetProgramJson(slug);
+  if (!json?.days) return undefined;
+  const dayDef = json.days.find((d: any) => d.day === day) ?? json.days[day - 1];
+  const t = (dayDef?.tasks ?? []).find((x: any, i: number) => (x.id ?? `task_${i}`) === taskId);
+  return t?.detail ?? t?.description ?? undefined;
+}
+
 export default function MiActividadChecks() {
-  const {
-    programsToday,
-    challengesToday,
-    habitsToday,
-    toggleProgramTask,
-  } = useTodayActivity();
+  const { programsToday, challengesToday, habitsToday, toggleProgramTask } = useTodayActivity();
 
-  /* === Filtro defensivo: ocultar programas completados ===
-     Considera varias banderas/estados que pueden existir en la app */
+  /* ======= MISMA LÓGICA DE FILTRADO QUE EN RESUMEN =======
+     - Leemos programsLocal
+     - Calculamos totalDays desde el JSON del programa
+     - Marcamos como ACTIVO si rawIdx (día actual) <= totalDays
+  */
+  const activeSlugSet = useMemo(() => {
+    const map: LocalStore = loadActive();
+    const set = new Set<string>();
+    for (const [slug, p] of Object.entries(map)) {
+      const lp = p as LocalProgram;
+      if (!lp?.startedAt) continue;
+      const json = tryGetProgramJson(slug);
+      const totalDays: number = json?.days?.length ?? json?.durationDays ?? 0;
+      if (!totalDays) continue;
+      const rawIdx = dayIdxSince(lp.startedAt, new Date());
+      if (rawIdx > totalDays) continue; // ===> COMPLETADO → EXCLUIR
+      set.add(slug);
+    }
+    return set;
+  }, []);
+
+  // Filtrado 1: Solo programas cuyo slug está activo según programsLocal (idéntico a Resumen)
+  // Filtrado 2 (defensa): excluir si el day reportado por useTodayActivity > totalDays
   const visiblePrograms = useMemo(() => {
-    return (programsToday ?? []).filter((p: any) => {
-      const isCompleted =
-        p?.completed === true ||
-        p?.isCompleted === true ||
-        (typeof p?.progress === 'number' && typeof p?.totalDays === 'number' && p.progress >= p.totalDays) ||
-        (typeof p?.day === 'number' && typeof p?.totalDays === 'number' && p.day > p.totalDays);
+    return (programsToday ?? [])
+      .filter((p: any) => activeSlugSet.has(p.slug))
+      .filter((p: any) => {
+        const json = tryGetProgramJson(p.slug);
+        const totalDays: number = json?.days?.length ?? json?.durationDays ?? 0;
+        if (!totalDays) return false;
+        if (typeof p?.day === 'number' && p.day > totalDays) return false;
+        return Array.isArray(p?.tasks) && p.tasks.length > 0;
+      });
+  }, [programsToday, activeSlugSet]);
 
-      const hasTasks = Array.isArray(p?.tasks) && p.tasks.length > 0;
-      return !isCompleted && hasTasks;
-    });
-  }, [programsToday]);
-
-  // Secciones vacías
   const hasPrograms = visiblePrograms.length > 0;
   const hasChallenges = (challengesToday ?? []).length > 0;
   const hasHabits = (habitsToday ?? []).length > 0;
+  const nothingAtAll = !hasPrograms && !hasChallenges && !hasHabits;
 
-  // Estado del modal
+  // Modal
   const [infoOpen, setInfoOpen] = useState(false);
   const [infoTitle, setInfoTitle] = useState('');
   const [infoDetail, setInfoDetail] = useState<string | undefined>(undefined);
-
-  const openInfo = (title: string, detail?: string) => {
-    setInfoTitle(title);
-    setInfoDetail(detail);
-    setInfoOpen(true);
-  };
+  const openInfo = (title: string, detail?: string) => { setInfoTitle(title); setInfoDetail(detail); setInfoOpen(true); };
   const closeInfo = () => setInfoOpen(false);
 
-  // Wrapper para toggle que notifica a otras vistas que deben refrescar puntos
+  // Toggle con evento global para refrescar puntuación al instante
   const handleToggleProgramTask = useCallback(async (slug: string, day: number, taskId: string) => {
     try {
       await toggleProgramTask(slug, day, taskId);
     } finally {
-      // Evento global para refrescar puntuaciones en Resumen/Estadísticas de forma inmediata
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('akira:points:refresh', { detail: { source: 'checks' } }));
       }
     }
   }, [toggleProgramTask]);
-
-  const nothingAtAll = !hasPrograms && !hasChallenges && !hasHabits;
 
   return (
     <div className="py-6 space-y-6">
@@ -148,9 +142,8 @@ export default function MiActividadChecks() {
       {/* Programas activos */}
       <section className="space-y-3 rounded-2xl border border-neutral-200 bg-white p-4">
         <h3 className="text-lg font-semibold">Programas activos</h3>
-        {!hasPrograms && (
-          <p className="text-sm text-neutral-500">Todavía no hay nada creado</p>
-        )}
+        {!hasPrograms && <p className="text-sm text-neutral-500">Todavía no hay nada creado</p>}
+
         {hasPrograms && visiblePrograms.map((prog: any) => (
           <div key={prog.slug} className="space-y-2">
             <div className="text-sm font-medium">{prog.title}</div>
@@ -177,9 +170,7 @@ export default function MiActividadChecks() {
       {/* Retos con amigos */}
       <section className="space-y-3 rounded-2xl border border-neutral-200 bg-white p-4">
         <h3 className="text-lg font-semibold">Retos con amigos</h3>
-        {!hasChallenges && (
-          <p className="text-sm text-neutral-500">Todavía no hay nada creado</p>
-        )}
+        {!hasChallenges && <p className="text-sm text-neutral-500">Todavía no hay nada creado</p>}
         {hasChallenges && challengesToday.map((ch: any) => (
           <div key={ch.id} className="space-y-2">
             <div className="text-sm font-medium">{ch.title}</div>
@@ -202,9 +193,7 @@ export default function MiActividadChecks() {
       {/* Hábitos personalizados */}
       <section className="space-y-3 rounded-2xl border border-neutral-200 bg-white p-4">
         <h3 className="text-lg font-semibold">Hábitos personalizados</h3>
-        {!hasHabits && (
-          <p className="text-sm text-neutral-500">Todavía no hay nada creado</p>
-        )}
+        {!hasHabits && <p className="text-sm text-neutral-500">Todavía no hay nada creado</p>}
         {hasHabits && habitsToday.map((h: any) => (
           <div key={h.id} className="space-y-2">
             <div className="text-sm font-medium">{h.name}</div>
