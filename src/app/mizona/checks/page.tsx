@@ -1,7 +1,7 @@
 // src/app/mizona/checks/page.tsx
 'use client';
 
-import React, { useMemo, useState, useCallback, useEffect } from 'react';
+import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import CreateHabitBar from '@/components/habits/CreateHabitBar';
@@ -51,11 +51,7 @@ function daysBetweenFromMs(startMs: number, endISOyyyyMmDd: string) {
   const b = startOfDayMs(new Date(`${endISOyyyyMmDd}T00:00:00`));
   return Math.floor((b - a) / 86_400_000);
 }
-function addDays(ms: number, days: number) { return startOfDayMs(new Date(ms + days * 86_400_000)); }
-function weekdayLabel(dateMs: number) {
-  const map = ['D', 'L', 'M', 'X', 'J', 'V', 'S'] as const;
-  return map[new Date(dateMs).getDay()];
-}
+function clamp(n: number, min: number, max: number) { return Math.max(min, Math.min(max, n)); }
 
 /* === Modal ligero con soporte **negritas** === */
 function InlineMarkdown({ text }: { text: string }) {
@@ -179,12 +175,10 @@ export default function MiActividadChecks() {
       const lp = p as LocalProgram;
       if (!lp?.startedAt) continue;
 
-      // JSON: preferimos el asíncrono pero caemos al síncrono si aún no llegó
       const json = jsonBySlug[slug] || tryGetProgramJson(slug);
       const totalDays: number = json?.days?.length ?? json?.durationDays ?? 0;
       if (!totalDays) continue;
 
-      // espejo de Resumen: rawIdx (sin clamp) y filtrar si pasó
       const rawIdx = daysBetweenFromMs(lp.startedAt, todayISO) + 1;
       if (rawIdx > totalDays) continue; // completado → fuera
 
@@ -230,7 +224,6 @@ export default function MiActividadChecks() {
       const totalDays = json?.days?.length ?? json?.durationDays ?? 0;
       if (!totalDays) continue;
 
-      // usar rawIdx para excluir completados; clamp solo para pintar
       const rawIdx = daysBetweenFromMs(lp.startedAt, todayISO) + 1;
       if (rawIdx > totalDays) continue;
       const currentDay = Math.min(totalDays, Math.max(1, rawIdx));
@@ -245,7 +238,6 @@ export default function MiActividadChecks() {
         return { id, label: t.label, done: !!mapForDay[id], detail: t.detail };
       });
 
-      // último día y todo hecho → fuera
       const planned = tasks.length;
       const done = tasks.filter(x => x.done).length;
       const lastDayAndComplete = planned > 0 && done >= planned && currentDay >= totalDays;
@@ -362,8 +354,119 @@ export default function MiActividadChecks() {
     }
   }, [uid, jsonBySlug]);
 
-  const hasChallenges = false; // (sección placeholder)
-  const hasHabits = false; // (sección placeholder)
+  /* =========================
+   *  Retos con amigos (inline)
+   * ========================= */
+  type ChallengeMini = { id: string; title: string; start: string; end: string; todayIdx: number; totalDays: number };
+  type CheckStatus = null | 'pending' | 'valid' | 'invalid' | 'auto_valid';
+  const PHOTOS_BUCKET = 'challenge-photos';
+
+  const [friendChallenges, setFriendChallenges] = useState<ChallengeMini[]>([]);
+  const [friendChecks, setFriendChecks] = useState<Record<string, CheckStatus>>({});
+  const [uploading, setUploading] = useState<Record<string, boolean>>({});
+
+  // Cargar retos activos del usuario
+  useEffect(() => {
+    (async () => {
+      if (!uid) { setFriendChallenges([]); return; }
+      // 1) membership
+      const { data: mems, error: eM } = await supabase
+        .from('challenge_members')
+        .select('challenge_id')
+        .eq('user_id', uid);
+      if (eM) { console.warn(eM); setFriendChallenges([]); return; }
+      const ids = (mems ?? []).map(m => m.challenge_id);
+      if (!ids.length) { setFriendChallenges([]); return; }
+
+      // 2) retos
+      const { data: chs, error: eC } = await supabase
+        .from('challenges')
+        .select('id, title, start, end')
+        .in('id', ids);
+      if (eC) { console.warn(eC); setFriendChallenges([]); return; }
+
+      const today = new Date().toISOString().slice(0,10);
+      const list: ChallengeMini[] = (chs ?? []).map((c: any) => {
+        const totalDays = Math.max(1, Math.round((new Date(c.end+'T00:00:00').getTime() - new Date(c.start+'T00:00:00').getTime())/86400000) + 1);
+        const idxRaw = Math.round((new Date(today+'T00:00:00').getTime() - new Date(c.start+'T00:00:00').getTime())/86400000) + 1;
+        const todayIdx = clamp(idxRaw, 1, totalDays);
+        return { id: c.id, title: c.title, start: c.start, end: c.end, todayIdx, totalDays };
+      })
+      // activos hoy
+      .filter(c => today >= c.start && today <= c.end);
+
+      setFriendChallenges(list);
+    })();
+  }, [uid]);
+
+  // Cargar mi check de HOY por reto activo
+  useEffect(() => {
+    if (!uid || !friendChallenges.length) { setFriendChecks({}); return; }
+    (async () => {
+      const next: Record<string, CheckStatus> = {};
+      for (const c of friendChallenges) {
+        const { data, error } = await supabase
+          .from('challenge_checks')
+          .select('status')
+          .eq('challenge_id', c.id)
+          .eq('user_id', uid)
+          .eq('day_index', c.todayIdx)
+          .maybeSingle();
+        if (error && error.code !== 'PGRST116') console.warn(error);
+        next[c.id] = (data?.status as CheckStatus) ?? null;
+      }
+      setFriendChecks(next);
+    })();
+  }, [uid, friendChallenges]);
+
+  async function onUploadChallengePhoto(chId: string) {
+    const input = document.getElementById(`challenge-file-${chId}`) as HTMLInputElement | null;
+    input?.click();
+  }
+  async function onPickChallengeFile(ch: ChallengeMini, e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !uid) return;
+    setUploading((s) => ({ ...s, [ch.id]: true }));
+    try {
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      const path = `${ch.id}/${ch.todayIdx}/${uid}/${crypto.randomUUID()}.${ext}`;
+      const up = await supabase.storage.from(PHOTOS_BUCKET).upload(path, file, {
+        cacheControl: '3600',
+        upsert: false,
+        contentType: file.type || 'image/jpeg',
+      });
+      if (up.error) throw up.error;
+
+      const expiresAt = new Date(Date.now() + 48 * 3600 * 1000).toISOString();
+      const ins = await supabase.from('challenge_checks').insert([{
+        challenge_id: ch.id,
+        user_id: uid,
+        day_index: ch.todayIdx,
+        photo_path: path,
+        photo_expires_at: expiresAt,
+        status: 'pending',
+      }]);
+      if (ins.error) throw ins.error;
+
+      setFriendChecks((s) => ({ ...s, [ch.id]: 'pending' }));
+      // eventos globales
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('akira:activity:changed', { detail: { source: 'challenge' } }));
+        window.dispatchEvent(new CustomEvent('akira:points:refresh',   { detail: { source: 'challenge' } }));
+      }
+    } catch (err:any) {
+      console.error(err);
+      alert('No se pudo subir la foto del reto. Inténtalo de nuevo.');
+    } finally {
+      setUploading((s) => ({ ...s, [ch.id]: false }));
+      e.target.value = '';
+    }
+  }
+
+  const hasFriendChallenges = friendChallenges.length > 0;
+
+  const hasChallenges = hasFriendChallenges; // ahora real
+  const hasHabits = false; // placeholder
   const s = suggestionsToday;
   const nothingAtAll = !hasPrograms && !hasChallenges && !hasHabits && !s;
 
@@ -420,7 +523,7 @@ export default function MiActividadChecks() {
         </section>
       )}
 
-      {/* ===== Programas activos (misma fuente que ProgramDetail) ===== */}
+      {/* ===== Programas activos ===== */}
       {!loading && (
         <section className="space-y-3 rounded-2xl border border-neutral-200 bg-white p-4">
           <h3 className="text-lg font-semibold">Programas activos</h3>
@@ -449,10 +552,55 @@ export default function MiActividadChecks() {
         </section>
       )}
 
-      {/* Retos con amigos (placeholder simple) */}
+      {/* ===== Retos con amigos ===== */}
       <section className="space-y-3 rounded-2xl border border-neutral-200 bg-white p-4">
         <h3 className="text-lg font-semibold">Retos con amigos</h3>
-        <p className="text-sm text-neutral-500">Todavía no hay nada creado</p>
+        {!hasFriendChallenges && <p className="text-sm text-neutral-500">Todavía no hay nada creado</p>}
+
+        {hasFriendChallenges && friendChallenges.map((ch) => {
+          const status = friendChecks[ch.id];
+          const checked = status === 'valid' || status === 'auto_valid';
+          const busy = !!uploading[ch.id];
+          const label = `Día ${ch.todayIdx}/${ch.totalDays} – ${ch.title}`;
+          return (
+            <div key={ch.id} className="space-y-2">
+              <CreateHabitBar
+                variant="task"
+                label={label}
+                checked={checked}
+                color="#F8E68A"
+                onToggle={() => {}}
+                showInfoButton={false}
+                rightSlot={
+                  <>
+                    <input
+                      id={`challenge-file-${ch.id}`}
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      className="hidden"
+                      onChange={(e) => onPickChallengeFile(ch, e)}
+                    />
+                    <button
+                      onClick={() => onUploadChallengePhoto(ch.id)}
+                      disabled={busy || checked}
+                      className="btn-pill-black px-4 py-2 text-xs font-semibold inline-flex items-center gap-2 active:scale-95 disabled:opacity-60"
+                    >
+                      {busy ? 'Subiendo…' : (status ? 'Actualizado' : 'Subir foto')}
+                    </button>
+                  </>
+                }
+              />
+              {status && (
+                <p className="text-xs text-neutral-500">
+                  Estado: {status === 'pending' ? 'Pendiente de validación' :
+                           status === 'valid' ? 'Validado' :
+                           status === 'auto_valid' ? 'Validado (auto)' : 'No válido'}
+                </p>
+              )}
+            </div>
+          );
+        })}
       </section>
 
       {/* Hábitos personalizados (placeholder simple) */}

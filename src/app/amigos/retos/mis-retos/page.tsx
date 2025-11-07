@@ -1,385 +1,275 @@
+// src/app/mizona/checks/page.tsx
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import CreateHabitBar from '@/components/habits/CreateHabitBar';
+import { useTodayActivity } from '@/lib/activity/useTodayActivity';
+import {
+  loadActive,
+  saveActive,
+  migrateCompat,
+  type LocalStore,
+  type LocalProgram,
+} from '@/lib/programsLocal';
+import { useAuthUserId } from '@/lib/user';
 import { supabase } from '@/lib/supabaseClient';
+import { pullUserPrograms } from '@/lib/programSync';
 
-/** Tipos base */
-type ChallengeRow = {
-  id: string;
-  code: string;
-  owner_id: string;
-  title: string;
-  start: string; // ISO
-  end: string;   // ISO
-  cover_url?: string | null;
+/* ===== Dynamic loaders como en ProgramDetail ===== */
+type JsonTask = { id?: string; label: string; detail?: string };
+type JsonDay = { day: number; tasks: JsonTask[] };
+type ProgramJson = { slug: string; title: string; durationDays?: number; days: JsonDay[] };
+
+const DATA_LOADERS: Record<string, () => Promise<ProgramJson>> = {
+  'lectura-30': async () => (await import('@/data/programs/lectura-30.json')).default as any,
+  'detox-tecnologico-30': async () => (await import('@/data/programs/detox-tecnologico-30.json')).default as any,
 };
 
-type MemberIdRow = { challenge_id: string };
-type MemberRow = { challenge_id: string; user_id: string };
-
-type ScoreRow = {
-  challenge_id: string;
-  user_id: string;
-  score: number;
-  rank_position: number;
-};
-
-/** =========================
- *  Helpers UI
- *  ========================= */
-function fmtDate(d: string) {
+/* ===== Helpers JSON (fallback síncrono) ===== */
+function tryGetProgramJson(slug: string): any | null {
   try {
-    return new Date(d).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
+    // @ts-ignore
+    const m = require(`@/data/programs/${slug}.json`);
+    return m?.default ?? m ?? null;
   } catch {
-    return d;
+    return null;
   }
 }
 
-/** Progreso simple por fechas (placeholder visual) */
-function progressByDates(startISO?: string, endISO?: string) {
-  if (!startISO || !endISO) return 0;
-  const now = Date.now();
-  const start = new Date(startISO).getTime();
-  const end = new Date(endISO).getTime();
-  if (isNaN(start) || isNaN(end) || end <= start) return 0;
-  const pct = ((now - start) / (end - start)) * 100;
-  return Math.max(0, Math.min(100, Math.round(pct)));
+/* ===== Helpers fecha (idénticos a ProgramDetail) ===== */
+function todayKey() {
+  const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mm}-${dd}`;
 }
+function startOfDayMs(date: Date) { const d = new Date(date); d.setHours(0,0,0,0); return d.getTime(); }
+function daysBetweenFromMs(startMs: number, endISOyyyyMmDd: string) {
+  const a = startOfDayMs(new Date(startMs));
+  const b = startOfDayMs(new Date(`${endISOyyyyMmDd}T00:00:00`));
+  return Math.floor((b - a) / 86_400_000);
+}
+function clamp(n: number, min: number, max: number) { return Math.max(min, Math.min(max, n)); }
 
-/** Sanitiza URL remota */
-function safeUrl(u?: string | null): string | undefined {
-  if (!u) return undefined;
-  try {
-    const url = new URL(u);
-    return url.href;
-  } catch {
-    return undefined;
+/* === Modal ligero con soporte **negritas** === */
+function InlineMarkdown({ text }: { text: string }) {
+  const parts: React.ReactNode[] = [];
+  const re = /\*\*(.+?)\*\*/g;
+  let i = 0; let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > i) parts.push(text.slice(i, m.index));
+    parts.push(<strong key={m.index} className="font-semibold">{m[1]}</strong>);
+    i = m.index + m[0].length;
   }
+  if (i < text.length) parts.push(text.slice(i));
+  return <>{parts}</>;
+}
+function InfoModal({ open, title, detail, onClose }:{
+  open: boolean; title: string; detail?: string; onClose: () => void;
+}) {
+  if (!open) return null;
+  return (
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-[2000] overflow-y-auto">
+      <div className="fixed inset-0 bg-black/40" onClick={onClose} aria-hidden />
+      <div className="relative z-[2001] min-h-full flex items-center justify-center p-4">
+        <div className="w-full sm:max-w-md sm:rounded-2xl bg-white border border-neutral-200 shadow-xl" style={{ maxHeight: '85vh' }}>
+          <div className="p-4 sm:p-5 overflow-y-auto">
+            <div className="text-sm text-neutral-500 mb-1">Detalle</div>
+            <div className="text-lg font-semibold mb-2">{title}</div>
+            <div className="text-[15px] leading-relaxed text-neutral-800 whitespace-pre-wrap">
+              {detail ? <InlineMarkdown text={detail} /> : 'Sin detalles.'}
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button onClick={onClose} className="px-4 py-2 rounded-xl border border-neutral-300 hover:bg-neutral-50 text-sm">
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
-export default function MisRetosPage() {
-  const [userId, setUserId] = useState<string | undefined>(undefined);
-  const [authReady, setAuthReady] = useState(false); // evita mostrar "Inicia sesión" mientras resolvemos
+/* ===== Page ===== */
+export default function MiActividadChecks() {
+  const uid = useAuthUserId();
 
-  // Arranque + suscripción de auth para reaccionar instantáneo
+  // ======= Estado fuente ÚNICA de verdad (igual que ProgramDetail) =======
+  const [activeMap, setActiveMap] = useState<LocalStore>({});
+  const [jsonBySlug, setJsonBySlug] = useState<Record<string, ProgramJson>>({});
+  const [loading, setLoading] = useState(true);
+
+  // ======= Sugerencia del día (solo esta parte viene del hook) =======
+  const {
+    suggestionsToday,
+    acceptSuggestion,
+    dismissSuggestion,
+    toggleSuggestionDone,
+  } = useTodayActivity();
+
+  // ======= Carga inicial + pull + migrate =======
   useEffect(() => {
-    let alive = true;
-
-    (async () => {
-      const { data } = await supabase.auth.getSession();
-      if (!alive) return;
-      setUserId(data.session?.user?.id ?? undefined);
-      setAuthReady(true);
-    })();
-
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!alive) return;
-      setUserId(session?.user?.id ?? undefined);
-      setAuthReady(true);
-    });
-
-    return () => {
-      alive = false;
-      sub?.subscription?.unsubscribe();
-    };
+    migrateCompat();
+    setActiveMap(loadActive());
   }, []);
 
-  const [list, setList] = useState<
-    (ChallengeRow & { members_count: number; my_score?: number; my_rank?: number })[]
-  >([]);
-
   useEffect(() => {
-    if (!userId) { setList([]); return; }
+    let cancelled = false;
     (async () => {
-      // 1) Retos en los que participo
-      const { data: mems, error: eMems } = await supabase
-        .from('challenge_members')
-        .select('challenge_id')
-        .eq('user_id', userId)
-        .returns<MemberIdRow[]>();
-      if (eMems) { console.error(eMems); setList([]); return; }
+      if (!uid) { setLoading(false); return; }
+      try {
+        await pullUserPrograms(); // hidrata local desde Supabase
+        if (!cancelled) setActiveMap(loadActive());
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [uid]);
 
-      const ids = (mems ?? []).map((m) => m.challenge_id);
-      if (!ids.length) { setList([]); return; }
+  // ======= Rehydrate en foco/online =======
+  useEffect(() => {
+    if (!uid) return;
+    let cancelled = false;
+    const rehydrate = async () => {
+      try { await pullUserPrograms(); } catch {}
+      if (!cancelled) setActiveMap(loadActive());
+    };
+    const onVis = () => { if (document.visibilityState === 'visible') void rehydrate(); };
+    const onOnline = () => void rehydrate();
+    document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('online', onOnline);
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('online', onOnline);
+    };
+  }, [uid]);
 
-      // 2) Datos de retos
-      const { data: challenges, error: eCh } = await supabase
-        .from('challenges')
-        .select('id, code, owner_id, title, start, end, cover_url')
-        .in('id', ids)
-        .order('start', { ascending: false })
-        .returns<ChallengeRow[]>();
-      if (eCh) { console.error(eCh); setList([]); return; }
+  // ======= Realtime (todos los programas del usuario) =======
+  useEffect(() => {
+    if (!uid) return;
+    let cancelled = false;
+    const ch = supabase
+      .channel(`rt-program-tasks-all-${uid}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_program_tasks', filter: `user_id=eq.${uid}` },
+        async () => {
+          try { await pullUserPrograms(); } finally { if (!cancelled) setActiveMap(loadActive()); }
+        })
+      .subscribe();
 
-      // 3) Contar miembros
-      const { data: members, error: eMembers } = await supabase
-        .from('challenge_members')
-        .select('challenge_id, user_id')
-        .in('challenge_id', ids)
-        .returns<MemberRow[]>();
-      if (eMembers) { console.error(eMembers); }
+    return () => {
+      cancelled = true;
+      try { supabase.removeChannel(ch); } catch {}
+    };
+  }, [uid]);
 
-      const counts: Record<string, number> = {};
-      (members ?? []).forEach((m) => {
-        counts[m.challenge_id] = (counts[m.challenge_id] ?? 0) + 1;
+  // ======= Slugs activos (iniciados y no completados) =======
+  const todayISO = todayKey();
+  const activeSlugs = useMemo(() => {
+    const out: string[] = [];
+    for (const [slug, p] of Object.entries(activeMap)) {
+      const lp = p as LocalProgram;
+      if (!lp?.startedAt) continue;
+
+      const json = jsonBySlug[slug] || tryGetProgramJson(slug);
+      const totalDays: number = json?.days?.length ?? json?.durationDays ?? 0;
+      if (!totalDays) continue;
+
+      const rawIdx = daysBetweenFromMs(lp.startedAt, todayISO) + 1;
+      if (rawIdx > totalDays) continue; // completado → fuera
+
+      out.push(slug);
+    }
+    return out;
+  }, [activeMap, jsonBySlug, todayISO]);
+
+  // ======= Cargar JSON solo de los slugs activos con loaders rápidos =======
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const entries = await Promise.all(activeSlugs.map(async (slug) => {
+        const loader = DATA_LOADERS[slug];
+        if (!loader) return null;
+        try {
+          const json = await loader();
+          return [slug, json] as const;
+        } catch {
+          return null;
+        }
+      }));
+      if (cancelled) return;
+      const map: Record<string, ProgramJson> = { ...jsonBySlug };
+      for (const e of entries) if (e) map[e[0]] = e[1];
+      setJsonBySlug(map);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSlugs.join('|')]);
+
+  // ======= Construcción de “programsToday” desde la MISMA fuente =======
+  const visiblePrograms = useMemo(() => {
+    const res: Array<{
+      slug: string; title: string; day: number; color: string; tasks: { id: string; label: string; done: boolean; detail?: string }[];
+    }> = [];
+
+    for (const slug of activeSlugs) {
+      const lp = activeMap[slug] as LocalProgram | undefined;
+      if (!lp?.startedAt) continue;
+
+      const json = jsonBySlug[slug] || tryGetProgramJson(slug);
+      const totalDays = json?.days?.length ?? json?.durationDays ?? 0;
+      if (!totalDays) continue;
+
+      const rawIdx = daysBetweenFromMs(lp.startedAt, todayISO) + 1;
+      if (rawIdx > totalDays) continue;
+      const currentDay = Math.min(totalDays, Math.max(1, rawIdx));
+
+      const dayDef = json?.days?.find((d: any) => d.day === currentDay) ?? json?.days?.[currentDay - 1];
+      const plannedTasks = (dayDef?.tasks ?? []) as JsonTask[];
+      if (!plannedTasks.length) continue;
+
+      const mapForDay = (lp.progress?.[currentDay] as Record<string, boolean> | undefined) ?? {};
+      const tasks = plannedTasks.map((t, i) => {
+        const id = t.id ?? `task_${i}`;
+        return { id, label: t.label, done: !!mapForDay[id], detail: t.detail };
       });
 
-      // 4) (Opcional) puntuación/ranking
-      let scoreMap: Record<string, { score: number; rank: number }> = {};
-      try {
-        const { data: scores } = await supabase
-          .from('challenge_member_scores')
-          .select('challenge_id, user_id, score, rank_position')
-          .eq('user_id', userId)
-          .in('challenge_id', ids)
-          .returns<ScoreRow[]>();
-        (scores ?? []).forEach(s => {
-          scoreMap[s.challenge_id] = { score: s.score, rank: s.rank_position };
-        });
-      } catch {
-        /* vista opcional */
-      }
+      const planned = tasks.length;
+      const done = tasks.filter(x => x.done).length;
+      const lastDayAndComplete = planned > 0 && done >= planned && currentDay >= totalDays;
+      if (lastDayAndComplete) continue;
 
-      setList((challenges ?? []).map((c) => ({
-        ...c,
-        members_count: counts[c.id] ?? 1,
-        my_score: scoreMap[c.id]?.score,
-        my_rank: scoreMap[c.id]?.rank,
-      })));
-    })();
-  }, [userId]);
-
-  // ===== Render =====
-
-  // Skeletons mientras resolvemos la sesión
-  if (!authReady) {
-    return (
-      <main className="container mx-auto px-4 py-4 space-y-4 bg-white">
-        <div className="flex items-center justify-between">
-          <h2 className="page-title">Retos con amigos</h2>
-          <span className="inline-block h-9 w-20 rounded-full bg-neutral-100 border" style={{ borderColor: 'var(--line)' }} />
-        </div>
-        <SkeletonCard />
-        <SkeletonCard />
-      </main>
-    );
-  }
-
-  if (!userId) {
-    return (
-      <main className="container mx-auto px-4 py-4 text-sm space-y-4 bg-white">
-        <div className="flex items-center justify-between">
-          <h2 className="page-title">Retos con amigos</h2>
-          <Link href="/amigos/retos" className="btn secondary">Volver</Link>
-        </div>
-        <section className="rounded-2xl border p-4 bg-white" style={{ borderColor: 'var(--line)' }}>
-          <p className="text-xs text-neutral-500">
-            Inicia sesión para ver tus retos.
-          </p>
-        </section>
-      </main>
-    );
-  }
-
-  return (
-    <main className="container mx-auto px-4 py-4 space-y-4 bg-white">
-      <div className="flex items-center justify-between">
-        <h2 className="page-title">Retos con amigos</h2>
-        <Link href="/amigos/retos" className="btn secondary">Volver</Link>
-      </div>
-
-      {!list.length ? (
-        <section className="rounded-2xl border p-4 bg-white" style={{ borderColor: 'var(--line)' }}>
-          <p className="text-sm text-neutral-500">
-            Aún no tienes retos. Crea uno o únete con un código.
-          </p>
-        </section>
-      ) : (
-        <ul className="grid grid-cols-1 gap-4">
-          {list.map((ch) => (
-            <li key={ch.id}>
-              <Link
-                href={`/amigos/retos/${ch.id}`}
-                className="block overflow-hidden rounded-2xl focus:outline-none focus:ring-2 focus:ring-black"
-              >
-                {/* Card blanca, limpia */}
-                <div
-                  className="relative rounded-2xl border bg-white shadow-sm"
-                  style={{ borderColor: 'var(--line)' }}
-                >
-                  {/* Imagen de portada */}
-                  <div className="relative h-44 w-full overflow-hidden rounded-t-2xl">
-                    {safeUrl(ch.cover_url) ? (
-                      <Image
-                        src={safeUrl(ch.cover_url)!}
-                        alt={ch.title}
-                        fill
-                        className="object-cover"
-                        sizes="100vw"
-                        priority={false}
-                        unoptimized
-                        onError={(e) => {
-                          const el = (e.target as HTMLImageElement)?.parentElement;
-                          if (el) el.innerHTML = '<div class="absolute inset-0 bg-neutral-200"></div>';
-                        }}
-                      />
-                    ) : (
-                      <div className="absolute inset-0 bg-neutral-200" />
-                    )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/15 to-transparent" />
-                    <div className="absolute left-3 top-3">
-                      <span className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium bg-white/95 border" style={{ borderColor: 'var(--line)' }}>
-                        Reto con amigos
-                      </span>
-                    </div>
-                    <div className="absolute right-3 top-3 text-[11px] text-white/90">
-                      {fmtDate(ch.start)} — {fmtDate(ch.end)}
-                    </div>
-                    <div className="absolute bottom-3 left-3 right-3">
-                      <h3 className="text-white text-[16px] font-semibold drop-shadow-sm line-clamp-2">
-                        {ch.title}
-                      </h3>
-                    </div>
-                  </div>
-
-                  {/* Contenido */}
-                  <div className="p-4">
-                    <ProgressBar percent={progressByDates(ch.start, ch.end)} />
-
-                    <div className="mt-3 grid grid-cols-3 gap-3 text-center">
-                      <Metric label="Particip." titleLabel="Participantes" value={String(ch.members_count)} />
-                      <Metric label="Puntuación" value={typeof ch.my_score === 'number' ? String(ch.my_score) : '—'} />
-                      <Metric label="Ranking" value={typeof ch.my_rank === 'number' ? `#${ch.my_rank}` : '—'} />
-                    </div>
-
-                    <div className="mt-3 flex items-center justify-between gap-2">
-                      <div className="text-[12px] text-neutral-500">
-                        Código: <b className="text-neutral-700">{ch.code}</b>
-                      </div>
-                      <ShareButton title={ch.title} code={ch.code} challengeId={ch.id} />
-                    </div>
-                  </div>
-                </div>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
-    </main>
-  );
-}
-
-/** ====== Subcomponentes ====== */
-
-function ProgressBar({ percent }: { percent: number }) {
-  const pct = Math.max(0, Math.min(100, Math.round(percent)));
-  return (
-    <div className="w-full h-2 rounded-full bg-neutral-200 overflow-hidden">
-      <div
-        className="h-2 rounded-full"
-        style={{
-          width: `${pct}%`,
-          background: 'linear-gradient(90deg, #16a34a, #22c55e)',
-          transition: 'width .35s ease',
-        }}
-        aria-label={`Progreso ${pct}%`}
-      />
-    </div>
-  );
-}
-
-function Metric({
-  label,
-  value,
-  titleLabel,
-}: {
-  label: string;
-  value: string;
-  titleLabel?: string;
-}) {
-  return (
-    <div
-      className="rounded-xl border px-3 py-2 bg-white"
-      title={titleLabel || label}
-      aria-label={titleLabel || label}
-      style={{ borderColor: 'var(--line)' }}
-    >
-      <div className="text-[10px] uppercase tracking-wide text-neutral-500">{label}</div>
-      <div className="text-base font-semibold text-neutral-900">{value}</div>
-    </div>
-  );
-}
-
-/** ===== Skeleton ===== */
-function SkeletonCard() {
-  return (
-    <div className="rounded-2xl border bg-white shadow-sm" style={{ borderColor: 'var(--line)' }}>
-      <div className="h-44 w-full rounded-t-2xl bg-neutral-200 animate-pulse" />
-      <div className="p-4 space-y-3">
-        <div className="h-2 w-full bg-neutral-200 rounded-full animate-pulse" />
-        <div className="grid grid-cols-3 gap-3">
-          <div className="h-12 bg-neutral-100 rounded-xl border animate-pulse" style={{ borderColor: 'var(--line)' }} />
-          <div className="h-12 bg-neutral-100 rounded-xl border animate-pulse" style={{ borderColor: 'var(--line)' }} />
-          <div className="h-12 bg-neutral-100 rounded-xl border animate-pulse" style={{ borderColor: 'var(--line)' }} />
-        </div>
-        <div className="h-4 w-40 bg-neutral-100 rounded animate-pulse" />
-      </div>
-    </div>
-  );
-}
-
-/** ===== Botón Compartir / Copiar ===== */
-function ShareButton({
-  title,
-  code,
-  challengeId,
-}: {
-  title: string;
-  code: string;
-  challengeId: string;
-}) {
-  const [copied, setCopied] = React.useState(false);
-  const msg =
-    `Únete al reto ${title}. ` +
-    `Descarga la app en https://akira-psi.vercel.app ` +
-    `y ve a Comunidad > Retos > Unirse a reto. ` +
-    `Código: ${code}`;
-
-  async function share(e: React.MouseEvent<HTMLButtonElement>) {
-    e.preventDefault();
-    e.stopPropagation();
-    try {
-      if (navigator.share) {
-        await navigator.share({
-          title: `Reto: ${title}`,
-          text: msg,
-          url: `https://akira-psi.vercel.app/amigos/retos/${challengeId}`,
-        });
-        return;
-      }
-      await navigator.clipboard.writeText(msg);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      try {
-        await navigator.clipboard.writeText(msg);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-      } catch {}
+      res.push({
+        slug,
+        title: json?.title || slug,
+        day: currentDay,
+        color: colorFor(slug),
+        tasks,
+      });
     }
-  }
 
-  return (
-    <button
-      type="button"
-      onClick={share}
-      className="text-[12px] px-3 py-1.5 rounded-full border bg-white hover:bg-neutral-50 active:bg-neutral-100 transition"
-      style={{ borderColor: 'var(--line)' }}
-      aria-label="Compartir reto"
-    >
-      {copied ? 'Copiado' : 'Compartir'}
-    </button>
-  );
-}
+    return res;
+  }, [activeMap, jsonBySlug, todayISO, activeSlugs]);
+
+  const hasPrograms = visiblePrograms.length > 0;
+
+  // ======= Modal detalles =======
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [infoTitle, setInfoTitle] = useState('');
+  const [infoDetail, setInfoDetail] = useState<string | undefined>(undefined);
+  const openInfo = (title: string, detail?: string) => { setInfoTitle(title); setInfoDetail(detail); setInfoOpen(true); };
+  const closeInfo = () => setInfoOpen(false);
+
+  // ======= ensureDayRows (idéntico a ProgramDetail) =======
+  async function ensureDayRows(uid: string, slug: string, dayNum: number, taskIds: string[]) {
+    if (!taskIds.length) return;
+    const { data: existing, error: selErr } = await supabase
+      .from('user_program_tasks')
+      .select('task_id')
+      .eq('user_id', uid)
+      .eq('program_slug', slug)
+      .eq('day', dayNum);
