@@ -27,6 +27,17 @@ const DATA_LOADERS: Record<string, () => Promise<ProgramJson>> = {
   'detox-tecnologico-30': async () => (await import('@/data/programs/detox-tecnologico-30.json')).default as any,
 };
 
+/* ===== Helpers JSON (fallback síncrono) ===== */
+function tryGetProgramJson(slug: string): any | null {
+  try {
+    // @ts-ignore
+    const m = require(`@/data/programs/${slug}.json`);
+    return m?.default ?? m ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /* ===== Helpers fecha (idénticos a ProgramDetail) ===== */
 function todayKey() {
   const d = new Date();
@@ -142,7 +153,7 @@ export default function MiActividadChecks() {
     };
   }, [uid]);
 
-  // ======= Realtime (sin filtrar por slug para cubrir todos los programas) =======
+  // ======= Realtime (todos los programas del usuario) =======
   useEffect(() => {
     if (!uid) return;
     let cancelled = false;
@@ -160,23 +171,27 @@ export default function MiActividadChecks() {
     };
   }, [uid]);
 
-  // ======= Slugs activos (iniciados y NO completados) =======
+  // ======= Slugs activos (iniciados y no completados) =======
+  const todayISO = todayKey();
   const activeSlugs = useMemo(() => {
     const out: string[] = [];
     for (const [slug, p] of Object.entries(activeMap)) {
       const lp = p as LocalProgram;
       if (!lp?.startedAt) continue;
-// ✅ espejo de lógica de Resumen: excluir si ya pasó de duración
-     // (usamos solo jsonBySlug; si aún no cargó, temporalmente se omite y se recalculará al cargar)
-      const json = jsonBySlug[slug];
+
+      // JSON: preferimos el asíncrono pero caemos al síncrono si aún no llegó
+      const json = jsonBySlug[slug] || tryGetProgramJson(slug);
       const totalDays: number = json?.days?.length ?? json?.durationDays ?? 0;
       if (!totalDays) continue;
-      const rawIdx = daysBetweenFromMs(lp.startedAt, todayKey()) + 1; // 1..N (sin clamp)
-      if (rawIdx > totalDays) continue; // => completado → fuera
+
+      // espejo de Resumen: rawIdx (sin clamp) y filtrar si pasó
+      const rawIdx = daysBetweenFromMs(lp.startedAt, todayISO) + 1;
+      if (rawIdx > totalDays) continue; // completado → fuera
+
       out.push(slug);
     }
     return out;
-  }, [activeMap, jsonBySlug]);
+  }, [activeMap, jsonBySlug, todayISO]);
 
   // ======= Cargar JSON solo de los slugs activos con loaders rápidos =======
   useEffect(() => {
@@ -193,15 +208,15 @@ export default function MiActividadChecks() {
         }
       }));
       if (cancelled) return;
-      const map: Record<string, ProgramJson> = {};
+      const map: Record<string, ProgramJson> = { ...jsonBySlug };
       for (const e of entries) if (e) map[e[0]] = e[1];
       setJsonBySlug(map);
     })();
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSlugs.join('|')]);
 
   // ======= Construcción de “programsToday” desde la MISMA fuente =======
-  const todayISO = todayKey();
   const visiblePrograms = useMemo(() => {
     const res: Array<{
       slug: string; title: string; day: number; color: string; tasks: { id: string; label: string; done: boolean; detail?: string }[];
@@ -210,18 +225,17 @@ export default function MiActividadChecks() {
     for (const slug of activeSlugs) {
       const lp = activeMap[slug] as LocalProgram | undefined;
       if (!lp?.startedAt) continue;
-      // ✅ defensa extra sin romper tipos
-if (lp && 'completedAt' in (lp as any) && (lp as any).completedAt) continue;
-     const json = jsonBySlug[slug];
-     const totalDays = json?.days?.length ?? json?.durationDays ?? 0;
+
+      const json = jsonBySlug[slug] || tryGetProgramJson(slug);
+      const totalDays = json?.days?.length ?? json?.durationDays ?? 0;
       if (!totalDays) continue;
 
-      // ✅ usa rawIdx para decidir si está pasado, tal como en Resumen
-     const rawIdx = daysBetweenFromMs(lp.startedAt, todayISO) + 1;
-      if (rawIdx > totalDays) continue; // completado → fuera
+      // usar rawIdx para excluir completados; clamp solo para pintar
+      const rawIdx = daysBetweenFromMs(lp.startedAt, todayISO) + 1;
+      if (rawIdx > totalDays) continue;
       const currentDay = Math.min(totalDays, Math.max(1, rawIdx));
 
-      const dayDef = json?.days?.find((d) => d.day === currentDay) ?? json?.days?.[currentDay - 1];
+      const dayDef = json?.days?.find((d: any) => d.day === currentDay) ?? json?.days?.[currentDay - 1];
       const plannedTasks = (dayDef?.tasks ?? []) as JsonTask[];
       if (!plannedTasks.length) continue;
 
@@ -231,7 +245,7 @@ if (lp && 'completedAt' in (lp as any) && (lp as any).completedAt) continue;
         return { id, label: t.label, done: !!mapForDay[id], detail: t.detail };
       });
 
-      // Si último día y TODO hecho, oculta (defensa adicional)
+      // último día y todo hecho → fuera
       const planned = tasks.length;
       const done = tasks.filter(x => x.done).length;
       const lastDayAndComplete = planned > 0 && done >= planned && currentDay >= totalDays;
@@ -313,9 +327,9 @@ if (lp && 'completedAt' in (lp as any) && (lp as any).completedAt) continue;
       if (!uid) return;
 
       // 2) Sembrar filas del día
-      const json = jsonBySlug[slug];
-      const taskIds = (json?.days.find(d => d.day === day)?.tasks ?? json?.days?.[day - 1]?.tasks ?? [])
-        .map((t, i) => t.id ?? `task_${i}`);
+      const json = jsonBySlug[slug] || tryGetProgramJson(slug);
+      const taskIds = (json?.days.find((d: any) => d.day === day)?.tasks ?? json?.days?.[day - 1]?.tasks ?? [])
+        .map((t: any, i: number) => t.id ?? `task_${i}`);
       await ensureDayRows(uid, slug, day, taskIds);
 
       // 3) Upsert del toggle real
@@ -453,7 +467,7 @@ if (lp && 'completedAt' in (lp as any) && (lp as any).completedAt) continue;
   );
 }
 
-/* ===== Colores por slug (igual criterio que en tu app) ===== */
+/* ===== Colores por slug ===== */
 function colorFor(slug: string) {
   if (slug.includes('detox')) return '#0a7cff';
   if (slug.includes('lectura')) return '#f59e0b';
