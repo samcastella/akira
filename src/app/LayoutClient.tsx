@@ -55,6 +55,9 @@ export default function LayoutClient({
   const [registrationStartStep, setRegistrationStartStep] =
     useState<1 | 2 | 3 | 4 | 5>(1);
 
+  // === Nuevo: guardamos el UID para el RPC de sugerencias
+  const [uid, setUid] = useState<string | null>(null);
+
   const SUPA_READY = isSupabaseEnvReady();
 
   useEffect(() => { setUserOk(canEnter()); }, []);
@@ -146,8 +149,9 @@ export default function LayoutClient({
 
       const has = !!data.session;
       try {
-        const uid = data.session?.user?.id ?? null;
-        if (uid) localStorage.setItem(LS_LAST_UID, uid);
+        const sUid = data.session?.user?.id ?? null;
+        setUid(sUid);
+        if (sUid) localStorage.setItem(LS_LAST_UID, sUid);
         else localStorage.removeItem(LS_LAST_UID);
       } catch {}
       setHasSession(has);
@@ -180,8 +184,9 @@ export default function LayoutClient({
         } catch {}
 
         try {
-          const uid = session?.user?.id ?? null;
-          if (uid) localStorage.setItem(LS_LAST_UID, uid);
+          const sUid = session?.user?.id ?? null;
+          setUid(sUid);
+          if (sUid) localStorage.setItem(LS_LAST_UID, sUid);
           else localStorage.removeItem(LS_LAST_UID);
         } catch {}
 
@@ -234,6 +239,44 @@ export default function LayoutClient({
       cancelled = true;
     };
   }, [SUPA_READY]);
+
+  // ==== NUEVO: proponer reto diario 1 vez al día (idempotente por date_key) ====
+  useEffect(() => {
+    if (!SUPA_READY) return;
+    if (!uid) return;
+
+    let cancelled = false;
+    const LS_KEY = 'akira_suggestion_last_call_v1';
+
+    async function maybeProposeToday() {
+      try {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const iso = today.toISOString().slice(0, 10);
+
+        // Evita llamadas repetidas en el mismo día
+        const last = localStorage.getItem(LS_KEY);
+        if (last === iso) return;
+
+        await supabase.rpc('propose_suggested_challenge', {
+          p_user_id: uid,
+          p_date: iso,
+          p_frequency: 'daily',
+        });
+
+        if (!cancelled) {
+          localStorage.setItem(LS_KEY, iso);
+          // La UI de /mizona/checks leerá la sugerencia con useTodayActivity
+        }
+      } catch (e) {
+        console.warn('[suggestions] propose_suggested_challenge failed', e);
+      }
+    }
+
+    void maybeProposeToday();
+
+    return () => { cancelled = true; };
+  }, [SUPA_READY, uid]);
 
   // Refetch al volver a foco/online (con tiempos)
   useEffect(() => {

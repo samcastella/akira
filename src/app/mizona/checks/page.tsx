@@ -97,7 +97,18 @@ function findTaskDetail(slug: string, day: number, taskId: string): string | und
 }
 
 export default function MiActividadChecks() {
-  const { programsToday, challengesToday, habitsToday, toggleProgramTask } = useTodayActivity();
+  const {
+    programsToday,
+    challengesToday,
+    habitsToday,
+    toggleProgramTask,
+
+    // NUEVO: sugerencia del día
+    suggestionsToday,
+    acceptSuggestion,
+    dismissSuggestion,
+    toggleSuggestionDone,
+  } = useTodayActivity();
 
   /* ======= MISMA LÓGICA DE FILTRADO QUE EN RESUMEN ======= */
   const activeSlugSet = useMemo(() => {
@@ -133,7 +144,7 @@ export default function MiActividadChecks() {
   const hasPrograms = visiblePrograms.length > 0;
   const hasChallenges = (challengesToday ?? []).length > 0;
   const hasHabits = (habitsToday ?? []).length > 0;
-  const nothingAtAll = !hasPrograms && !hasChallenges && !hasHabits;
+  const nothingAtAll = !hasPrograms && !hasChallenges && !hasHabits && !suggestionsToday;
 
   // Modal
   const [infoOpen, setInfoOpen] = useState(false);
@@ -154,12 +165,60 @@ export default function MiActividadChecks() {
     }
   }, [toggleProgramTask]);
 
+  const s = suggestionsToday;
+
   return (
     <div className="py-6 space-y-6">
       {nothingAtAll && (
         <div className="rounded-2xl border border-neutral-200 p-4 text-sm text-neutral-600 bg-white">
           Todavía no hay nada creado
         </div>
+      )}
+
+      {/* ===== Reto sugerido de hoy ===== */}
+      {s && s.status !== 'dismissed' && (
+        <section className="space-y-3 rounded-2xl border border-neutral-200 bg-white p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-semibold">Reto sugerido de hoy</h3>
+              <p className="text-sm text-neutral-600">{s.description ?? 'Pequeño empujón para hoy.'}</p>
+            </div>
+
+            {s.status === 'proposed' && (
+              <div className="flex gap-2">
+                <button
+                  onClick={acceptSuggestion}
+                  className="px-3 py-1.5 rounded-full bg-black text-white text-sm font-semibold active:scale-95"
+                >
+                  Aceptar
+                </button>
+                <button
+                  onClick={dismissSuggestion}
+                  className="px-3 py-1.5 rounded-full border text-sm font-semibold active:scale-95"
+                >
+                  Descartar
+                </button>
+              </div>
+            )}
+          </div>
+
+          {(s.status === 'accepted' || s.status === 'done') && (
+            <div className="mt-1">
+              {/* Barra checkeable “lite”, NO suma al ranking global */}
+              <CreateHabitBar
+                variant="task"
+                label={s.title}
+                checked={s.status === 'done'}
+                color="#111"
+                onToggle={toggleSuggestionDone}
+                showInfoButton={false}
+              />
+              <p className="mt-2 text-xs text-neutral-500">
+                * Este reto no suma puntos al ranking global; es un extra opcional.
+              </p>
+            </div>
+          )}
+        </section>
       )}
 
       {/* Programas activos */}
@@ -202,8 +261,8 @@ export default function MiActividadChecks() {
             <CreateHabitBar
               variant="task"
               label="Check de hoy (sube tu foto)"
-              checked={Boolean(ch.done)}
-              color={ch.color || '#111'}
+              checked={Boolean((ch as any).done)}
+              color={(ch as any).color || '#111'}
               onToggle={() => { /* sin toggle aquí */ }}
               showInfoButton={false}
               className="habitbar-hide-check"
@@ -234,8 +293,8 @@ export default function MiActividadChecks() {
               checked={!!h.done}
               color={h.color || '#111'}
               onToggle={h.onToggle ?? (() => {})}
-              onInfo={h.detail ? (() => openInfo(`${h.name} · Check de hoy`, h.detail)) : undefined}
-              showInfoButton={Boolean(h.detail)}
+              onInfo={(h as any).detail ? (() => openInfo(`${h.name} · Check de hoy`, (h as any).detail)) : undefined}
+              showInfoButton={Boolean((h as any).detail)}
             />
           </div>
         ))}

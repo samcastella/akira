@@ -1,9 +1,10 @@
 // src/lib/activity/useTodayActivity.ts
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { loadActive, saveActive, type LocalProgram } from '@/lib/programsLocal';
 import { useAuthUserId } from '@/lib/user';
+import { supabase } from '@/lib/supabaseClient';
 
 /* ===== Tipos públicos para hoy ===== */
 export type ProgramToday = {
@@ -18,6 +19,15 @@ export type ChallengeTask = { id: string; label: string; done: boolean; onToggle
 export type ChallengeToday = { id: string; title: string; tasks: ChallengeTask[] };
 
 export type HabitToday = { id: string; name: string; done: boolean; color?: string; onToggle?: () => void };
+
+/* ===== Reto sugerido (no puntúa ranking) ===== */
+export type TodaySuggestion = {
+  id: string;
+  status: 'proposed' | 'accepted' | 'dismissed' | 'done';
+  title: string;
+  description?: string;
+  payload?: any;
+};
 
 export function useTodayActivity() {
   const uid = useAuthUserId();
@@ -82,7 +92,88 @@ export function useTodayActivity() {
     return [];
   }, [version]);
 
-  /* ===== Totales para rueda ===== */
+  /* ===== Sugerencia del día (DB) ===== */
+  const [suggestion, setSuggestion] = useState<TodaySuggestion | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!uid) return;
+      const iso = todayISO;
+      // join por FK suggestion_id → suggested_challenges_master
+      const { data, error } = await supabase
+        .from('user_suggested_challenges')
+        .select(`
+          id, status,
+          suggested_challenges_master ( title, description, payload )
+        `)
+        .eq('user_id', uid)
+        .eq('date_key', iso)
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        console.warn('[useTodayActivity] load suggestion error:', error);
+        if (!cancelled) setSuggestion(null);
+        return;
+      }
+      if (!data) {
+        if (!cancelled) setSuggestion(null);
+        return;
+      }
+      if (!cancelled) {
+        setSuggestion({
+          id: data.id,
+          status: data.status,
+          title: (data as any)?.suggested_challenges_master?.title ?? 'Reto sugerido',
+          description: (data as any)?.suggested_challenges_master?.description ?? undefined,
+          payload: (data as any)?.suggested_challenges_master?.payload ?? undefined,
+        });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [uid, todayISO, version]);
+
+  const acceptSuggestion = useCallback(async () => {
+    if (!uid || !suggestion) return;
+    const { error } = await supabase
+      .from('user_suggested_challenges')
+      .update({ status: 'accepted', accepted_at: new Date().toISOString() })
+      .eq('id', suggestion.id)
+      .eq('user_id', uid);
+    if (error) return console.warn('[suggestion] accept error:', error);
+    setSuggestion((s) => (s ? { ...s, status: 'accepted' } : s));
+    window.dispatchEvent(new CustomEvent('akira:activity:changed', { detail: { source: 'suggestion', action: 'accept' } }));
+  }, [uid, suggestion]);
+
+  const dismissSuggestion = useCallback(async () => {
+    if (!uid || !suggestion) return;
+    const { error } = await supabase
+      .from('user_suggested_challenges')
+      .update({ status: 'dismissed', dismissed_at: new Date().toISOString() })
+      .eq('id', suggestion.id)
+      .eq('user_id', uid);
+    if (error) return console.warn('[suggestion] dismiss error:', error);
+    setSuggestion((s) => (s ? { ...s, status: 'dismissed' } : s));
+    window.dispatchEvent(new CustomEvent('akira:activity:changed', { detail: { source: 'suggestion', action: 'dismiss' } }));
+  }, [uid, suggestion]);
+
+  const toggleSuggestionDone = useCallback(async () => {
+    if (!uid || !suggestion) return;
+    const next = suggestion.status === 'done' ? 'accepted' : 'done';
+    const patch: any = { status: next, done_at: next === 'done' ? new Date().toISOString() : null };
+    const { error } = await supabase
+      .from('user_suggested_challenges')
+      .update(patch)
+      .eq('id', suggestion.id)
+      .eq('user_id', uid);
+    if (error) return console.warn('[suggestion] toggle error:', error);
+    setSuggestion((s) => (s ? { ...s, status: next } : s));
+    window.dispatchEvent(new CustomEvent('akira:activity:changed', { detail: { source: 'suggestion', action: 'toggle' } }));
+  }, [uid, suggestion]);
+
+  /* ===== Totales para rueda =====
+     (NO incluimos suggestion: no puntúa ranking global) */
   const totalGoal =
     programs.reduce((a, p) => a + p.tasks.length, 0) +
     challengesToday.reduce((a, c) => a + c.tasks.length, 0) +
@@ -104,11 +195,19 @@ export function useTodayActivity() {
     programsToday: programs,
     challengesToday,
     habitsToday,
+
+    // Sugerencia (no puntúa ranking)
+    suggestionsToday: suggestion,
+    acceptSuggestion,
+    dismissSuggestion,
+    toggleSuggestionDone,
+
     totalGoal,
     totalDone,
     historicalPoints,
     programsCompleted,
     weeklySeries,
+
     toggleProgramTask: (slug: string, day: number, taskId: string) => {
       // Marca/desmarca en local
       const store = loadActive();
