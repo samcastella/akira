@@ -1,3 +1,4 @@
+// src/app/LayoutClient.tsx
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -84,22 +85,45 @@ export default function LayoutClient({
     });
   }
 
+  /** ===== Instrumentación de sincronización inicial ===== */
   async function syncAll() {
+    console.info('[syncAll] start');
+    const t0 = performance.now();
+
     try {
+      // Perfil
+      console.time('[Supabase] pullProfile');
       await withTimeout((async () => {
         try {
           const remote = await pullProfile();
-          if (!remote) await syncLocalToRemoteIfMissing();
-        } catch (e) { console.warn('[syncAll] profile err:', e); }
+          console.timeEnd('[Supabase] pullProfile');
+
+          if (!remote) {
+            console.time('[Supabase] syncLocalToRemoteIfMissing');
+            await syncLocalToRemoteIfMissing();
+            console.timeEnd('[Supabase] syncLocalToRemoteIfMissing');
+          }
+        } catch (e) {
+          console.timeEnd('[Supabase] pullProfile'); // por si lanzó antes
+          console.warn('[syncAll] profile err:', e);
+        }
       })(), PROFILE_TIMEOUT_MS, 'profile');
 
+      // Programas
+      console.time('[Supabase] pullUserPrograms');
       await withTimeout((async () => {
-        try { await pullUserPrograms(); }
-        catch (e) { console.warn('[syncAll] pullUserPrograms err:', e); }
+        try {
+          await pullUserPrograms();
+        } catch (e) {
+          console.warn('[syncAll] pullUserPrograms err:', e);
+        }
       })(), PROFILE_TIMEOUT_MS, 'programs');
+      console.timeEnd('[Supabase] pullUserPrograms');
     } catch (e) {
       console.warn('[LayoutClient] syncAll wrapper warn:', e);
     } finally {
+      const dt = Math.round(performance.now() - t0);
+      console.info(`[syncAll] end in ${dt} ms`);
       if (canEnter()) setUserOk(true);
       setBootSynced(true);
     }
@@ -112,33 +136,49 @@ export default function LayoutClient({
       return;
     }
     let cancelled = false;
+
     async function initAuth() {
-      const { data } = await supabase.auth.getSession();
+      console.time('[auth] getSession');
+      const { data, error } = await supabase.auth.getSession();
+      console.timeEnd('[auth] getSession');
+      if (error) console.warn('[auth] getSession error:', error);
       if (cancelled) return;
+
       const has = !!data.session;
       try {
         const uid = data.session?.user?.id ?? null;
         if (uid) localStorage.setItem(LS_LAST_UID, uid);
         else localStorage.removeItem(LS_LAST_UID);
       } catch {}
-      setHasSession(has); setAuthReady(true);
+      setHasSession(has);
+      setAuthReady(true);
+
       try {
         window.dispatchEvent(new CustomEvent('akira:auth-changed', {
           detail: { initial: true, has }
         }));
       } catch {}
-      if (has) await syncAll(); else setBootSynced(true);
+
+      if (has) {
+        await syncAll();
+      } else {
+        setBootSynced(true);
+      }
     }
+
     void initAuth();
 
     startUserLibRealtime();
 
     const { data: sub } = supabase.auth.onAuthStateChange(
       async (evt: AuthChangeEvent, session: Session | null) => {
+        console.info('[auth] onAuthStateChange –', evt, '–', session?.user?.id ?? null);
         setHasSession(!!session);
+
         try {
           window.dispatchEvent(new CustomEvent('akira:auth-changed', { detail: { evt } }));
         } catch {}
+
         try {
           const uid = session?.user?.id ?? null;
           if (uid) localStorage.setItem(LS_LAST_UID, uid);
@@ -160,7 +200,9 @@ export default function LayoutClient({
         }
 
         if (session && (evt === 'SIGNED_IN' || evt === 'TOKEN_REFRESHED' || evt === 'USER_UPDATED')) {
+          console.time('[syncAll] after onAuthStateChange');
           await syncAll();
+          console.timeEnd('[syncAll] after onAuthStateChange');
           if (evt === 'SIGNED_IN') setJustSignedIn(false);
         } else if (evt === 'SIGNED_OUT') {
           setShowAuthModal(false);
@@ -193,14 +235,20 @@ export default function LayoutClient({
     };
   }, [SUPA_READY]);
 
+  // Refetch al volver a foco/online (con tiempos)
   useEffect(() => {
     if (!SUPA_READY) return;
-    const refetch = () => {
+    const refetch = async () => {
       if (!hasSession) return;
-      void pullProfile().catch(() => {});
-      void pullUserPrograms().catch(() => {});
+      console.time('[visibility/online] pullProfile');
+      await pullProfile().catch(() => {});
+      console.timeEnd('[visibility/online] pullProfile');
+
+      console.time('[visibility/online] pullUserPrograms');
+      await pullUserPrograms().catch(() => {});
+      console.timeEnd('[visibility/online] pullUserPrograms');
     };
-    const onVisibility = () => { if (document.visibilityState === 'visible') refetch(); };
+    const onVisibility = () => { if (document.visibilityState === 'visible') void refetch(); };
     window.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('online', refetch);
     return () => {
@@ -209,6 +257,7 @@ export default function LayoutClient({
     };
   }, [SUPA_READY, hasSession]);
 
+  // Gating y modales
   useEffect(() => {
     if (!authReady || userOk === null || !bootSynced) return;
     const isAuth = isAuthRoute;
