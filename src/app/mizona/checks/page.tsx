@@ -1,4 +1,3 @@
-// src/app/mizona/checks/page.tsx
 'use client';
 
 import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
@@ -16,6 +15,14 @@ import {
 import { useAuthUserId } from '@/lib/user';
 import { supabase } from '@/lib/supabaseClient';
 import { pullUserPrograms } from '@/lib/programSync';
+
+/* ===== NUEVO: sync de hábitos personalizados ===== */
+import {
+  useHabitsSupabaseSync,
+  flushHabitsNow,
+  queueTickUpsert,
+  type HabitMaster as HabitMasterSync,
+} from '@/lib/useHabitsSupabaseSync';
 
 /* ===== Dynamic loaders como en ProgramDetail ===== */
 type JsonTask = { id?: string; label: string; detail?: string };
@@ -38,13 +45,7 @@ function tryGetProgramJson(slug: string): any | null {
   }
 }
 
-/* ===== Helpers fecha (idénticos a ProgramDetail) ===== */
-function todayKey() {
-  const d = new Date();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${d.getFullYear()}-${mm}-${dd}`;
-}
+/* ===== Helpers fecha ===== */
 function startOfDayMs(date: Date) { const d = new Date(date); d.setHours(0,0,0,0); return d.getTime(); }
 function daysBetweenFromMs(startMs: number, endISOyyyyMmDd: string) {
   const a = startOfDayMs(new Date(startMs));
@@ -52,6 +53,18 @@ function daysBetweenFromMs(startMs: number, endISOyyyyMmDd: string) {
   return Math.floor((b - a) / 86_400_000);
 }
 function clamp(n: number, min: number, max: number) { return Math.max(min, Math.min(max, n)); }
+
+/* === Fecha/TZ Europe/Madrid para hábitos personalizados === */
+function dateKeyTZ(d = new Date(), tz = 'Europe/Madrid') {
+  const parts = new Intl.DateTimeFormat('es-ES', { timeZone: tz, year:'numeric', month:'2-digit', day:'2-digit' }).formatToParts(d);
+  const g = (t:string) => parts.find(p=>p.type===t)?.value!;
+  return `${g('year')}-${g('month')}-${g('day')}`;
+}
+function weekdayKeyTZ(d = new Date(), tz = 'Europe/Madrid'): 'monday'|'tuesday'|'wednesday'|'thursday'|'friday'|'saturday'|'sunday' {
+  const day = Number(new Intl.DateTimeFormat('en-GB', { weekday: 'short', timeZone: tz }).format(d).toLowerCase().slice(0,3)
+    .replace('mon','1').replace('tue','2').replace('wed','3').replace('thu','4').replace('fri','5').replace('sat','6').replace('sun','7'));
+  return (['monday','tuesday','wednesday','thursday','friday','saturday','sunday'] as const)[(day||1)-1];
+}
 
 /* === Modal ligero con soporte **negritas** === */
 function InlineMarkdown({ text }: { text: string }) {
@@ -93,9 +106,33 @@ function InfoModal({ open, title, detail, onClose }:{
   );
 }
 
+/* ===== LocalStorage helpers de hábitos personalizados (misma clave que el sync) ===== */
+const LS_HABITS_MASTER = 'akira_habits_master_v1';
+const LS_HABITS_DAILY  = 'akira_habits_daily_v1';
+
+type HabitMaster = HabitMasterSync & {
+  // explicitamos solo para el tipado local de esta página
+  perDay?: Record<string, { items: { id: string; name?: string; description?: string }[] }>;
+};
+type DailyEntry = { done: boolean; doneAt?: number; updated_at?: string };
+type DailyMap = Record<string, Record<string, DailyEntry>>;
+
+function loadMasters(): HabitMaster[] {
+  try { return JSON.parse(localStorage.getItem(LS_HABITS_MASTER) || '[]') as HabitMaster[]; } catch { return []; }
+}
+function loadDaily(): DailyMap {
+  try { return JSON.parse(localStorage.getItem(LS_HABITS_DAILY) || '{}') as DailyMap; } catch { return {}; }
+}
+function saveDaily(map: DailyMap) {
+  localStorage.setItem(LS_HABITS_DAILY, JSON.stringify(map));
+}
+
 /* ===== Page ===== */
 export default function MiActividadChecks() {
   const uid = useAuthUserId();
+
+  // 🔌 Mantén sincronía con Supabase para hábitos personalizados
+  useHabitsSupabaseSync(uid || undefined);
 
   // ======= Estado fuente ÚNICA de verdad (igual que ProgramDetail) =======
   const [activeMap, setActiveMap] = useState<LocalStore>({});
@@ -121,7 +158,7 @@ export default function MiActividadChecks() {
     (async () => {
       if (!uid) { setLoading(false); return; }
       try {
-        await pullUserPrograms(); // hidrata local desde Supabase
+        await pullUserPrograms(); // hidrata local desde Supabase (programas)
         if (!cancelled) setActiveMap(loadActive());
       } finally {
         if (!cancelled) setLoading(false);
@@ -168,7 +205,7 @@ export default function MiActividadChecks() {
   }, [uid]);
 
   // ======= Slugs activos (iniciados y no completados) =======
-  const todayISO = todayKey();
+  const todayISO = dateKeyTZ(new Date());
   const activeSlugs = useMemo(() => {
     const out: string[] = [];
     for (const [slug, p] of Object.entries(activeMap)) {
@@ -385,7 +422,7 @@ export default function MiActividadChecks() {
         .in('id', ids);
       if (eC) { console.warn(eC); setFriendChallenges([]); return; }
 
-      const today = new Date().toISOString().slice(0,10);
+      const today = dateKeyTZ(new Date());
       const list: ChallengeMini[] = (chs ?? []).map((c: any) => {
         const totalDays = Math.max(1, Math.round((new Date(c.end+'T00:00:00').getTime() - new Date(c.start+'T00:00:00').getTime())/86400000) + 1);
         const idxRaw = Math.round((new Date(today+'T00:00:00').getTime() - new Date(c.start+'T00:00:00').getTime())/86400000) + 1;
@@ -465,10 +502,96 @@ export default function MiActividadChecks() {
 
   const hasFriendChallenges = friendChallenges.length > 0;
 
-  const hasChallenges = hasFriendChallenges; // ahora real
-  const hasHabits = false; // placeholder
+  /* =========================
+   *  HÁBITOS PERSONALIZADOS
+   * ========================= */
+  const [masters, setMasters] = useState<HabitMaster[]>([]);
+  const [daily, setDaily] = useState<DailyMap>({});
+
+  // Rehidratar masters + daily al entrar/visibilidad
+  useEffect(() => {
+    const read = () => {
+      try { setMasters(loadMasters().filter(h => !h.deleted_at)); } catch { setMasters([]); }
+      try { setDaily(loadDaily()); } catch { setDaily({}); }
+    };
+    read();
+    const onVis = () => { if (document.visibilityState === 'visible') read(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, []);
+
+  const tzToday = new Date();
+  const dayKey = dateKeyTZ(tzToday);
+  const weekKey = weekdayKeyTZ(tzToday);
+
+  const visibleHabits = useMemo(() => {
+    const today = dayKey;
+    const dow = weekKey;
+    const dayIdx = tzToday.getDay(); // 0=Domingo ... 6=Sábado
+    return masters
+      .filter(h => {
+        // rango de fechas
+        if (h.startDate && today < h.startDate) return false;
+        if (h.endDate && today > h.endDate) return false;
+        // fines de semana
+        if (h.weekend === false && (dayIdx === 0 || dayIdx === 6)) return false;
+        return true;
+      })
+      .map(h => {
+        // detalle del día (solo informativo en el "+")
+        const items = h.perDay?.[dow]?.items ?? [];
+        const detail = items.length
+          ? items.map(it => `• ${it.name ?? 'Tarea'}${it.description ? ` — ${it.description}` : ''}`).join('\n')
+          : undefined;
+        const checked = !!(daily?.[today]?.[h.id]?.done);
+        const label = `${h.icon ?? ''} ${h.name}`.trim();
+        return {
+          id: h.id,
+          label,
+          color: h.color ?? '#F0F0F0',
+          checked,
+          detail,
+        };
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [masters, dayKey, weekKey, daily]);
+
+  const hasHabits = visibleHabits.length > 0;
+
+  // Toggle de hábito personalizado (un único check por hábito/día)
+  const toggleCustomHabit = useCallback(async (hid: string) => {
+    const today = dayKey;
+    // optimista en local
+    const map = { ...(daily || {}) };
+    const bucket = { ...(map[today] || {}) };
+    const cur = bucket[hid]?.done ?? false;
+    const next = !cur;
+    bucket[hid] = { done: next, doneAt: next ? Date.now() : undefined, updated_at: new Date().toISOString() };
+    map[today] = bucket;
+    setDaily(map);
+    saveDaily(map);
+
+    try {
+      if (!uid) return;
+      queueTickUpsert({
+        habit_id: hid,
+        date_key: today,
+        done: next,
+        done_at: next ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString(),
+      });
+      await flushHabitsNow(uid);
+    } catch (e) {
+      console.warn('[customHabit/toggle] flush error', e);
+    } finally {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('akira:activity:changed', { detail: { source: 'custom-habits' } }));
+      }
+    }
+  }, [dayKey, daily, uid]);
+
   const s = suggestionsToday;
-  const nothingAtAll = !hasPrograms && !hasChallenges && !hasHabits && !s;
+  const nothingAtAll = !hasPrograms && !hasFriendChallenges && !hasHabits && !s;
 
   // ===== Render =====
   return (
@@ -603,10 +726,30 @@ export default function MiActividadChecks() {
         })}
       </section>
 
-      {/* Hábitos personalizados (placeholder simple) */}
+      {/* ===== Hábitos personalizados ===== */}
       <section className="space-y-3 rounded-2xl border border-neutral-200 bg-white p-4">
-        <h3 className="text-lg font-semibold">Hábitos personalizados</h3>
-        <p className="text-sm text-neutral-500">Todavía no hay nada creado</p>
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold">Hábitos personalizados</h3>
+          <Link href="/mizona/crear-habitos" className="text-sm underline">Crear hábito</Link>
+        </div>
+
+        {!hasHabits && <p className="text-sm text-neutral-500">Todavía no hay nada creado</p>}
+
+        {hasHabits && visibleHabits.map(h => {
+          const hasDetail = !!h.detail;
+          return (
+            <CreateHabitBar
+              key={h.id}
+              variant="task"
+              label={h.label}
+              checked={h.checked}
+              color={h.color}
+              onToggle={() => toggleCustomHabit(h.id)}
+              onInfo={hasDetail ? (() => openInfo(h.label, h.detail)) : undefined}
+              showInfoButton={hasDetail}
+            />
+          );
+        })}
       </section>
 
       {/* Modal de detalles */}
