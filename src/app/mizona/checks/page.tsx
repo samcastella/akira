@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import CreateHabitBar from '@/components/habits/CreateHabitBar';
@@ -60,10 +60,11 @@ function dateKeyTZ(d = new Date(), tz = 'Europe/Madrid') {
   const g = (t:string) => parts.find(p=>p.type===t)?.value!;
   return `${g('year')}-${g('month')}-${g('day')}`;
 }
-function weekdayKeyTZ(d = new Date(), tz = 'Europe/Madrid'): 'monday'|'tuesday'|'wednesday'|'thursday'|'friday'|'saturday'|'sunday' {
-  const day = Number(new Intl.DateTimeFormat('en-GB', { weekday: 'short', timeZone: tz }).format(d).toLowerCase().slice(0,3)
-    .replace('mon','1').replace('tue','2').replace('wed','3').replace('thu','4').replace('fri','5').replace('sat','6').replace('sun','7'));
-  return (['monday','tuesday','wednesday','thursday','friday','saturday','sunday'] as const)[(day||1)-1];
+function weekdayKeyTZ(d = new Date(), tz = 'Europe/Madrid'):
+  'monday'|'tuesday'|'wednesday'|'thursday'|'friday'|'saturday'|'sunday' {
+  const keys = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'] as const;
+  const zoned = new Date(d.toLocaleString('en-US', { timeZone: tz }));
+  return keys[zoned.getDay()];
 }
 
 /* === Modal ligero con soporte **negritas** === */
@@ -111,7 +112,6 @@ const LS_HABITS_MASTER = 'akira_habits_master_v1';
 const LS_HABITS_DAILY  = 'akira_habits_daily_v1';
 
 type HabitMaster = HabitMasterSync & {
-  // explicitamos solo para el tipado local de esta página
   perDay?: Record<string, { items: { id: string; name?: string; description?: string }[] }>;
 };
 type DailyEntry = { done: boolean; doneAt?: number; updated_at?: string };
@@ -527,22 +527,31 @@ export default function MiActividadChecks() {
   const visibleHabits = useMemo(() => {
     const today = dayKey;
     const dow = weekKey;
-    const dayIdx = tzToday.getDay(); // 0=Domingo ... 6=Sábado
+    const dowIdx = new Date(tzToday.toLocaleString('en-US', { timeZone: 'Europe/Madrid' })).getDay(); // 0 dom, 6 sáb
     return masters
       .filter(h => {
         // rango de fechas
         if (h.startDate && today < h.startDate) return false;
         if (h.endDate && today > h.endDate) return false;
         // fines de semana
-        if (h.weekend === false && (dayIdx === 0 || dayIdx === 6)) return false;
+        if (h.weekend === false && (dowIdx === 0 || dowIdx === 6)) return false;
         return true;
       })
       .map(h => {
-        // detalle del día (solo informativo en el "+")
-        const items = h.perDay?.[dow]?.items ?? [];
-        const detail = items.length
-          ? items.map(it => `• ${it.name ?? 'Tarea'}${it.description ? ` — ${it.description}` : ''}`).join('\n')
+        // items significativos del día (al menos name o description no vacíos)
+        const rawItems = h.perDay?.[dow]?.items ?? [];
+        const meaningful = rawItems.filter(it => (it.name?.trim() || it.description?.trim()));
+        const hasDetail = meaningful.length > 0;
+
+        // construir detalle legible
+        const detail = hasDetail
+          ? meaningful.map(it => {
+              const t = (it.name?.trim() || 'Hábito');
+              const d = it.description?.trim();
+              return d ? `• ${t} — ${d}` : `• ${t}`;
+            }).join('\n')
           : undefined;
+
         const checked = !!(daily?.[today]?.[h.id]?.done);
         const label = `${h.icon ?? ''} ${h.name}`.trim();
         return {
@@ -551,6 +560,7 @@ export default function MiActividadChecks() {
           color: h.color ?? '#F0F0F0',
           checked,
           detail,
+          hasDetail,
         };
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -736,7 +746,6 @@ export default function MiActividadChecks() {
         {!hasHabits && <p className="text-sm text-neutral-500">Todavía no hay nada creado</p>}
 
         {hasHabits && visibleHabits.map(h => {
-          const hasDetail = !!h.detail;
           return (
             <CreateHabitBar
               key={h.id}
@@ -745,8 +754,8 @@ export default function MiActividadChecks() {
               checked={h.checked}
               color={h.color}
               onToggle={() => toggleCustomHabit(h.id)}
-              onInfo={hasDetail ? (() => openInfo(h.label, h.detail)) : undefined}
-              showInfoButton={hasDetail}
+              onInfo={h.hasDetail ? (() => openInfo(h.label, h.detail)) : undefined}
+              showInfoButton={h.hasDetail}
             />
           );
         })}
