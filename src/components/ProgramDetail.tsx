@@ -71,6 +71,10 @@ const DATA_LOADERS: Record<string, () => Promise<ProgramJson>> = {
     const m = await import('@/data/programs/detox-tecnologico-30.json');
     return (m as any).default ?? (m as any);
   },
+  'san-silvestre-60': async () => {
+    const m = await import('@/data/programs/san-silvestre-60.json');
+    return (m as any).default ?? (m as any);
+  },
 };
 
 /* === helpers fecha === */
