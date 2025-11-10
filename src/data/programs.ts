@@ -98,6 +98,22 @@ export const PROGRAMS: ProgramMeta[] = [
     keywords: ["detox", "móvil", "pantallas", "atención", "foco", "scroll"],
     meta: { language: "es", version: "1.0" },
   },
+  {
+    slugData: "san-silvestre-60",
+    slugRoute: "san-silvestre-60",
+    route: "/programas/san-silvestre-60",
+    titleShort: "San Silvestre: 0 → 10 km",
+    cardSubtitle:
+      "60 días para preparar la San Silvestre con progresión amable: caminata, trote, fuerza básica y descanso.",
+    days: 60,
+    type: "good",
+    categories: ["salud", "bienestar"],
+    imageSrc: "/images/programs/san-silvestre-hero.jpg",
+    available: true,
+    themeColor: "#FCA5A5", // rojo suave (puedes cambiarlo)
+    keywords: ["running", "correr", "10k", "san silvestre"],
+    meta: { language: "es", version: "1.0" },
+  },
 ];
 
 /* ===========================
@@ -110,6 +126,7 @@ export const PROGRAMS: ProgramMeta[] = [
  */
 import lecturaJson from "./programs/lectura-30.json";
 import detoxJson from "./programs/detox-tecnologico-30.json";
+import sanSilvestreJson from "./programs/san-silvestre-60.json";
 
 /* ===========================
    Normalización y construcción de índice
@@ -119,6 +136,7 @@ import detoxJson from "./programs/detox-tecnologico-30.json";
 export const PROGRAM_SLUG_ALIASES: Record<string, string> = {
   "lectura-30": "lectura",
   "detox-tecnologico-30": "detox-tecnologico",
+  // San Silvestre no tiene alias legacy (su slug de ruta conserva el “-60”)
 };
 
 /** Fallback de color por temática (si algún meta no trae themeColor). */
@@ -208,6 +226,7 @@ export const PROGRAM_DEFS_BY_SLUG: Record<string, ProgramDef> = (() => {
   const jsonByCanonical: Record<string, any> = {
     lectura: lecturaJson,
     "detox-tecnologico": detoxJson,
+    "san-silvestre-60": sanSilvestreJson,
   };
 
   const out: Record<string, ProgramDef> = {};
