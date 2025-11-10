@@ -146,7 +146,7 @@ export default function ComunidadHome() {
           </div>
 
           <Link
-            href="/amigos/retos/unirse"
+          href="/programas/san-silvestre-60"
             className="shrink-0 inline-flex items-center rounded-full bg-black text-white px-4 py-2 text-sm font-semibold transition active:scale-95 hover:opacity-90"
           >
             Unirse

@@ -575,39 +575,51 @@ export default function ProgramDetail({
           </span>
         </div>
       ) : null}
+{/* CTA */}
+<div className="mt-4">
+  {errorMsg && (
+    <div className="mb-3 rounded-xl border border-red-200 bg-red-50 text-red-700 px-3 py-2 text-sm">
+      {errorMsg}
+    </div>
+  )}
 
-      {/* CTA */}
-      <div className="mt-4">
-        {errorMsg && (
-          <div className="mb-3 rounded-xl border border-red-200 bg-red-50 text-red-700 px-3 py-2 text-sm">
-            {errorMsg}
-          </div>
-        )}
-        {!loadingData && (
-          <div className="mt-2 flex items-center gap-2">
-            {!started ? (
-              <button
-                onClick={handleStartProgram}
-                disabled={starting || loadingData || !uid}
-                className="inline-flex items-center gap-2 rounded-2xl px-5 py-3.5 text-[15px] font-semibold bg-black text-white shadow-md active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                <Play className="w-4 h-4" />
-                {starting ? 'Iniciando…' : 'Empezar programa'}
-              </button>
-            ) : (
-              <button
-                onClick={requestReset}
-                disabled={resetting || !uid}
-                className="inline-flex items-center gap-2 justify-center rounded-xl px-3.5 py-2.5 text-xs font-medium bg-neutral-100 text-neutral-700 hover:bg-neutral-200 transition disabled:opacity-60 disabled:cursor-not-allowed"
-                title="Reiniciar programa"
-              >
-                <RotateCcw className="w-4 h-4" />
-                {resetting ? 'Reiniciando…' : 'Reiniciar'}
-              </button>
-            )}
-          </div>
-        )}
-      </div>
+  {!loadingData && (
+    <div className="mt-2 flex items-center gap-2">
+      {!started ? (
+        <button
+          onClick={handleStartProgram}
+          disabled={starting || loadingData || !uid}
+          className="inline-flex items-center gap-2 rounded-2xl px-5 py-3.5 text-[15px] font-semibold bg-black text-white shadow-md active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          <Play className="w-4 h-4" />
+          {starting ? 'Iniciando…' : 'Empezar programa'}
+        </button>
+      ) : (
+        <button
+          onClick={requestReset}
+          disabled={resetting || !uid}
+          className="inline-flex items-center gap-2 justify-center rounded-xl px-3.5 py-2.5 text-xs font-medium bg-neutral-100 text-neutral-700 hover:bg-neutral-200 transition disabled:opacity-60 disabled:cursor-not-allowed"
+          title="Reiniciar programa"
+        >
+          <RotateCcw className="w-4 h-4" />
+          {resetting ? 'Reiniciando…' : 'Reiniciar'}
+        </button>
+      )}
+    </div>
+  )}
+
+  {/* Enlace a la comunidad del programa San Silvestre */}
+  {slug === 'san-silvestre-60' && (
+    <a
+      href="/programas/san-silvestre-60/comunidad"
+      className="inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-medium hover:bg-neutral-50 mt-3"
+      style={{ borderColor: 'var(--line)' }}
+    >
+      Ver comunidad y ranking
+    </a>
+  )}
+</div>
+
 
       {/* TABS */}
       <nav className="border-b bg-white sticky top-[48px] z-10 -mt-px mt-6">

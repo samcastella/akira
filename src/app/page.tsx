@@ -61,7 +61,7 @@ function HomeTopBar() {
 }
 
 /* ========= Hero (vídeo + bloque blanco) ========= */
-const SAN_SILVESTRE_HREF = '/programas/san-silvestre';
+const SAN_SILVESTRE_HREF = '/programas/san-silvestre-60';
 
 function SanSilvestreHero() {
   return (
