@@ -545,9 +545,9 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title, program 
           <div className="space-y-3">
             {!leaders.length && <p className="text-sm text-neutral-600">Sin datos de ranking.</p>}
             <ul className="space-y-2">
-              {leaders.map((r) => {
-                const name =
-                  r.handle ||
+               {leaders.map((r) => {
+              const name =
+                  (r.username && r.username.trim()) ||
                   `${(r.nombre ?? '').trim()} ${(r.apellido ?? '').trim()}`.trim() ||
                   r.user_id.slice(0, 6);
                 const avatar = leaderPhotos[r.user_id] || null;
