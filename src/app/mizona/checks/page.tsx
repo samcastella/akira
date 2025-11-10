@@ -16,6 +16,9 @@ import { useAuthUserId } from '@/lib/user';
 import { supabase } from '@/lib/supabaseClient';
 import { pullUserPrograms } from '@/lib/programSync';
 
+/* ===== NUEVO: resolver colores desde ProgramDefs ===== */
+import { resolveProgramDef } from '@/data/programs';
+
 /* ===== NUEVO: sync de hábitos personalizados ===== */
 import {
   useHabitsSupabaseSync,
@@ -105,6 +108,11 @@ function InfoModal({ open, title, detail, onClose }:{
       </div>
     </div>
   );
+}
+
+/* ===== Limpieza mínima de markdown inline para labels de barra ===== */
+function mdInlineToPlain(s: string) {
+  return s?.replace(/\*\*(.+?)\*\*/g, '$1') ?? s;
 }
 
 /* ===== LocalStorage helpers de hábitos personalizados (misma clave que el sync) ===== */
@@ -272,7 +280,7 @@ export default function MiActividadChecks() {
       const mapForDay = (lp.progress?.[currentDay] as Record<string, boolean> | undefined) ?? {};
       const tasks = plannedTasks.map((t, i) => {
         const id = t.id ?? `task_${i}`;
-        return { id, label: t.label, done: !!mapForDay[id], detail: t.detail };
+        return { id, label: mdInlineToPlain(t.label), done: !!mapForDay[id], detail: t.detail };
       });
 
       const planned = tasks.length;
@@ -543,7 +551,7 @@ export default function MiActividadChecks() {
         const meaningful = rawItems.filter(it => (it.name?.trim() || it.description?.trim()));
         const hasDetail = meaningful.length > 0;
 
-        // construir detalle legible
+        // construir detalle legible (se muestra con InlineMarkdown ⇒ puede tener **negrita**)
         const detail = hasDetail
           ? meaningful.map(it => {
               const t = (it.name?.trim() || 'Hábito');
@@ -553,7 +561,7 @@ export default function MiActividadChecks() {
           : undefined;
 
         const checked = !!(daily?.[today]?.[h.id]?.done);
-        const label = `${h.icon ?? ''} ${h.name}`.trim();
+        const label = mdInlineToPlain(`${h.icon ?? ''} ${h.name}`.trim());
         return {
           id: h.id,
           label,
@@ -642,7 +650,7 @@ export default function MiActividadChecks() {
             <div className="mt-1">
               <CreateHabitBar
                 variant="task"
-                label={s.title}
+                label={mdInlineToPlain(s.title)}
                 checked={s.status === 'done'}
                 color="#111"
                 onToggle={toggleSuggestionDone}
@@ -671,7 +679,7 @@ export default function MiActividadChecks() {
                   <CreateHabitBar
                     key={t.id}
                     variant="task"
-                    label={t.label}
+                    label={mdInlineToPlain(t.label)}
                     checked={t.done}
                     color={prog.color}
                     onToggle={() => handleToggleProgramTask(prog.slug, prog.day, t.id)}
@@ -694,7 +702,7 @@ export default function MiActividadChecks() {
           const status = friendChecks[ch.id];
           const checked = status === 'valid' || status === 'auto_valid';
           const busy = !!uploading[ch.id];
-          const label = `Día ${ch.todayIdx}/${ch.totalDays} – ${ch.title}`;
+          const label = `Día ${ch.todayIdx}/${ch.totalDays} – ${mdInlineToPlain(ch.title)}`;
           return (
             <div key={ch.id} className="space-y-2">
               <CreateHabitBar
@@ -750,7 +758,7 @@ export default function MiActividadChecks() {
             <CreateHabitBar
               key={h.id}
               variant="task"
-              label={h.label}
+              label={mdInlineToPlain(h.label)}
               checked={h.checked}
               color={h.color}
               onToggle={() => toggleCustomHabit(h.id)}
@@ -767,9 +775,21 @@ export default function MiActividadChecks() {
   );
 }
 
-/* ===== Colores por slug ===== */
+/* ===== Colores por slug (usa ProgramDefs y fallbacks) ===== */
 function colorFor(slug: string) {
-  if (slug.includes('detox')) return '#0a7cff';
-  if (slug.includes('lectura')) return '#f59e0b';
-  return '#111';
+  const def = resolveProgramDef(slug);
+  if (def?.themeColor) return def.themeColor;
+
+  // Fall-backs por si llega un slug legacy o un comunitario sin color definido
+  const FALLBACK: Record<string, string> = {
+    'lectura': '#E0E7FF',
+    'lectura-30': '#E0E7FF',
+    'detox-tecnologico': '#FCD34D',
+    'detox-tecnologico-30': '#FCD34D',
+    'san-silvestre-60': '#FCA5A5',
+  };
+  for (const key in FALLBACK) {
+    if (slug.includes(key)) return FALLBACK[key];
+  }
+  return '#F8E68A';
 }
