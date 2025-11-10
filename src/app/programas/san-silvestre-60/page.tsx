@@ -1,23 +1,34 @@
-import ProgramDetail from '@/components/ProgramDetail';
-import { resolveProgramDef, getBySlug } from '@/data/programs';
-import { notFound } from 'next/navigation';
+// src/app/programas/san-silvestre-60/page.tsx
+import ProgramCommunityDetail from '@/components/ProgramCommunityDetail';
+import { resolveProgramDef } from '@/data/programs';
+
+export const dynamic = 'force-static';
 
 export default function Page() {
-  // Datos normalizados del programa (tareas, texto, etc.)
   const def = resolveProgramDef('san-silvestre-60');
-  if (!def) return notFound();
-
-  // Metadatos (imagen hero, días, título corto, etc.)
-  const meta = getBySlug('san-silvestre-60'); // devuelve ProgramMeta | undefined
-  const hero = meta?.imageSrc ?? '/images/programs/san-silvestre-hero.jpg';
+  if (!def) {
+    return (
+      <main className="container mx-auto px-4 py-10 text-sm text-neutral-600">
+        Programa no disponible.
+      </main>
+    );
+  }
 
   return (
-    <ProgramDetail
+    <ProgramCommunityDetail
       slug="san-silvestre-60"
-      imageSrc={hero}
+      imageSrc="/images/programs/san-silvestre-hero.jpg"
       title={def.title}
-      shortDescription={def.shortDescription ?? ''}
-      howItWorks={def.howItWorks ?? ''}
+      program={{
+        slug: def.slug,
+        title: def.title,
+        shortDescription: def.shortDescription,
+        howItWorks: def.howItWorks,
+        durationDays: def.durationDays,
+        themeColor: def.themeColor,
+        accordions: def.accordions,
+        days: def.days as any,
+      }}
     />
   );
 }

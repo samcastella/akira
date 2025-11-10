@@ -30,6 +30,8 @@ export type ProgramMeta = {
   available: boolean;
   /** Color de tema para la UI (hex o css var) */
   themeColor?: string;
+  /** Marca si es un programa comunitario (usa plantilla de comunidad) */
+  community?: boolean;              // ← NUEVO
   /** Opcional: keywords para buscador */
   keywords?: string[];
   meta?: { createdAt?: string; version?: string; language?: string };
@@ -78,9 +80,10 @@ export const PROGRAMS: ProgramMeta[] = [
     categories: ["productividad", "bienestar"],
     imageSrc: "/images/programs/lectura-hero.jpg",
     available: true,
-    themeColor: "#E0E7FF", // indigo-100 suave (puedes cambiarlo)
+    themeColor: "#E0E7FF", // indigo-100 suave
     keywords: ["leer", "lectura", "libros"],
     meta: { language: "es", version: "1.0" },
+    community: false,
   },
   {
     slugData: "detox-tecnologico-30",
@@ -97,6 +100,7 @@ export const PROGRAMS: ProgramMeta[] = [
     themeColor: "#FCD34D", // amber-300 (amarillo)
     keywords: ["detox", "móvil", "pantallas", "atención", "foco", "scroll"],
     meta: { language: "es", version: "1.0" },
+    community: false,
   },
   {
     slugData: "san-silvestre-60",
@@ -110,9 +114,10 @@ export const PROGRAMS: ProgramMeta[] = [
     categories: ["salud", "bienestar"],
     imageSrc: "/images/programs/san-silvestre-hero.jpg",
     available: true,
-    themeColor: "#FCA5A5", // rojo suave (puedes cambiarlo)
+    themeColor: "#FCA5A5", // rojo suave
     keywords: ["running", "correr", "10k", "san silvestre"],
     meta: { language: "es", version: "1.0" },
+    community: true,            // ← COMUNITARIO
   },
 ];
 
@@ -142,9 +147,9 @@ export const PROGRAM_SLUG_ALIASES: Record<string, string> = {
 /** Fallback de color por temática (si algún meta no trae themeColor). */
 const CATEGORY_THEME: Partial<Record<ThematicCategory, string>> = {
   "malos-habitos": "#FDE68A", // amber-200
-  bienestar: "#D1FAE5", // emerald-100
-  productividad: "#DBEAFE", // blue-100
-  salud: "#FCE7F3", // pink-100
+  bienestar: "#D1FAE5",       // emerald-100
+  productividad: "#DBEAFE",   // blue-100
+  salud: "#FCE7F3",           // pink-100
 };
 
 function canonicalFromMeta(m: ProgramMeta) {
@@ -168,9 +173,7 @@ function toProgramDef(meta: ProgramMeta, raw: any): ProgramDef {
   const title: string = (raw?.title ?? meta.titleShort ?? canonical) as string;
   const shortDescription: string | undefined = raw?.shortDescription;
   const howItWorks: string | undefined = raw?.howItWorks;
-  const durationDays: number | undefined = (raw?.durationDays ?? meta.days) as
-    | number
-    | undefined;
+  const durationDays: number | undefined = (raw?.durationDays ?? meta.days) as number | undefined;
   const accordions = raw?.accordions;
   const daysRaw: any[] = Array.isArray(raw?.days) ? raw.days : [];
 
@@ -200,9 +203,7 @@ function toProgramDef(meta: ProgramMeta, raw: any): ProgramDef {
       d.tasks.forEach((t, i) => {
         if (!t.label) {
           // eslint-disable-next-line no-console
-          console.warn(
-            `[PROGRAMS] Tarea vacía en ${canonical} día ${d.day} idx ${i}`
-          );
+          console.warn(`[PROGRAMS] Tarea vacía en ${canonical} día ${d.day} idx ${i}`);
         }
       });
     });
@@ -268,6 +269,19 @@ export const AVAILABLE_PROGRAM_SLUGS = new Set(
   PROGRAMS.filter((p) => p.available).map((p) => p.slugRoute)
 );
 
+/** Conjunto de slugs de ruta que son comunitarios. */
+export const COMMUNITY_PROGRAM_SLUGS = new Set(
+  PROGRAMS.filter((p) => p.community).map((p) => p.slugRoute)
+);
+
+/** ¿Es comunitario este programa (por slug de ruta o de datos)? */
+export function isCommunityProgram(slug: string) {
+  const meta =
+    PROGRAMS.find((p) => p.slugRoute === slug) ||
+    PROGRAMS.find((p) => p.slugData === slug);
+  return Boolean(meta?.community);
+}
+
 /** Buscar metadatos por cualquier slug (route o data). */
 export function getProgramMeta(slug: string) {
   return (
@@ -287,6 +301,7 @@ export function toIndexCard(p: ProgramMeta) {
     type: p.type as "good" | "bad",
     categories: p.categories as ThematicCategory[],
     thumbnail: p.imageSrc,
+    community: !!p.community, // útil para pintar insignias/badges en cards
   };
 }
 
