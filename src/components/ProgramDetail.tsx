@@ -4,6 +4,7 @@ import type { FC } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
+import { resolveProgramDef, type ProgramDef, type ProgramTask } from '@/data/programs';
 import {
   RotateCcw,
   CheckCircle2,
@@ -46,36 +47,9 @@ import {
 /* === UI barras === */
 import CreateHabitBar from '@/components/habits/CreateHabitBar';
 
-type JsonTask = { id?: string; label: string; detail?: string; tags?: string[] };
-type JsonDay = { day: number; tasks: JsonTask[] };
-type ProgramJson = {
-  slug: string;
-  title: string;
-  shortDescription?: string;
-  howItWorks?: string;
-  durationDays?: number;
-  accordions?: {
-    whatYouWillDo?: string[];
-    whatYouWillGet?: string[];
-    howToUse?: string[];
-  };
-  days: JsonDay[];
-};
-
-const DATA_LOADERS: Record<string, () => Promise<ProgramJson>> = {
-  'lectura-30': async () => {
-    const m = await import('@/data/programs/lectura-30.json');
-    return (m as any).default ?? (m as any);
-  },
-  'detox-tecnologico-30': async () => {
-    const m = await import('@/data/programs/detox-tecnologico-30.json');
-    return (m as any).default ?? (m as any);
-  },
-  'san-silvestre-60': async () => {
-    const m = await import('@/data/programs/san-silvestre-60.json');
-    return (m as any).default ?? (m as any);
-  },
-};
+// Usa los tipos del registro
+type JsonTask = ProgramTask;
+type ProgramJson = ProgramDef;
 
 /* === helpers fecha === */
 function todayKey() {
@@ -132,10 +106,12 @@ const PROGRAM_COLORS: Record<string, string> = {
 const BADGE_FILES: Record<string, string> = {
   'lectura-30': '/images/badges/superlector.png',
   'detox-tecnologico-30': '/images/badges/detox-tecnologico.png',
+  'san-silvestre-60': '/images/badges/san-silvestre.png', // crea este asset si aún no existe
 };
 const BADGE_TITLES: Record<string, string> = {
   'lectura-30': 'Superlector',
   'detox-tecnologico-30': 'Domador del Scroll',
+  'san-silvestre-60': '10K Finisher', // cambia el nombre si prefieres otro
 };
 
 type Props = {
@@ -182,34 +158,14 @@ export default function ProgramDetail({
   const [loadingPoints, setLoadingPoints] = useState(false);
   const [pointsTick, setPointsTick] = useState(0); // refresco tras cada check
 
-  /* cargar JSON */
-  useEffect(() => {
-    let cancelled = false;
-    const loader = DATA_LOADERS[slug];
-    setLoadingData(true);
-    if (!loader) {
-      if (!cancelled) {
-        setData(null);
-        setLoadingData(false);
-      }
-      return;
-    }
-    loader()
-      .then((payload) => {
-        if (cancelled) return;
-        setData(payload);
-        setOpenAcc({ do: false, get: false, use: false });
-      })
-      .catch(() => {
-        if (!cancelled) setData(null);
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingData(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [slug]);
+/* cargar desde el registro central */
+useEffect(() => {
+  setLoadingData(true);
+  const def = resolveProgramDef(slug);
+  setData(def ?? null);
+  setOpenAcc({ do: false, get: false, use: false });
+  setLoadingData(false);
+}, [slug]);
 
   /* cargar progreso + listeners */
   useEffect(() => {
@@ -546,7 +502,7 @@ export default function ProgramDetail({
     );
   }
 
-  const programColor = PROGRAM_COLORS[slug] ?? '#111111';
+  const programColor = data?.themeColor ?? (PROGRAM_COLORS[slug] ?? '#111111');
   const badgeSrc = BADGE_FILES[slug] ?? '/images/badges/generic-badge.png';
   const badgeTitle = BADGE_TITLES[slug] ?? 'Insignia';
 
@@ -920,7 +876,7 @@ export default function ProgramDetail({
 
 /* ===== Subcomponentes ===== */
 
-function PreviewDayOne({ data }: { data: ProgramJson | null }) {
+function PreviewDayOne({ data }: { data: ProgramDef | null }) {
   const first = data?.days?.[0] ?? null;
   if (!first) {
     return (
@@ -945,10 +901,10 @@ function DayTasksList({
   openTasks,
   toggleTaskOpen,
 }: {
-  tasks: JsonTask[];
+  tasks: ProgramTask[];
   dayProgressMap: Record<string, boolean>;
   openTasks: Record<string, boolean>;
-  toggleTaskOpen: (t: JsonTask, i: number) => void;
+  toggleTaskOpen: (t: ProgramTask, i: number) => void;
 }) {
   return tasks.length === 0 ? (
     <div className="text-sm text-neutral-600 border border-dashed border-neutral-300 rounded-2xl p-4">
