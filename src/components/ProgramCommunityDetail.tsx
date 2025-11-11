@@ -64,6 +64,46 @@ const MD: FC<{ children: string; className?: string }> = ({ children, className 
   <span className={className} dangerouslySetInnerHTML={{ __html: renderLightMarkdown(children) }} />
 );
 
+/* === Modal ligero con soporte **negritas** (reutilizado de Checks) === */
+function InlineMarkdown({ text }: { text: string }) {
+  const parts: React.ReactNode[] = [];
+  const re = /\*\*(.+?)\*\*/g;
+  let i = 0; let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > i) parts.push(text.slice(i, m.index));
+    parts.push(<strong key={m.index} className="font-semibold">{m[1]}</strong>);
+    i = m.index + m[0].length;
+  }
+  if (i < text.length) parts.push(text.slice(i));
+  return <>{parts}</>;
+}
+function InfoModal({ open, title, detail, onClose }:{
+  open: boolean; title: string; detail?: string; onClose: () => void;
+}) {
+  if (!open) return null;
+  return (
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-[2000] overflow-y-auto">
+      <div className="fixed inset-0 bg-black/40" onClick={onClose} aria-hidden />
+      <div className="relative z-[2001] min-height-full min-h-full flex items-center justify-center p-4">
+        <div className="w-full sm:max-w-md sm:rounded-2xl bg-white border border-neutral-200 shadow-xl" style={{ maxHeight: '85vh' }}>
+          <div className="p-4 sm:p-5 overflow-y-auto">
+            <div className="text-sm text-neutral-500 mb-1">Detalle</div>
+            <div className="text-lg font-semibold mb-2">{title}</div>
+            <div className="text-[15px] leading-relaxed text-neutral-800 whitespace-pre-wrap">
+              {detail ? <InlineMarkdown text={detail} /> : 'Sin detalles.'}
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button onClick={onClose} className="px-4 py-2 rounded-xl border border-neutral-300 hover:bg-neutral-50 text-sm">
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ===== helpers fecha ===== */
 function startOfDayMs(date: Date) { const d = new Date(date); d.setHours(0,0,0,0); return d.getTime(); }
 function todayKey() { const d = new Date(); const mm = String(d.getMonth()+1).padStart(2,'0'); const dd = String(d.getDate()).padStart(2,'0'); return `${d.getFullYear()}-${mm}-${dd}`; }
@@ -147,6 +187,13 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title, program 
 
   // theme
   const themeColor = program.themeColor ?? '#111111';
+
+  /* ====== Modal de detalles (como en Checks) ====== */
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [infoTitle, setInfoTitle] = useState('');
+  const [infoDetail, setInfoDetail] = useState<string | undefined>(undefined);
+  const openInfo = (title: string, detail?: string) => { setInfoTitle(title); setInfoDetail(detail); setInfoOpen(true); };
+  const closeInfo = () => setInfoOpen(false);
 
   /* ====== hidratar progreso local ====== */
   useEffect(() => {
@@ -430,9 +477,9 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title, program 
         </div>
       </div>
 
-      {/* TABS (subrayado corto centrado; “Check del día” en una línea) */}
-      <nav className="border-b bg-white sticky top-[48px] z-10 -mt-px mt-5">
-        <div className="flex gap-5 items-center px-2 overflow-x-auto">
+      {/* TABS (idéntico a SubHeaderTabs: h-10 + text-[13px]) */}
+      <nav className="border-b bg-white sticky top=[48px] top-[48px] z-10 -mt-px mt-5">
+        <div className="flex gap-5 h-10 items-center px-2 overflow-x-auto">
           {TABS.map((tab) => {
             const locked = (tab === 'Check del día' || tab === 'Estadísticas' || tab === 'Ranking') && !started;
             const isActive = activeTab === tab;
@@ -440,11 +487,12 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title, program 
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`group relative inline-flex items-center px-1.5 py-2.5 text-sm text-neutral-600 hover:text-black transition ${locked ? 'opacity-60' : ''} whitespace-nowrap`}
+                className={`group relative inline-flex items-center px-1.5 py-0.5 text-[13px] text-neutral-600 hover:text-black transition ${locked ? 'opacity-60' : ''} whitespace-nowrap`}
                 aria-current={isActive ? 'page' : undefined}
                 title={locked ? 'Bloqueado hasta que empieces el programa' : tab}
               >
                 <span className={isActive ? 'font-semibold text-black' : ''}>{tab}</span>
+                {/* subrayado corto y fino */}
                 <span
                   aria-hidden
                   className={`pointer-events-none absolute left-1/2 -translate-x-1/2 -bottom-[2px] h-px rounded transition-all duration-200
@@ -469,7 +517,6 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title, program 
               </MD>
             ) : null}
 
-            {/* Acordeones (estética ProgramDetail) */}
             {(program.accordions?.whatYouWillDo?.length ||
               program.accordions?.whatYouWillGet?.length ||
               program.accordions?.howToUse?.length) && (
@@ -522,7 +569,7 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title, program 
                       color={themeColor}
                       onToggle={() => toggleTaskDone(currentDay, id)}
                       showInfoButton={hasDetail}
-                      onInfo={hasDetail ? () => alert(t.detail) : undefined}
+                      onInfo={hasDetail ? (() => openInfo(`${t.label}`, t.detail)) : undefined}
                     />
                   </div>
                 );
@@ -553,7 +600,7 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title, program 
                   <div className="text-sm text-neutral-600 mt-1">Puntos ganados con este programa</div>
                 </div>
 
-                {/* Insignia (estilo ProgramDetail) */}
+                {/* Insignia */}
                 {(program.badgeName || program.badgeImage) && (
                   <div className="rounded-2xl border p-4 bg-white flex items-center gap-4" style={{ borderColor: 'var(--line)' }}>
                     <div className="flex-1">
@@ -642,6 +689,14 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title, program 
           </div>
         )}
       </section>
+
+      {/* Modal de detalles (reutilizado de Checks) */}
+      <InfoModal
+        open={infoOpen}
+        title={`${program.title} · ${infoTitle}`}
+        detail={infoDetail}
+        onClose={closeInfo}
+      />
     </div>
   );
 }
