@@ -10,7 +10,6 @@ import {
 
 import { supabase } from '@/lib/supabaseClient';
 import { useAuthUserId } from '@/lib/user';
-
 import CreateHabitBar from '@/components/habits/CreateHabitBar';
 
 import {
@@ -19,11 +18,18 @@ import {
 } from '@/lib/programsLocal';
 
 import {
-  fetchProgramPoints, fetchProgramPointsByDay,
-  type ProgramPointsTotals, type ProgramPointsByDayRow,
+  fetchProgramPoints,
+  // fetchProgramPointsByDay,
+  type ProgramPointsTotals,
+  // type ProgramPointsByDayRow,
 } from '@/lib/programService';
 
-import { loadProgramLeaders, loadProgramMembersCount, loadAvatarsFor, type ProgramLeaderRow } from '@/lib/communityProgram';
+import {
+  loadProgramLeaders,
+  loadProgramMembersCount,
+  loadAvatarsFor,
+  type ProgramLeaderRow,
+} from '@/lib/communityProgram';
 import { pushStartProgram, pushResetProgram, pullUserPrograms } from '@/lib/programSync';
 
 /* ===== Tabs ===== */
@@ -45,6 +51,8 @@ export type ProgramJson = {
     whatYouWillGet?: string[];
     howToUse?: string[];
   };
+  badgeName?: string;          // ← añadido para Estadísticas
+  badgeImage?: string | null;  // ← añadido para Estadísticas
   days: JsonDay[];
 };
 
@@ -72,6 +80,7 @@ const MD: FC<{ children: string; className?: string }> = ({ children, className 
   <span className={className} dangerouslySetInnerHTML={{ __html: renderLightMarkdown(children) }} />
 );
 
+/* ==== Mini chart weekly ==== */
 const WeeklyStatsChart: FC<{ labels: string[]; goal: number[]; actual: number[] }> = ({ labels, goal, actual }) => {
   const width = 640, height = 220, padL = 28, padR = 16, padT = 20, padB = 28;
   const n = 7;
@@ -184,24 +193,52 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title, program 
   }, [uid]);
 
   /* ====== Cargar ranking + participantes ====== */
+  const reloadLeadersAndMembers = async () => {
+    const [lb, count] = await Promise.all([
+      loadProgramLeaders(slug),
+      loadProgramMembersCount(slug),
+    ]);
+    setLeaders(lb);
+    // coherencia con ranking si el count se queda corto
+    setMembersCount(Math.max(count, lb.length));
+    // Avatares
+    const ids = lb.map(l => l.user_id);
+    const map = await loadAvatarsFor(ids);
+    setLeaderPhotos(map);
+  };
+
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [lb, count] = await Promise.all([
-        loadProgramLeaders(slug),
-        loadProgramMembersCount(slug),
-      ]);
-      if (!alive) return;
-      setLeaders(lb);
-      setMembersCount(count);
-      // Avatares
-      const ids = lb.map(l => l.user_id);
-      const map = await loadAvatarsFor(ids);
-      if (!alive) return;
-      setLeaderPhotos(map);
+      await reloadLeadersAndMembers();
     })();
     return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug, pointsTick]);
+
+  /* ====== Realtime: cambios de participantes ====== */
+  useEffect(() => {
+    // Si tu esquema usa otra tabla para miembros, cámbiala aquí.
+    const channel = supabase
+      .channel(`prog-members-${slug}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'user_programs',
+          filter: `program_slug=eq.${slug}`,
+        },
+        async () => {
+          await reloadLeadersAndMembers();
+        }
+      )
+      .subscribe();
+    return () => {
+      channel.unsubscribe();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slug]);
 
   const active: LocalProgram | null = activeMap[slug] ?? null;
   const started = Boolean(active?.startedAt);
@@ -322,7 +359,7 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title, program 
       try {
         const [tot] = await Promise.all([
           fetchProgramPoints(uid, slug),
-          // fetchProgramPointsByDay(uid, slug) // si necesitas desglose por día, está disponible
+          // fetchProgramPointsByDay(uid, slug)
         ]);
         if (!alive) return;
         setPointsTotals(tot);
@@ -366,11 +403,12 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title, program 
     return { labels, goal, actual };
   }, [started, program, active?.startedAt, activeMap, slug, currentDay]);
 
+  /* ====== UI ====== */
   return (
-    <div className="px-4 pb-24 bg-white">
+    <div className="px-2 pb-24 bg-white">
       {/* HERO */}
       {imageSrc && (
-        <div className="-mx-4 mb-5 relative">
+        <div className="-mx-2 mb-5 relative">
           <div className="relative w-full aspect-[16/9]">
             <Image src={imageSrc} alt={title} fill className="object-cover" priority />
           </div>
@@ -378,20 +416,20 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title, program 
       )}
 
       {/* Título + meta */}
-      <div className="flex items-center justify-between">
+      <div className="mb-2">
         <h1 className="text-2xl font-semibold text-neutral-900">{title}</h1>
-        <div className="text-sm text-neutral-500">👥 {membersCount} participantes</div>
+        <div className="mt-1 text-[13px] text-neutral-500">👥 {membersCount} participantes</div>
       </div>
 
       {/* CTA */}
-      <div className="mt-4">
+      <div className="mt-3">
         {errorMsg && (
           <div className="mb-3 rounded-xl border border-red-200 bg-red-50 text-red-700 px-3 py-2 text-sm">
             {errorMsg}
           </div>
         )}
 
-        <div className="mt-2 flex items-center gap-2">
+        <div className="mt-1 flex items-center gap-2">
           {!started ? (
             <button
               onClick={handleStartProgram}
@@ -415,9 +453,9 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title, program 
         </div>
       </div>
 
-      {/* TABS */}
-      <nav className="border-b bg-white sticky top-[48px] z-10 -mt-px mt-6">
-        <div className="container mx-auto flex justify-between px-0 overflow-x-auto">
+      {/* TABS (estilo subrayado corto centrado) */}
+      <nav className="border-b bg-white sticky top-[48px] z-10 -mt-px mt-5">
+        <div className="flex gap-5 items-center px-2 overflow-x-auto">
           {TABS.map((tab) => {
             const locked = (tab === 'Checks del día' || tab === 'Estadísticas' || tab === 'Ranking') && !started;
             const isActive = activeTab === tab;
@@ -425,14 +463,17 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title, program 
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`relative py-3 px-3 text-sm whitespace-nowrap transition ${
-                  isActive
-                    ? 'font-semibold text-black after:absolute after:left-0 after:right-0 after:-bottom-[1px] after:h-[2px] after:bg-black'
-                    : 'text-neutral-500 hover:text-black'
-                } ${locked ? 'opacity-60' : ''}`}
+                className={`group relative inline-flex items-center px-1.5 py-2.5 text-sm text-neutral-600 hover:text-black transition ${locked ? 'opacity-60' : ''}`}
+                aria-current={isActive ? 'page' : undefined}
                 title={locked ? 'Bloqueado hasta que empieces el programa' : tab}
               >
-                {tab}
+                <span className={isActive ? 'font-semibold text-black' : ''}>{tab}</span>
+                <span
+                  aria-hidden
+                  className={`pointer-events-none absolute left-1/2 -translate-x-1/2 -bottom-[2px] h-px rounded transition-all duration-200
+                    ${isActive ? 'w-6 bg-black opacity-100' : 'w-0 bg-black/80 opacity-0 group-hover:opacity-100'}
+                  `}
+                />
                 {locked && <Lock className="inline ml-1 h-4 w-4 align-text-bottom" />}
               </button>
             );
@@ -441,15 +482,24 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title, program 
       </nav>
 
       {/* CONTENIDO */}
-      <section className="container mx-auto px-0 py-6 space-y-6">
+      <section className="py-6 space-y-6">
         {/* ===== Resumen ===== */}
         {activeTab === 'Resumen' && (
-          <div className="space-y-5">
+          <div className="space-y-5 px-2">
             {program.howItWorks ? (
               <MD className="block text-[15px] md:text-[16px] leading-[1.75] text-neutral-900">
                 {program.howItWorks}
               </MD>
             ) : null}
+
+            {/* Acordeones */}
+            {!!program.accordions && (
+              <div className="divide-y divide-neutral-200 rounded-2xl border border-neutral-200 overflow-hidden">
+                <Accordion title="Qué vas a hacer" items={program.accordions?.whatYouWillDo} />
+                <Accordion title="Qué vas a conseguir" items={program.accordions?.whatYouWillGet} />
+                <Accordion title="¿Cómo se usa?" items={program.accordions?.howToUse} />
+              </div>
+            )}
 
             {started && program.durationDays ? (
               <div className="mt-2">
@@ -466,14 +516,14 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title, program 
             ) : null}
 
             <p className="text-xs text-neutral-500">
-              * El plan se revela día a día. Los checks se realizan en <strong>Mi Zona</strong>.
+              En <strong>Mi actividad - Checks del día</strong> también puedes marcar como completado.
             </p>
           </div>
         )}
 
         {/* ===== Checks del día ===== */}
         {activeTab === 'Checks del día' && started && (
-          <>
+          <div className="px-2">
             <p className="text-sm text-neutral-700">
               <strong>Tus retos de hoy</strong>. Márcalos cuando los completes.
             </p>
@@ -497,12 +547,12 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title, program 
                 );
               })}
             </div>
-          </>
+          </div>
         )}
 
         {/* ===== Estadísticas ===== */}
         {activeTab === 'Estadísticas' && (
-          <>
+          <div className="px-2">
             {!started && (
               <div className="rounded-2xl border p-4 bg-neutral-50 text-neutral-600" style={{ borderColor: 'var(--line)' }}>
                 <div className="flex items-center gap-2 font-medium">
@@ -514,6 +564,7 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title, program 
             )}
             {started && (
               <div className="space-y-6">
+                {/* Puntos totales */}
                 <div className="text-center">
                   <div className="text-[56px] leading-none font-extrabold tabular-nums">
                     {loadingPoints ? '—' : (pointsTotals?.total_points ?? 0)}
@@ -521,6 +572,30 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title, program 
                   <div className="text-sm text-neutral-600 mt-1">Puntos ganados con este programa</div>
                 </div>
 
+                {/* Insignia */}
+                {(program.badgeName || program.badgeImage) && (
+                  <div className="rounded-2xl border p-4 flex items-center gap-3">
+                    <div className="relative h-12 w-12 rounded-full overflow-hidden bg-neutral-200 shrink-0">
+                      {program.badgeImage ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={program.badgeImage}
+                          alt={program.badgeName ?? 'Insignia'}
+                          className="absolute inset-0 h-full w-full object-cover"
+                          draggable={false}
+                        />
+                      ) : (
+                        <div className="absolute inset-0 grid place-items-center text-xs text-neutral-600">🏅</div>
+                      )}
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold">{program.badgeName ?? 'Insignia del programa'}</div>
+                      <div className="text-xs text-neutral-600">La obtienes al completar el 100%.</div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Últimos 7 días */}
                 <div className="rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--line)' }}>
                   <div className="px-4 py-3 text-sm font-semibold bg-neutral-50">Últimos 7 días</div>
                   <div className="p-4">
@@ -537,16 +612,16 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title, program 
                 </div>
               </div>
             )}
-          </>
+          </div>
         )}
 
         {/* ===== Ranking ===== */}
         {activeTab === 'Ranking' && (
-          <div className="space-y-3">
+          <div className="space-y-3 px-2">
             {!leaders.length && <p className="text-sm text-neutral-600">Sin datos de ranking.</p>}
             <ul className="space-y-2">
-               {leaders.map((r) => {
-              const name =
+              {leaders.map((r) => {
+                const name =
                   (r.username && r.username.trim()) ||
                   `${(r.nombre ?? '').trim()} ${(r.apellido ?? '').trim()}`.trim() ||
                   r.user_id.slice(0, 6);
@@ -592,3 +667,28 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title, program 
     </div>
   );
 }
+
+/* ===== Acordeón simple reutilizable ===== */
+const Accordion: FC<{ title: string; items?: string[] }> = ({ title, items }) => {
+  const [open, setOpen] = useState(true);
+  if (!items || items.length === 0) return null;
+  return (
+    <div>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-4 py-3 text-left"
+      >
+        <span className="text-sm font-semibold">{title}</span>
+        {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+      </button>
+      {open && (
+        <ul className="px-4 pb-3 list-disc pl-6 text-[14px] leading-6 text-neutral-800">
+          {items.map((it, idx) => (
+            <li key={idx}><MD>{it}</MD></li>
+          ))}
+        </ul>
+      )}
+      <div className="h-px bg-neutral-200" />
+    </div>
+  );
+};
