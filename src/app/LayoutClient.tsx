@@ -84,25 +84,18 @@ export default function LayoutClient({
   useEffect(() => {
     try {
       const last = localStorage.getItem(LS_BUILD_V);
-      // Evita bucle si ya recargamos para esta versión
       const alreadyReloadedForThis = sessionStorage.getItem(SS_BUILD_RELOADED) === BUILD_V;
 
       if (last !== BUILD_V && !alreadyReloadedForThis) {
-        // Limpieza agresiva de estado local de la app: claves akira_* y demás
         localStorage.clear();
         localStorage.setItem(LS_BUILD_V, BUILD_V);
-
-        // Marcar que ya recargamos para esta versión
         sessionStorage.setItem(SS_BUILD_RELOADED, BUILD_V);
-
-        // Recargar para forzar que los módulos/JSON rehidratados sean los nuevos
         location.reload();
       } else if (last !== BUILD_V && alreadyReloadedForThis) {
-        // Si el usuario vuelve desde otra pestaña, dejamos persistido el nuevo valor
         localStorage.setItem(LS_BUILD_V, BUILD_V);
       }
     } catch {
-      // si localStorage falla (SSR/permiso), no hacemos nada
+      // ignore
     }
   }, []);
 
@@ -138,7 +131,7 @@ export default function LayoutClient({
             console.timeEnd('[Supabase] syncLocalToRemoteIfMissing');
           }
         } catch (e) {
-          console.timeEnd('[Supabase] pullProfile'); // por si lanzó antes
+          console.timeEnd('[Supabase] pullProfile');
           console.warn('[syncAll] profile err:', e);
         }
       })(), PROFILE_TIMEOUT_MS, 'profile');
@@ -285,7 +278,6 @@ export default function LayoutClient({
         today.setHours(0, 0, 0, 0);
         const iso = today.toISOString().slice(0, 10);
 
-        // Evita llamadas repetidas en el mismo día
         const last = localStorage.getItem(LS_KEY);
         if (last === iso) return;
 
@@ -297,7 +289,6 @@ export default function LayoutClient({
 
         if (!cancelled) {
           localStorage.setItem(LS_KEY, iso);
-          // La UI de /mizona/checks leerá la sugerencia con useTodayActivity
         }
       } catch (e) {
         console.warn('[suggestions] propose_suggested_challenge failed', e);
