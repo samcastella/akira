@@ -23,6 +23,11 @@ const LS_SEEN_AUTH = 'akira_seen_auth_v1';
 const LS_LAST_UID = 'akira_last_uid';
 const PROFILE_TIMEOUT_MS = 15000;
 
+// === NUEVO: versión de build para invalidar cachés locales ===
+const BUILD_V = process.env.NEXT_PUBLIC_BUILD_VERSION || 'dev';
+const LS_BUILD_V = 'akira_build_v';
+const SS_BUILD_RELOADED = 'akira_build_reloaded_v';
+
 function canEnter(): boolean {
   try {
     const u = loadUser();
@@ -73,6 +78,32 @@ export default function LayoutClient({
         window.removeEventListener('storage', onUserUpdated);
       }
     };
+  }, []);
+
+  // === NUEVO: invalidar cachés locales cuando cambia la versión del build
+  useEffect(() => {
+    try {
+      const last = localStorage.getItem(LS_BUILD_V);
+      // Evita bucle si ya recargamos para esta versión
+      const alreadyReloadedForThis = sessionStorage.getItem(SS_BUILD_RELOADED) === BUILD_V;
+
+      if (last !== BUILD_V && !alreadyReloadedForThis) {
+        // Limpieza agresiva de estado local de la app: claves akira_* y demás
+        localStorage.clear();
+        localStorage.setItem(LS_BUILD_V, BUILD_V);
+
+        // Marcar que ya recargamos para esta versión
+        sessionStorage.setItem(SS_BUILD_RELOADED, BUILD_V);
+
+        // Recargar para forzar que los módulos/JSON rehidratados sean los nuevos
+        location.reload();
+      } else if (last !== BUILD_V && alreadyReloadedForThis) {
+        // Si el usuario vuelve desde otra pestaña, dejamos persistido el nuevo valor
+        localStorage.setItem(LS_BUILD_V, BUILD_V);
+      }
+    } catch {
+      // si localStorage falla (SSR/permiso), no hacemos nada
+    }
   }, []);
 
   function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
