@@ -32,9 +32,10 @@ type JsonTask = { id?: string; label: string; detail?: string };
 type JsonDay = { day: number; tasks: JsonTask[] };
 type ProgramJson = { slug: string; title: string; durationDays?: number; days: JsonDay[] };
 
+const V = process.env.NEXT_PUBLIC_BUILD_VERSION || 'dev';
 const DATA_LOADERS: Record<string, () => Promise<ProgramJson>> = {
-  'lectura-30': async () => (await import('@/data/programs/lectura-30.json')).default as any,
-  'detox-tecnologico-30': async () => (await import('@/data/programs/detox-tecnologico-30.json')).default as any,
+  'san-silvestre-60': async () => (await import(`@/data/programs/san-silvestre-60.json?v=${V}`)).default as any,
+  'detox-tecnologico-30': async () => (await import(`@/data/programs/detox-tecnologico-30.json?v=${V}`)).default as any,
 };
 
 /* ===== Helpers JSON (fallback síncrono) ===== */

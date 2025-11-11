@@ -1,7 +1,7 @@
 // src/components/ProgramCommunityDetail.tsx
 'use client';
 
-import type { FC } from 'react';
+import type { FC, ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -64,14 +64,19 @@ const MD: FC<{ children: string; className?: string }> = ({ children, className 
   <span className={className} dangerouslySetInnerHTML={{ __html: renderLightMarkdown(children) }} />
 );
 
+/* ===== Limpieza mínima de markdown inline (para labels) ===== */
+function mdInlineToPlain(s: string) {
+  return s?.replace(/\*\*(.+?)\*\*/g, '$1').replace(/\*(.+?)\*/g, '$1') ?? s;
+}
+
 /* === Modal ligero con soporte **negritas** (reutilizado de Checks) === */
 function InlineMarkdown({ text }: { text: string }) {
-  const parts: React.ReactNode[] = [];
+  const parts: ReactNode[] = [];
   const re = /\*\*(.+?)\*\*/g;
   let i = 0; let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
     if (m.index > i) parts.push(text.slice(i, m.index));
-    parts.push(<strong key={m.index} className="font-semibold">{m[1]}</strong>);
+    parts.push(<strong key={m.index as unknown as string} className="font-semibold">{m[1]}</strong>);
     i = m.index + m[0].length;
   }
   if (i < text.length) parts.push(text.slice(i));
@@ -84,7 +89,7 @@ function InfoModal({ open, title, detail, onClose }:{
   return (
     <div role="dialog" aria-modal="true" className="fixed inset-0 z-[2000] overflow-y-auto">
       <div className="fixed inset-0 bg-black/40" onClick={onClose} aria-hidden />
-      <div className="relative z-[2001] min-height-full min-h-full flex items-center justify-center p-4">
+      <div className="relative z-[2001] min-h-full flex items-center justify-center p-4">
         <div className="w-full sm:max-w-md sm:rounded-2xl bg-white border border-neutral-200 shadow-xl" style={{ maxHeight: '85vh' }}>
           <div className="p-4 sm:p-5 overflow-y-auto">
             <div className="text-sm text-neutral-500 mb-1">Detalle</div>
@@ -180,8 +185,8 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title, program 
   const [pointsTick, setPointsTick] = useState(0);
 
   // Ranking / miembros
-  const [leaders, setLeaders] = useState<ProgramLeaderRow[]>([]);
-  const [leaderPhotos, setLeaderPhotos] = useState<Record<string, string | null>>({});
+   const [leaders, setLeaders] = useState<ProgramLeaderRow[]>([]);
+ const [leaderPhotos, setLeaderPhotos] = useState<Record<string, string | null>>({});
   const [leaderImgOk, setLeaderImgOk] = useState<Record<string, boolean>>({});
   const [membersCount, setMembersCount] = useState<number>(0);
 
@@ -477,9 +482,9 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title, program 
         </div>
       </div>
 
-      {/* TABS (idéntico a SubHeaderTabs: h-10 + text-[13px]) */}
-      <nav className="border-b bg-white sticky top=[48px] top-[48px] z-10 -mt-px mt-5">
-        <div className="flex gap-5 h-10 items-center px-2 overflow-x-auto">
+      {/* TABS (más aire: h-11 + pb-1 y subrayado -3px) */}
+      <nav className="border-b bg-white sticky top-[48px] z-10 -mt-px mt-5">
+        <div className="flex gap-5 h-11 items-center px-2 pb-1 overflow-x-auto">
           {TABS.map((tab) => {
             const locked = (tab === 'Check del día' || tab === 'Estadísticas' || tab === 'Ranking') && !started;
             const isActive = activeTab === tab;
@@ -495,7 +500,7 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title, program 
                 {/* subrayado corto y fino */}
                 <span
                   aria-hidden
-                  className={`pointer-events-none absolute left-1/2 -translate-x-1/2 -bottom-[2px] h-px rounded transition-all duration-200
+                  className={`pointer-events-none absolute left-1/2 -translate-x-1/2 -bottom-[3px] h-px rounded transition-all duration-200
                     ${isActive ? 'w-6 bg-black opacity-100' : 'w-0 bg-black/80 opacity-0 group-hover:opacity-100'}
                   `}
                 />
@@ -559,17 +564,18 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title, program 
                 const id = t.id ?? `task_${i}`;
                 const done = Boolean((activeMap[slug]?.progress?.[currentDay] as any)?.[id]);
                 const hasDetail = Boolean(t.detail);
+                const cleanLabel = mdInlineToPlain(t.label);
                 return (
                   <div key={`wrap_${id}`} className="whitespace-nowrap">
                     <CreateHabitBar
                       key={`t_${id}`}
                       variant="task"
-                      label={t.label}
+                      label={cleanLabel}
                       checked={done}
                       color={themeColor}
                       onToggle={() => toggleTaskDone(currentDay, id)}
                       showInfoButton={hasDetail}
-                      onInfo={hasDetail ? (() => openInfo(`${t.label}`, t.detail)) : undefined}
+                      onInfo={hasDetail ? (() => openInfo(cleanLabel, t.detail)) : undefined}
                     />
                   </div>
                 );
