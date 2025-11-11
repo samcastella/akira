@@ -18,11 +18,14 @@ import { supabase, isSupabaseEnvReady } from '@/lib/supabaseClient';
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import RegistrationModal from '@/components/RegistrationModal';
 import { pullUserPrograms } from '@/lib/programSync';
-import { detectAndHandleBuildChange } from '@/lib/buildVersion'; // ← NUEVO
+import { BUILD_V, detectAndHandleBuildChange } from '@/lib/buildVersion'; // ← NUEVO
 
 const LS_SEEN_AUTH = 'akira_seen_auth_v1';
 const LS_LAST_UID = 'akira_last_uid';
 const PROFILE_TIMEOUT_MS = 15000;
+
+// Recarga 1 sola vez por versión de build
+const SS_BUILD_RELOADED = 'akira_build_reloaded_v';
 
 function canEnter(): boolean {
   try {
@@ -56,7 +59,7 @@ export default function LayoutClient({
   const [registrationStartStep, setRegistrationStartStep] =
     useState<1 | 2 | 3 | 4 | 5>(1);
 
-  // === Nuevo: guardamos el UID para el RPC de sugerencias
+  // UID para RPC/Realtime
   const [uid, setUid] = useState<string | null>(null);
 
   const SUPA_READY = isSupabaseEnvReady();
@@ -76,9 +79,21 @@ export default function LayoutClient({
     };
   }, []);
 
-  // === NUEVO: invalidar cachés locales cuando cambia la versión del build (purga selectiva)
+  /** ===== Build version: purga selectiva + recarga 1 vez por sesión ===== */
   useEffect(() => {
-    detectAndHandleBuildChange();
+    detectAndHandleBuildChange(); // purga claves locales y emite evento
+  }, []);
+  useEffect(() => {
+    function onBuildChanged() {
+      try {
+        const already = sessionStorage.getItem(SS_BUILD_RELOADED);
+        if (already === BUILD_V) return; // ya recargamos para esta versión
+        sessionStorage.setItem(SS_BUILD_RELOADED, BUILD_V);
+      } catch {}
+      location.reload();
+    }
+    window.addEventListener('akira:build:changed', onBuildChanged);
+    return () => window.removeEventListener('akira:build:changed', onBuildChanged);
   }, []);
 
   function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
@@ -94,7 +109,7 @@ export default function LayoutClient({
     });
   }
 
-  /** ===== Instrumentación de sincronización inicial ===== */
+  /** ===== Sincronización inicial ===== */
   async function syncAll() {
     console.info('[syncAll] start');
     const t0 = performance.now();
@@ -246,7 +261,7 @@ export default function LayoutClient({
     };
   }, [SUPA_READY]);
 
-  // ==== NUEVO: proponer reto diario 1 vez al día (idempotente por date_key) ====
+  // Reto sugerido diario (idempotente por date_key)
   useEffect(() => {
     if (!SUPA_READY) return;
     if (!uid) return;
@@ -282,7 +297,7 @@ export default function LayoutClient({
     return () => { cancelled = true; };
   }, [SUPA_READY, uid]);
 
-  // Refetch al volver a foco/online (con tiempos)
+  // Refetch al volver a foco/online
   useEffect(() => {
     if (!SUPA_READY) return;
     const refetch = async () => {
