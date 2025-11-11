@@ -12,7 +12,7 @@ export type ProgramToday = {
   title: string;
   day: number;
   color: string;
-  tasks: { id: string; label: string; detail?: string; done: boolean }[]; // detail incluido
+  tasks: { id: string; label: string; detail?: string; done: boolean }[];
 };
 
 export type ChallengeTask = { id: string; label: string; done: boolean; onToggle?: () => void };
@@ -33,9 +33,9 @@ export type TodaySuggestion = {
 const BUILD_V = process.env.NEXT_PUBLIC_BUILD_VERSION || 'dev';
 
 /* Lee JSON fresco desde la API; fallback a require del bundle */
-async function fetchProgramJsonFresh(slug: string) {
+async function fetchProgramJsonFresh(slug: string, signal?: AbortSignal) {
   const url = `/api/programs/${encodeURIComponent(slug)}?v=${encodeURIComponent(BUILD_V)}`;
-  const res = await fetch(url, { cache: 'no-store' });
+  const res = await fetch(url, { cache: 'no-store', signal });
   if (!res.ok) throw new Error(`HTTP ${res.status} en ${url}`);
   return res.json();
 }
@@ -64,20 +64,26 @@ export function useTodayActivity() {
   // Descarga JSON actualizados para los slugs activos; reintenta en cada build nuevo
   useEffect(() => {
     const store = loadActive();
-    const slugs = Object.keys(store);
-    if (!slugs.length) return;
+    // Sólo slugs "vivos": empezados y no completados
+    const activeSlugs = Object.entries(store)
+      .filter(([, p]) => {
+        const lp = p as LocalProgram & { startedAt?: number; completedAt?: number | null };
+        return !!lp?.startedAt && !lp?.completedAt;
+      })
+      .map(([slug]) => slug);
+
+    if (!activeSlugs.length) return;
 
     let cancelled = false;
+    const controller = new AbortController();
 
     (async () => {
       await Promise.all(
-        slugs.map(async (slug) => {
+        activeSlugs.map(async (slug) => {
           try {
-            const fresh = await fetchProgramJsonFresh(slug);
+            const fresh = await fetchProgramJsonFresh(slug, controller.signal);
             if (!cancelled) {
-              setProgramJsonCache((prev) =>
-                prev[slug] ? prev : { ...prev, [slug]: fresh }
-              );
+              setProgramJsonCache((prev) => (prev[slug] ? prev : { ...prev, [slug]: fresh }));
               // al llegar “fresh” forzamos re-render para sustituir bundled
               setVersion((v) => v + 1);
             }
@@ -90,6 +96,7 @@ export function useTodayActivity() {
 
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [BUILD_V]);
 
@@ -116,6 +123,8 @@ export function useTodayActivity() {
       if (!started || completed) return; // terminado → fuera
 
       const json = getJson(slug);
+      if (!json) return; // ⬅ guard: aún no disponible
+
       const totalDays = json?.days?.length ?? json?.durationDays ?? 0;
       if (!totalDays) return;
 
@@ -165,7 +174,6 @@ export function useTodayActivity() {
     (async () => {
       if (!uid) return;
       const iso = todayISO;
-      // join por FK suggestion_id → suggested_challenges_master
       const { data, error } = await supabase
         .from('user_suggested_challenges')
         .select(`
@@ -378,6 +386,8 @@ function buildWeeklySeriesReal(getJson: (slug: string) => any) {
         if (!lp?.startedAt) continue;
 
         const json = getJson(slug);
+        if (!json) continue;
+
         const totalDays: number = json?.days?.length ?? json?.durationDays ?? 0;
         if (!totalDays) continue;
 
