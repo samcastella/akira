@@ -1,4 +1,5 @@
 // src/data/programs.ts
+import { BUILD_V } from '@/lib/buildVersion';
 
 export type ProgramType = "good" | "bad";
 export type ThematicCategory =
@@ -8,31 +9,18 @@ export type ThematicCategory =
   | "malos-habitos";
 
 export type ProgramMeta = {
-  /** Slug del JSON de datos que usa ProgramDetail */
-  slugData: string; // ej: "lectura-30" | "detox-tecnologico-30"
-  /** Slug de la ruta pública (canónico, sin “-30”) */
-  slugRoute: string; // ej: "lectura" | "detox-tecnologico"
-  /** Ruta completa a la página del programa */
-  route: string; // ej: "/programas/lectura"
-  /** Título corto para tarjetas/listas */
-  titleShort: string; // ej: "Conviértete en lector"
-  /** Micro-descripción para tarjetas/listas */
+  slugData: string;
+  slugRoute: string;
+  route: string;
+  titleShort: string;
   cardSubtitle: string;
-  /** Días de duración */
-  days: number; // ej: 30
-  /** Bloque principal al que pertenece */
-  type: ProgramType; // "good" | "bad"
-  /** Temáticas (pueden ser varias) */
+  days: number;
+  type: ProgramType;
   categories: ThematicCategory[];
-  /** Imagen (hero / thumbnail) */
-  imageSrc: string; // en /public/images/...
-  /** ¿Tiene page.tsx ya operativa? controla visibilidad en índices */
+  imageSrc: string;
   available: boolean;
-  /** Color de tema para la UI (hex o css var) */
   themeColor?: string;
-  /** Marca si es un programa comunitario (usa plantilla de comunidad) */
-  community?: boolean;              // ← NUEVO
-  /** Opcional: keywords para buscador */
+  community?: boolean;
   keywords?: string[];
   meta?: { createdAt?: string; version?: string; language?: string };
 };
@@ -48,14 +36,12 @@ export type ProgramTask = {
 };
 export type ProgramDay = { day: number; tasks: ProgramTask[] };
 export type ProgramDef = {
-  /** Slug canónico sin “-30” (coincide con slugRoute) */
-  slug: string;
+  slug: string;               // canónico (slugRoute)
   title: string;
   shortDescription?: string;
   howItWorks?: string;
   durationDays?: number;
-  /** Color de tema para pintar las barras de tareas */
-  themeColor?: string;
+  themeColor?: string;        // mantenemos tu shape
   accordions?: {
     whatYouWillDo?: string[];
     whatYouWillGet?: string[];
@@ -80,7 +66,7 @@ export const PROGRAMS: ProgramMeta[] = [
     categories: ["productividad", "bienestar"],
     imageSrc: "/images/programs/lectura-hero.jpg",
     available: true,
-    themeColor: "#E0E7FF", // indigo-100 suave
+    themeColor: "#E0E7FF",
     keywords: ["leer", "lectura", "libros"],
     meta: { language: "es", version: "1.0" },
     community: false,
@@ -97,7 +83,7 @@ export const PROGRAMS: ProgramMeta[] = [
     categories: ["bienestar", "productividad", "malos-habitos"],
     imageSrc: "/images/programs/detox-hero.jpg",
     available: true,
-    themeColor: "#FCD34D", // amber-300 (amarillo)
+    themeColor: "#FCD34D",
     keywords: ["detox", "móvil", "pantallas", "atención", "foco", "scroll"],
     meta: { language: "es", version: "1.0" },
     community: false,
@@ -114,10 +100,10 @@ export const PROGRAMS: ProgramMeta[] = [
     categories: ["salud", "bienestar"],
     imageSrc: "/images/programs/san-silvestre-hero.jpg",
     available: true,
-    themeColor: "#FCA5A5", // rojo suave
+    themeColor: "#FCA5A5",
     keywords: ["running", "correr", "10k", "san silvestre"],
     meta: { language: "es", version: "1.0" },
-    community: true,            // ← COMUNITARIO
+    community: true,
   },
 ];
 
@@ -127,7 +113,7 @@ export const PROGRAMS: ProgramMeta[] = [
 /**
  * Requisitos de tsconfig:
  *  - "resolveJsonModule": true
- *  - "module": "esnext" (o compatible con imports ESM)
+ *  - "module": "esnext"
  */
 import lecturaJson from "./programs/lectura-30.json";
 import detoxJson from "./programs/detox-tecnologico-30.json";
@@ -141,19 +127,18 @@ import sanSilvestreJson from "./programs/san-silvestre-60.json";
 export const PROGRAM_SLUG_ALIASES: Record<string, string> = {
   "lectura-30": "lectura",
   "detox-tecnologico-30": "detox-tecnologico",
-  // San Silvestre no tiene alias legacy (su slug de ruta conserva el “-60”)
+  // San Silvestre conserva el “-60” como route slug
 };
 
-/** Fallback de color por temática (si algún meta no trae themeColor). */
+/** Fallback de color por temática (si falta themeColor). */
 const CATEGORY_THEME: Partial<Record<ThematicCategory, string>> = {
-  "malos-habitos": "#FDE68A", // amber-200
-  bienestar: "#D1FAE5",       // emerald-100
-  productividad: "#DBEAFE",   // blue-100
-  salud: "#FCE7F3",           // pink-100
+  "malos-habitos": "#FDE68A",
+  bienestar: "#D1FAE5",
+  productividad: "#DBEAFE",
+  salud: "#FCE7F3",
 };
 
 function canonicalFromMeta(m: ProgramMeta) {
-  // canónico = slugRoute (sin sufijos “-30”)
   return m.slugRoute;
 }
 
@@ -190,21 +175,14 @@ function toProgramDef(meta: ProgramMeta, raw: any): ProgramDef {
     }))
     .sort((a, b) => a.day - b.day);
 
-  // Comprobación ligera (no rompe, solo warn en dev)
   if (process.env.NODE_ENV !== "production") {
     const got = normalizedDays.map((d) => d.day);
     const contiguous =
       got.length === 0 || (got[0] === 1 && got.every((v, i) => v === i + 1));
-    if (!contiguous) {
-      // eslint-disable-next-line no-console
-      console.warn(`[PROGRAMS] Días no contiguos en '${canonical}':`, got);
-    }
+    if (!contiguous) console.warn(`[PROGRAMS] Días no contiguos en '${canonical}':`, got);
     normalizedDays.forEach((d) => {
       d.tasks.forEach((t, i) => {
-        if (!t.label) {
-          // eslint-disable-next-line no-console
-          console.warn(`[PROGRAMS] Tarea vacía en ${canonical} día ${d.day} idx ${i}`);
-        }
+        if (!t.label) console.warn(`[PROGRAMS] Tarea vacía en ${canonical} día ${d.day} idx ${i}`);
       });
     });
   }
@@ -223,7 +201,6 @@ function toProgramDef(meta: ProgramMeta, raw: any): ProgramDef {
 
 /** Índice canónico { slugRoute -> ProgramDef } con duplicado de claves legacy para compat. */
 export const PROGRAM_DEFS_BY_SLUG: Record<string, ProgramDef> = (() => {
-  // Vinculamos cada meta con su JSON de datos
   const jsonByCanonical: Record<string, any> = {
     lectura: lecturaJson,
     "detox-tecnologico": detoxJson,
@@ -232,12 +209,11 @@ export const PROGRAM_DEFS_BY_SLUG: Record<string, ProgramDef> = (() => {
 
   const out: Record<string, ProgramDef> = {};
   for (const meta of PROGRAMS) {
-    if (!meta.available) continue; // solo exponemos programas operativos
+    if (!meta.available) continue;
     const canonical = canonicalFromMeta(meta);
     const raw = jsonByCanonical[canonical];
     if (!raw) {
       if (process.env.NODE_ENV !== "production") {
-        // eslint-disable-next-line no-console
         console.warn(`[PROGRAMS] No hay JSON vinculado para '${canonical}'`);
       }
       continue;
@@ -245,7 +221,6 @@ export const PROGRAM_DEFS_BY_SLUG: Record<string, ProgramDef> = (() => {
     out[canonical] = toProgramDef(meta, raw);
   }
 
-  // Duplicamos claves legacy -> mismo objeto (compat con datos antiguos)
   for (const [legacy, canonical] of Object.entries(PROGRAM_SLUG_ALIASES)) {
     if (out[canonical]) out[legacy] = out[canonical];
   }
@@ -253,7 +228,7 @@ export const PROGRAM_DEFS_BY_SLUG: Record<string, ProgramDef> = (() => {
   return out;
 })();
 
-/** Resolver ProgramDef por slug canónico o legacy. */
+/** Resolver ProgramDef por slug canónico o legacy (índice estático). */
 export function resolveProgramDef(slug: string): ProgramDef | undefined {
   if (!slug) return undefined;
   const canonical = PROGRAM_SLUG_ALIASES[slug] ?? slug;
@@ -261,20 +236,83 @@ export function resolveProgramDef(slug: string): ProgramDef | undefined {
 }
 
 /* ===========================
+   Loader fresh-first (memo + LS + fallback estático)
+   =========================== */
+const DEF_MEMO = new Map<string, ProgramDef>();
+const LS_DEF_CACHE_KEY = 'akira_program_defs_cache_v1';
+
+function readDefCache(): Record<string, ProgramDef> {
+  try { return JSON.parse(localStorage.getItem(LS_DEF_CACHE_KEY) || '{}'); } catch { return {}; }
+}
+function writeDefCache(x: Record<string, ProgramDef>) {
+  try { localStorage.setItem(LS_DEF_CACHE_KEY, JSON.stringify(x)); } catch {}
+}
+function canonicalize(slug: string): string {
+  return PROGRAM_SLUG_ALIASES[slug] ?? slug;
+}
+
+async function fetchProgramRawFresh(canonical: string): Promise<any> {
+  const url = `/data/programs/${canonical}.json?v=${encodeURIComponent(BUILD_V)}`;
+  const res = await fetch(url, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Program JSON fetch failed: ${res.status} ${res.statusText}`);
+  return await res.json();
+}
+
+/**
+ * Devuelve ProgramDef con estrategia:
+ * 1) memo → 2) fetch fresh (+normalize) → 3) LS cache → 4) índice estático
+ */
+export async function getProgramDef(slug: string): Promise<ProgramDef> {
+  const canonical = canonicalize(slug);
+
+  // 1) memo
+  const memo = DEF_MEMO.get(canonical);
+  if (memo) return memo;
+
+  // 2) fresh
+  try {
+    const meta =
+      getProgramMeta(canonical) ||
+      getProgramMeta(PROGRAM_SLUG_ALIASES[canonical] ?? canonical);
+    if (!meta) throw new Error(`No meta for ${canonical}`);
+
+    const raw = await fetchProgramRawFresh(canonical);
+    const def = toProgramDef(meta, raw);
+
+    DEF_MEMO.set(canonical, def);
+    const cache = readDefCache(); cache[canonical] = def; writeDefCache(cache);
+    return def;
+  } catch (e) {
+    // 3) LS
+    const cache = readDefCache();
+    if (cache[canonical]) {
+      DEF_MEMO.set(canonical, cache[canonical]);
+      return cache[canonical];
+    }
+    // 4) estático
+    const staticDef = resolveProgramDef(canonical);
+    if (staticDef) {
+      DEF_MEMO.set(canonical, staticDef);
+      return staticDef;
+    }
+    throw e instanceof Error ? e : new Error(String(e));
+  }
+}
+
+/** Alias por compatibilidad con consumidores antiguos */
+export const loadProgramJson = getProgramDef;
+
+/* ===========================
    Utilidades (metadatos)
    =========================== */
-
-/** Conjunto de slugs de ruta disponibles (los que ya tienen page.tsx). */
 export const AVAILABLE_PROGRAM_SLUGS = new Set(
   PROGRAMS.filter((p) => p.available).map((p) => p.slugRoute)
 );
 
-/** Conjunto de slugs de ruta que son comunitarios. */
 export const COMMUNITY_PROGRAM_SLUGS = new Set(
   PROGRAMS.filter((p) => p.community).map((p) => p.slugRoute)
 );
 
-/** ¿Es comunitario este programa (por slug de ruta o de datos)? */
 export function isCommunityProgram(slug: string) {
   const meta =
     PROGRAMS.find((p) => p.slugRoute === slug) ||
@@ -282,7 +320,6 @@ export function isCommunityProgram(slug: string) {
   return Boolean(meta?.community);
 }
 
-/** Buscar metadatos por cualquier slug (route o data). */
 export function getProgramMeta(slug: string) {
   return (
     PROGRAMS.find((p) => p.slugRoute === slug) ||
@@ -290,32 +327,28 @@ export function getProgramMeta(slug: string) {
   );
 }
 
-/** Adaptador para la tarjeta del índice (mantiene tu shape local). */
 export function toIndexCard(p: ProgramMeta) {
   return {
     id: p.slugData,
-    slug: p.slugRoute, // lo que usas en href /programas/{slug}
+    slug: p.slugRoute,
     title: p.titleShort,
     description: p.cardSubtitle,
     days: p.days,
     type: p.type as "good" | "bad",
     categories: p.categories as ThematicCategory[],
     thumbnail: p.imageSrc,
-    community: !!p.community, // útil para pintar insignias/badges en cards
+    community: !!p.community,
   };
 }
 
-/** Listar por bloque principal (good/bad). */
 export function listByType(type: ProgramType) {
   return PROGRAMS.filter((p) => p.type === type && p.available);
 }
 
-/** Listar por temática (salud/bienestar/productividad/malos-habitos). */
 export function listByThematic(cat: ThematicCategory) {
   return PROGRAMS.filter((p) => p.categories.includes(cat) && p.available);
 }
 
-/** Búsqueda simple por texto/keywords/categorías. */
 export function searchPrograms(q: string) {
   const n = q.trim().toLowerCase();
   if (!n) return PROGRAMS.filter((p) => p.available);

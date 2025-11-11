@@ -4,7 +4,7 @@ import type { FC } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { resolveProgramDef, type ProgramDef, type ProgramTask } from '@/data/programs';
+import { getProgramDef, type ProgramDef, type ProgramTask } from '@/data/programs';
 import {
   RotateCcw,
   CheckCircle2,
@@ -158,13 +158,29 @@ export default function ProgramDetail({
   const [loadingPoints, setLoadingPoints] = useState(false);
   const [pointsTick, setPointsTick] = useState(0); // refresco tras cada check
 
-/* cargar desde el registro central */
+/* cargar desde el registro central (fresh-first con fallback) */
 useEffect(() => {
+  let alive = true;
   setLoadingData(true);
-  const def = resolveProgramDef(slug);
-  setData(def ?? null);
+  setErrorMsg(null);
+
+  getProgramDef(slug)
+   .then((def) => {
+  if (!alive) return;
+  // Si quieres forzar resolución estática, usa el slug como fallback:
+  // setData(resolveProgramDef(def.slug) ?? def);
+  setData(def);
   setOpenAcc({ do: false, get: false, use: false });
-  setLoadingData(false);
+})
+    .catch((err) => {
+      console.warn('[ProgramDetail] getProgramDef error', err);
+      if (!alive) return;
+      setData(null);
+      setErrorMsg('No se pudo cargar el programa. Revisa tu conexión e inténtalo de nuevo.');
+    })
+    .finally(() => { if (alive) setLoadingData(false); });
+
+  return () => { alive = false; };
 }, [slug]);
 
   /* cargar progreso + listeners */
@@ -502,7 +518,7 @@ useEffect(() => {
     );
   }
 
-  const programColor = data?.themeColor ?? (PROGRAM_COLORS[slug] ?? '#111111');
+const programColor = data?.themeColor ?? (PROGRAM_COLORS[slug] ?? '#111111');
   const badgeSrc = BADGE_FILES[slug] ?? '/images/badges/generic-badge.png';
   const badgeTitle = BADGE_TITLES[slug] ?? 'Insignia';
 
@@ -527,14 +543,19 @@ useEffect(() => {
       )}
 
       {/* Título */}
-      <h1 className="text-2xl font-semibold text-neutral-900">{title}</h1>
-      {data?.durationDays ? (
-        <div className="mt-1 inline-flex items-center gap-2">
-          <span className="text-xs px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-700">
-            Duración: {data.durationDays} días
-          </span>
-        </div>
-      ) : null}
+     {/* Título y duración (JSON primero; fallback a props) */}
+<h1 className="text-2xl font-semibold text-neutral-900">
+  {data?.title ?? title}
+</h1>
+
+{(data?.durationDays ?? data?.days?.length) ? (
+  <div className="mt-1 inline-flex items-center gap-2">
+    <span className="text-xs px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-700">
+      Duración: {(data?.durationDays ?? data?.days?.length)!} días
+    </span>
+  </div>
+) : null}
+
 {/* CTA */}
 <div className="mt-4">
   {errorMsg && (

@@ -18,15 +18,11 @@ import { supabase, isSupabaseEnvReady } from '@/lib/supabaseClient';
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import RegistrationModal from '@/components/RegistrationModal';
 import { pullUserPrograms } from '@/lib/programSync';
+import { detectAndHandleBuildChange } from '@/lib/buildVersion'; // ← NUEVO
 
 const LS_SEEN_AUTH = 'akira_seen_auth_v1';
 const LS_LAST_UID = 'akira_last_uid';
 const PROFILE_TIMEOUT_MS = 15000;
-
-// === NUEVO: versión de build para invalidar cachés locales ===
-const BUILD_V = process.env.NEXT_PUBLIC_BUILD_VERSION || 'dev';
-const LS_BUILD_V = 'akira_build_v';
-const SS_BUILD_RELOADED = 'akira_build_reloaded_v';
 
 function canEnter(): boolean {
   try {
@@ -80,23 +76,9 @@ export default function LayoutClient({
     };
   }, []);
 
-  // === NUEVO: invalidar cachés locales cuando cambia la versión del build
+  // === NUEVO: invalidar cachés locales cuando cambia la versión del build (purga selectiva)
   useEffect(() => {
-    try {
-      const last = localStorage.getItem(LS_BUILD_V);
-      const alreadyReloadedForThis = sessionStorage.getItem(SS_BUILD_RELOADED) === BUILD_V;
-
-      if (last !== BUILD_V && !alreadyReloadedForThis) {
-        localStorage.clear();
-        localStorage.setItem(LS_BUILD_V, BUILD_V);
-        sessionStorage.setItem(SS_BUILD_RELOADED, BUILD_V);
-        location.reload();
-      } else if (last !== BUILD_V && alreadyReloadedForThis) {
-        localStorage.setItem(LS_BUILD_V, BUILD_V);
-      }
-    } catch {
-      // ignore
-    }
+    detectAndHandleBuildChange();
   }, []);
 
   function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
