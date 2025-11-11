@@ -65,19 +65,19 @@
         {
           "id": "d2_t1",
           "label": "🕒 **Elige hora y lugar**",
-          "detail": "Define un horario fijo y un sitio (ej.: 7:00 en el parque).",
+          "detail": "Define un horario fijo y un sitio para llevar a cabo tus entrenamientos. Como recomendación intenta hacerlo pronto en el día, para que otras actividades no acaben desplazando tu entrenamiento (ej.: 7:00 en el parque).",
           "tags": "plan"
         },
         {
           "id": "d2_t2",
           "label": "⏰ **Coloca la alarma**",
-          "detail": "Configura el despertador 5 min antes de la salida.",
+          "detail": "Configura el despertador 5 min antes del comienzo del entraniento y cuando suene ponte la ropa y toca empezar la rutina.",
           "tags": "ritual"
         },
         {
           "id": "d2_t3",
           "label": "👟 **Prepara la equipación**",
-          "detail": "Deja la ropa lista cada noche.",
+          "detail": "Deja la ropa lista esta noche para el entrenamiento de mañana y hazlo a partir de ahora siempre.",
           "tags": "ritual"
         },
         {

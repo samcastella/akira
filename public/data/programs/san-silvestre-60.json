@@ -71,13 +71,13 @@
         {
           "id": "d2_t2",
           "label": "⏰ **Coloca la alarma**",
-          "detail": "Configura el despertador 5 min antes de la salida.",
+          "detail": "Configura el despertador 5 min antes del comienzo del entraniento y cuando suene ponte la ropa y toca empezar la rutina.",
           "tags": "ritual"
         },
         {
           "id": "d2_t3",
           "label": "👟 **Prepara la equipación**",
-          "detail": "Deja la ropa lista cada noche.",
+          "detail": "Deja la ropa lista esta noche para el entrenamiento de mañana y hazlo a partir de ahora siempre.",
           "tags": "ritual"
         },
         {
