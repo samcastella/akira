@@ -33,9 +33,9 @@ export type TodaySuggestion = {
 const BUILD_V = process.env.NEXT_PUBLIC_BUILD_VERSION || 'dev';
 
 /* Lee JSON fresco desde la API; fallback a require del bundle */
-async function fetchProgramJsonFresh(slug: string, signal?: AbortSignal) {
-  const url = `/api/programs/${encodeURIComponent(slug)}?v=${encodeURIComponent(BUILD_V)}`;
-  const res = await fetch(url, { cache: 'no-store', signal });
+async function fetchProgramJsonFresh(slug: string) {
+  const url = `/data/programs/${encodeURIComponent(slug)}.json?v=${encodeURIComponent(BUILD_V)}`;
+  const res = await fetch(url, { cache: 'no-store' });
   if (!res.ok) throw new Error(`HTTP ${res.status} en ${url}`);
   return res.json();
 }
