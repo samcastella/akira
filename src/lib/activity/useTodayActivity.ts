@@ -33,12 +33,14 @@ export type TodaySuggestion = {
 const BUILD_V = process.env.NEXT_PUBLIC_BUILD_VERSION || 'dev';
 
 /* Lee JSON fresco desde la API; fallback a require del bundle */
-async function fetchProgramJsonFresh(slug: string) {
+// Ahora acepta opcionalmente AbortSignal
+async function fetchProgramJsonFresh(slug: string, signal?: AbortSignal) {
   const url = `/data/programs/${encodeURIComponent(slug)}.json?v=${encodeURIComponent(BUILD_V)}`;
-  const res = await fetch(url, { cache: 'no-store' });
+  const res = await fetch(url, { cache: 'no-store', signal });
   if (!res.ok) throw new Error(`HTTP ${res.status} en ${url}`);
   return res.json();
 }
+
 function tryGetProgramJsonBundled(slug: string): any | null {
   try {
     // @ts-ignore
