@@ -5,7 +5,8 @@ const LS_ACTIVE_COMPAT = 'akira_program_active'; // legacy single-object
 export type LocalProgram = {
   programSlug: string;                          // slug tal cual lo guardes (puede venir con o sin "-30")
   status: 'active' | 'paused' | 'completed';
-  startedAt: number;                            // epoch ms (idealmente 00:00 local)
+  startedAt: number;
+  completedAt?: number;                            // epoch ms (idealmente 00:00 local)
   progress: any;                                // { currentDay?: number, days?: {...} } etc.
   updatedAt: number;                            // epoch ms
 };

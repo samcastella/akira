@@ -27,20 +27,30 @@ queueTickUpsert,
 type HabitMaster as HabitMasterSync,
 } from '@/lib/useHabitsSupabaseSync';
 
-/* ===== Tipos JSON ===== */
+/* ===== Dynamic loaders (desde /public) ===== */
 type JsonTask = { id?: string; label: string; detail?: string };
 type JsonDay = { day: number; tasks: JsonTask[] };
 type ProgramJson = { slug: string; title: string; durationDays?: number; days: JsonDay[] };
 
-/* ===== Versión para bustear cache ===== */
 const V = process.env.NEXT_PUBLIC_BUILD_VERSION || 'dev';
 
-/** Carga el JSON del programa desde /public (NO usa el bundle) */
-async function fetchProgramJsonFresh(slug: string, signal?: AbortSignal) {
+/** Carga JSON “fresco” desde /public con bust de versión */
+async function fetchProgramJsonFresh(slug: string, signal?: AbortSignal): Promise<ProgramJson> {
 const url = `/data/programs/${encodeURIComponent(slug)}.json?v=${encodeURIComponent(V)}`;
 const res = await fetch(url, { cache: 'no-store', signal });
-if (!res.ok) throw new Error(`HTTP ${res.status} en ${url}`);
-return res.json() as Promise<ProgramJson>;
+if (!res.ok) throw new Error(`HTTP ${res.status} al cargar ${url}`);
+return res.json();
+}
+
+/* ===== Helpers JSON (fallback síncrono – bundle; puede ser null si ya moviste a /public) ===== */
+function tryGetProgramJson(slug: string): any | null {
+try {
+// @ts-ignore
+const m = require(`@/data/programs/${slug}.json`);
+return m?.default ?? m ?? null;
+} catch {
+return null;
+}
 }
 
 /* ===== Helpers fecha ===== */
@@ -207,30 +217,22 @@ try { supabase.removeChannel(ch); } catch {}
 };
 }, [uid]);
 
-// ======= Slugs activos (iniciados y no completados) =======
+// ======= Slugs activos (iniciados y NO completados) – sin depender de JSON =======
 const todayISO = dateKeyTZ(new Date());
 const activeSlugs = useMemo(() => {
 const out: string[] = [];
 for (const [slug, p] of Object.entries(activeMap)) {
 const lp = p as LocalProgram;
 if (!lp?.startedAt) continue;
-
-const json = jsonBySlug[slug]; // ← usamos SOLO la copia fresca; si no está, aún no lo contamos
-const totalDays: number = json?.days?.length ?? json?.durationDays ?? 0;
-if (!totalDays) continue;
-
-const rawIdx = daysBetweenFromMs(lp.startedAt, todayISO) + 1;
-if (rawIdx > totalDays) continue; // completado → fuera
-
+if (lp?.completedAt) continue; // ya completado → fuera
 out.push(slug);
 }
 return out;
-}, [activeMap, jsonBySlug, todayISO]);
+}, [activeMap]);
 
-// ======= Cargar JSON solo de los slugs activos desde /public =======
+// ======= Cargar JSON SOLO de los slugs activos desde /public =======
 useEffect(() => {
 if (!activeSlugs.length) return;
-
 const controller = new AbortController();
 let cancelled = false;
 
@@ -242,18 +244,17 @@ try {
 const json = await fetchProgramJsonFresh(slug, controller.signal);
 return [slug, json] as const;
 } catch {
-return null;
+const fb = tryGetProgramJson(slug);
+return fb ? ([slug, fb] as const) : null;
 }
 })
 );
-
 if (cancelled) return;
-
 const map: Record<string, ProgramJson> = { ...jsonBySlug };
 for (const e of entries) if (e) map[e[0]] = e[1];
 setJsonBySlug(map);
 } catch {
-/* noop */
+// silencioso
 }
 })();
 
@@ -274,8 +275,8 @@ for (const slug of activeSlugs) {
 const lp = activeMap[slug] as LocalProgram | undefined;
 if (!lp?.startedAt) continue;
 
-const json = jsonBySlug[slug];
-if (!json) continue; // aún no llegó el JSON fresco
+const json = jsonBySlug[slug] || tryGetProgramJson(slug);
+if (!json) continue;
 
 const totalDays = json?.days?.length ?? json?.durationDays ?? 0;
 if (!totalDays) continue;
@@ -309,7 +310,7 @@ tasks,
 }
 
 return res;
-}, [activeMap, jsonBySlug, todayISO, activeSlugs]);
+}, [activeSlugs, activeMap, jsonBySlug, todayISO]);
 
 const hasPrograms = visiblePrograms.length > 0;
 
@@ -375,7 +376,7 @@ try {
 if (!uid) return;
 
 // 2) Sembrar filas del día
-const json = jsonBySlug[slug];
+const json = jsonBySlug[slug] || tryGetProgramJson(slug);
 const taskIds = (json?.days.find((d: any) => d.day === day)?.tasks ?? json?.days?.[day - 1]?.tasks ?? [])
 .map((t: any, i: number) => t.id ?? `task_${i}`);
 await ensureDayRows(uid, slug, day, taskIds);
@@ -634,6 +635,13 @@ Cargando…
 {!loading && nothingAtAll && (
 <div className="rounded-2xl border border-neutral-200 p-4 text-sm text-neutral-600 bg-white">
 Todavía no hay nada creado
+</div>
+)}
+
+{/* Fallback UX: hay slugs activos pero aún no llegó su JSON */}
+{!loading && activeSlugs.length > 0 && visiblePrograms.length === 0 && (
+<div className="rounded-2xl border border-neutral-200 p-4 text-sm text-neutral-600 bg-white">
+Cargando programas del día…
 </div>
 )}
 
