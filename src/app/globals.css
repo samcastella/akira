@@ -9,33 +9,32 @@
 
   /* UI tokens adicionales */
   --muted: #6b7280; /* gris texto secundario */
-  --line: #e6e6e6;  /* bordes sutiles */
+  --line: rgba(0,0,0,.12);  /* bordes sutiles */
   --accent: #000000;
 
   --radius-card: 24px;
   --radius-input: 16px;
 
-  /* Pistas para el UA: permitimos claro/oscuro según media query */
-  color-scheme: light dark;
+  /* Altura del bottom nav (mantener en sync con NAV_HEIGHT) */
+  --nav-height: 64px;
+
+  /* Fuentes */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
+  --font-geist-sans: var(--font-sans);
+  --font-geist-mono: var(--font-mono);
+
+  /* Siempre en claro (ignora modo oscuro del SO) */
+  color-scheme: light;
 }
 
 /* Mapea variables de Tailwind (vía @theme inline) */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-/* Modo oscuro: solo tokens */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-    --muted: #9aa0a6;
-    --line: #262626;
-    --accent: #ffffff;
-  }
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
 }
 
 /* =====
@@ -45,28 +44,46 @@
 *::before,
 *::after { box-sizing: border-box; }
 
-html, body { height: 100%; }
+html, body { min-height: 100%; }
+html { background: var(--background); }
 
 body {
   margin: 0;
   background: var(--background);
   color: var(--foreground);
-
-  /* Usa las fuentes que cargas en layout (Geist) */
-  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system,
-    Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
-
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-
-  /* Evita “elastic scroll” en iOS dentro de la app */
+  -webkit-text-size-adjust: 100%;
   overscroll-behavior-y: none;
+  /* ⛔️ sin padding-bottom: lo reservan LayoutClient + BottomNav */
 }
 
-/* Selección de texto agradable (usa el acento de la app) */
+/* ===== Splash overlay 100% CSS =====
+   - 'preload' viene en <body> desde layout.tsx
+   - El script marca 'hydrated' para hacer el fade-out
+*/
+body.preload::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: #000 url(/splash.jpg) center / cover no-repeat;
+  opacity: 1;
+  transition: opacity 400ms ease;
+}
+body.hydrated::before {
+  opacity: 0;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  body.preload::before { transition: none; }
+}
+
+/* Selección adaptativa (en claro) */
 ::selection {
-  background: #FFD54F;
-  color: #111111;
+  background: color-mix(in oklab, var(--accent) 30%, var(--background));
+  color: var(--foreground);
 }
 
 /* Medios fluidos por defecto */
@@ -77,25 +94,34 @@ img, video, canvas, svg {
 }
 
 /* Quita el resalte azul por defecto en iOS */
-input, textarea, button, select, a {
-  -webkit-tap-highlight-color: transparent;
-}
+input, textarea, button, select, a { -webkit-tap-highlight-color: transparent; }
 
 /* =========
-   Utilidades UI de la app
+   Layout principal
    ========= */
 
-/* Títulos de página (p.ej. "Herramientas") */
+/* ⛔️ Sin reservas aquí: las hace LayoutClient (padding-bottom global) */
+main,
+.app-main {
+  min-height: 100dvh;
+  background: var(--background);
+}
+
+/* Safe area superior para evitar solapes con la hora/notch */
+.safe-top { height: env(safe-area-inset-top, 0px); }
+
+/* =====
+   Utilidades UI de la app
+   ===== */
+
 .page-title { font-size: 28px; font-weight: 800; margin: 8px 0 4px; }
 
-/* Contenedor editorial (lo seguimos usando en varias páginas) */
 .container {
   max-width: 940px;
   margin: 0 auto;
   padding: 24px;
 }
 
-/* Tarjetas */
 .card {
   background: var(--background);
   border: 1px solid var(--line);
@@ -103,12 +129,10 @@ input, textarea, button, select, a {
   padding: 18px;
 }
 
-/* Grid simple 2 col */
 .grid { display: grid; gap: 16px; }
 .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 @media (max-width: 640px) { .grid-2 { grid-template-columns: 1fr; } }
 
-/* Tabs tipo píldora (con icono) */
 .tabbar {
   display: flex;
   flex-wrap: wrap;
@@ -127,7 +151,9 @@ input, textarea, button, select, a {
   color: var(--foreground);
   display: inline-flex;
   align-items: center;
+  transition: background .15s ease, color .15s ease, border-color .15s ease, transform .05s ease;
 }
+.tabbar button:hover { transform: translateY(-1px); }
 .tabbar button[aria-selected="true"] {
   background: var(--accent);
   color: #fff;
@@ -135,11 +161,10 @@ input, textarea, button, select, a {
 }
 .tabbar .icon { margin-right: 8px; display: inline-flex; }
 
-/* Inputs */
 .input {
   width: 100%;
   padding: 12px 14px;
-  border: 1px solid var(--line); /* <— token */
+  border: 1px solid var(--line);
   border-radius: var(--radius-input);
   background: var(--background);
   color: var(--foreground);
@@ -147,24 +172,22 @@ input, textarea, button, select, a {
 .textarea {
   width: 100%;
   padding: 12px 14px;
-  border: 1px solid var(--line); /* <— token */
+  border: 1px solid var(--line);
   border-radius: var(--radius-input);
   background: var(--background);
   color: var(--foreground);
   min-height: 70px;
   resize: vertical;
 }
-/* Focus accesible */
 .input:focus,
 .textarea:focus,
 .btn:focus,
 a:focus,
 button:focus {
-  outline: 2px solid rgba(0,0,0,.08);
+  outline: 2px solid color-mix(in oklab, var(--foreground) 12%, transparent);
   outline-offset: 2px;
 }
 
-/* Botón cápsula compacto */
 .btn {
   appearance: none;
   border: 1px solid var(--accent);
@@ -175,11 +198,16 @@ button:focus {
   cursor: pointer;
   font-weight: 600;
   line-height: 1;
+  transition: transform .05s ease, filter .15s ease, background .15s ease, color .15s ease, border-color .15s ease;
 }
+.btn:hover { transform: translateY(-1px); }
+.btn:active { transform: translateY(0); }
+.btn:disabled { opacity: .6; cursor: not-allowed; }
+
 .btn.secondary {
   background: var(--background);
   color: var(--foreground);
-  border: 1px solid var(--line); /* <— token */
+  border: 1px solid var(--line);
 }
 .btn.red {
   background: #d92c2c;
@@ -191,17 +219,13 @@ button:focus {
   color: var(--foreground);
   border: 1px solid var(--accent);
 }
-/* Nuevo: botón verde (Libros → "Vamos a por ello") */
 .btn.green {
   background: #16a34a;
   border-color: #16a34a;
   color: #fff;
 }
 .btn.green:hover { filter: brightness(.95); }
-/* Estado disabled genérico */
-.btn:disabled { opacity: .6; cursor: not-allowed; }
 
-/* Badges y texto atenuado */
 .badge {
   font-size: 12px;
   padding: 4px 8px;
@@ -212,20 +236,17 @@ button:focus {
 }
 .muted { color: var(--muted); }
 
-/* Filas separadas (Gratitud / Objetivos) */
 .rows { display: grid; gap: 12px; }
 .row {
   background: var(--background);
-  border: 1px solid var(--line); /* <— token */
+  border: 1px solid var(--line);
   border-radius: 16px;
   padding: 12px;
 }
 
-/* Listas con separadores finos */
 .list { list-style: none; padding: 0; margin: 0; }
-.list > li + li { border-top: 1px solid var(--line); }
+.card .list > li + li { border-top: 1px solid var(--line); }
 
-/* Cabecera de tarjeta con dos columnas (fecha + instrucción) */
 .card-header {
   display: grid;
   grid-template-columns: 1fr 1.15fr;
@@ -235,7 +256,6 @@ button:focus {
 }
 @media (max-width: 600px) { .card-header { grid-template-columns: 1fr; } }
 
-/* Acordeón simple para “Entradas anteriores” */
 details.accordion {
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -248,7 +268,6 @@ details.accordion summary {
 }
 details.accordion summary::-webkit-details-marker { display: none; }
 
-/* Modal (para compartir libro) */
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -281,88 +300,96 @@ details.accordion summary::-webkit-details-marker { display: none; }
   color: var(--foreground);
   cursor: pointer;
 }
+.modal .actions a:hover { background: color-mix(in oklab, var(--foreground) 3%, transparent); }
 
 /* =========
-   BottomNav (activo cubre todo + ítems ancho igual)
+   BottomNav (clases legacy si se usan en algún sitio)
    ========= */
-.bottomnav{
-  position: fixed; left: 0; right: 0; bottom: 0;
+.bottomnav {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
   z-index: 50;
-  display: flex; align-items: stretch;  /* hijos heredan alto */
-  gap: 0;                                /* sin espacios entre celdas */
-  /* height y background se definen inline desde el componente */
+  display: flex; align-items: stretch;
+  gap: 0;
+  border-top: 1px solid var(--line);
+  background: var(--background);
 }
-
-.bn-item{
-  flex: 1 1 0;                           /* TODOS mismo ancho */
-  min-width: 0;                          /* el texto no fuerza ancho */
+.bn-item {
+  flex: 1 1 0;
+  min-width: 0;
   position: relative;
   display: flex; align-items: stretch; justify-content: center;
   text-decoration: none; color: inherit;
   background: transparent;
 }
-
-/* El fondo blanco del activo se aplica en el CONTENEDOR, así cubre toda el área */
 .bn-item[aria-current="page"]{
-  background: #ffffff;
-  color: #000000;
+  background: var(--background);
+  color: var(--foreground);
 }
-
-/* Contenido interno */
-.bn-pill{
+.bn-pill {
   box-sizing: border-box;
   height: 100%;
   width: 100%;
-  padding: 8px 0 calc(8px + env(safe-area-inset-bottom, 0px)); /* sin padding lateral para cubrir completo */
-  border-radius: 0;                          /* sin esquinas para no revelar fondo */
+  padding: 8px 0 calc(8px + env(safe-area-inset-bottom, 0px));
+  border-radius: 0;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 4px;
   color: inherit;
-  background: transparent;                   /* sin fondo: lo pone el contenedor cuando está activo */
+  background: transparent;
   border: none;
 }
 .bn-pill::before,
-.bn-pill::after{
-  content: none !important;                  /* anula halos antiguos */
-}
+.bn-pill::after { content: none !important; }
 
-/* ====== AKIRA · Tweaks mínimos para Herramientas ====== */
+/* ====== AKIRA · Tweaks ====== */
+.tabbar { overflow: auto; -webkit-overflow-scrolling: touch; gap: 12px; }
 
-/* Tabbar: scroll suave en móvil y cápsula seleccionada */
-.tabbar {
-  overflow: auto;               /* por si hay muchas pestañas */
-  -webkit-overflow-scrolling: touch;
-  gap: 12px;                    /* un pelín más compacto */
-}
-.tabbar button {
-  transition: background .15s ease, color .15s ease, border-color .15s ease, transform .05s ease;
-}
-.tabbar button:hover { transform: translateY(-1px); }
-.tabbar button[aria-selected="true"] {
-  background: var(--accent);
-  color: #fff;
-  border-color: var(--accent);
-}
-
-/* Botones: micro-animación y estados */
-.btn {
-  transition: transform .05s ease, filter .15s ease, background .15s ease, color .15s ease, border-color .15s ease;
-}
-.btn:hover { transform: translateY(-1px); }
-.btn:active { transform: translateY(0); }
+/* === HOME ====== */
+.btn.btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
 .btn.secondary:hover { filter: brightness(.98); }
 .btn.red:hover { filter: brightness(.98); }
+.btn .icon { display: inline-flex; margin-left: 8px; line-height: 0; }
+.card .cover-img { width: 100%; aspect-ratio: 4 / 5; object-fit: cover; display: block; }
+.home-thought { display: grid; grid-template-columns: 1fr; gap: 12px; }
 
-/* Modal: hover en enlaces de compartir */
-.modal .actions a:hover {
-  background: rgba(0,0,0,.03);
+/* ===== Scroll utilities ===== */
+html { scroll-behavior: smooth; }
+.scroll-area {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable both-edges;
+  touch-action: pan-y;
 }
+body.modal-open { overflow: hidden; width: 100%; }
+input[type="password"] { -webkit-text-security: disc; }
 
-/* Listas finas dentro de .card (por si se anidan) */
-.card .list > li + li { border-top: 1px solid var(--line); }
+/* 👉 Mantener la UI en “modo retrato” también en landscape (navegador) */
+@media (orientation: landscape) {
+  html, body { width: 100%; height: 100%; overflow-x: hidden; }
+  body[data-orientation-lock="portrait"] #app-main {
+    margin: 0 auto;
+    max-width: 100svh; /* ancho = alto del dispositivo → simula portrait */
+  }
+}
+/* ====== FIX · altura inicial iOS Safari (100dvh) ====== */
 
-/* Inputs: focus más visible (sobrescribe el genérico de arriba para inputs/textarea) */
-.input:focus, .textarea:focus {
-  outline: 2px solid color-mix(in oklab, var(--accent) 10%, transparent);
-  outline-offset: 2px;
+/* 1️⃣  define una variable dinámica con -webkit-fill-available */
+@supports (-webkit-touch-callout: none) {
+  :root {
+    --real-vh: -webkit-fill-available;
+  }
+
+  /* 2️⃣  durante el primer render usa esa altura en vez de 100dvh */
+  body:not(.hydrated) main,
+  body:not(.hydrated) .app-main {
+    min-height: var(--real-vh);
+  }
+
+  /* 3️⃣  tras hidratar (el script del layout añade .hydrated), 
+         se restablece a 100dvh estable */
+  body.hydrated main,
+  body.hydrated .app-main {
+    min-height: 100dvh;
+  }
 }

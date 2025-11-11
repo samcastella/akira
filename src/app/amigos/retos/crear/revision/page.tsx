@@ -1,0 +1,342 @@
+// src/app/amigos/retos/crear/revision/page.tsx
+'use client';
+
+import { Suspense, useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { supabase } from '@/lib/supabaseClient';
+import { useAuthUserId } from '@/lib/user';
+import { ensureChallengeDays, upsertDayLabel } from '@/lib/challenges';
+
+type Challenge = {
+  id: string;
+  owner_id: string;
+  title: string;
+  start: string; // yyyy-mm-dd
+  end: string;   // yyyy-mm-dd
+  rules: string | null;
+  cover_url: string | null;
+  join_code: string;
+  customize_days: boolean;
+};
+
+type DayRow = { day_index: number; label: string | null };
+type MemberRow = { user_id: string };
+
+function daysBetween(startISO: string, endISO: string): number {
+  const s = new Date(startISO + 'T00:00:00');
+  const e = new Date(endISO + 'T00:00:00');
+  const MS = 24 * 60 * 60 * 1000;
+  const diff = Math.round((e.getTime() - s.getTime()) / MS);
+  return Math.max(1, Math.min(365, diff));
+}
+
+function getDefaultDayLabel(title: string, label?: string | null) {
+  const t = (label || '').trim();
+  return t ? t : title;
+}
+
+function RevisionRetoPageInner() {
+  const sp = useSearchParams();
+  const router = useRouter();
+  const uid = useAuthUserId();
+
+  const cid = sp.get('cid') || '';
+
+  const [loading, setLoading] = useState(true);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const [ch, setCh] = useState<Challenge | null>(null);
+  const [members, setMembers] = useState<MemberRow[]>([]);
+  const [days, setDays] = useState<DayRow[]>([]);
+  const [publishing, setPublishing] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
+
+  const isOwner = ch?.owner_id && uid ? ch.owner_id === uid : false;
+  const duration = useMemo(
+    () => (ch ? daysBetween(ch.start, ch.end) : 0),
+    [ch?.start, ch?.end]
+  );
+
+  // URL con cache-busting para evitar ver la portada antigua por caché CDN
+  const coverSrc = useMemo(() => {
+    if (!ch?.cover_url) return null;
+    const sep = ch.cover_url.includes('?') ? '&' : '?';
+    return `${ch.cover_url}${sep}v=${Date.now()}`;
+  }, [ch?.cover_url]);
+
+  useEffect(() => {
+    let ok = true;
+    (async () => {
+      if (!cid) return;
+      setLoading(true);
+      setMsg(null);
+      try {
+        const { data: challenge, error: e1 } = await supabase
+          .from('challenges')
+          .select('id, owner_id, title, start, end, rules, cover_url, join_code, customize_days')
+          .eq('id', cid)
+          .single();
+        if (e1) throw e1;
+        if (!ok) return;
+
+        setCh(challenge as Challenge);
+
+        const { data: mems, error: e2 } = await supabase
+          .from('challenge_members')
+          .select('user_id')
+          .eq('challenge_id', cid);
+        if (e2) throw e2;
+        if (!ok) return;
+
+        setMembers((mems || []) as MemberRow[]);
+
+        if ((challenge as Challenge).customize_days) {
+          // si personalizan, leemos labels
+          const { data: ds, error: e3 } = await supabase
+            .from('challenge_days')
+            .select('day_index, label')
+            .eq('challenge_id', cid)
+            .order('day_index', { ascending: true });
+          if (e3) throw e3;
+          if (!ok) return;
+
+          setDays((ds || []) as DayRow[]);
+        } else {
+          // si NO personalizan, no hace falta traer nada (render con fallback al título)
+          setDays([]);
+        }
+      } catch (e: any) {
+        setMsg(e?.message || 'No se pudo cargar la revisión del reto.');
+      } finally {
+        setLoading(false);
+      }
+    })();
+    return () => {
+      ok = false;
+    };
+  }, [cid]);
+
+  async function publish() {
+    if (!ch) return;
+    if (!isOwner) {
+      // si no es propietario, solo navega
+      router.push(`/amigos/retos/${cid}`);
+      return;
+    }
+    setPublishing(true);
+    setMsg(null);
+    try {
+      // Si NO personalizan: asegurar filas y rellenar vacíos con el título
+      if (!ch.customize_days) {
+        await ensureChallengeDays(cid, duration);
+        const { data: ds, error } = await supabase
+          .from('challenge_days')
+          .select('day_index, label')
+          .eq('challenge_id', cid)
+          .order('day_index', { ascending: true });
+        if (error) throw error;
+
+        // Completar etiquetas vacías sin sobreescribir las existentes
+        const updates: Promise<any>[] = [];
+        for (let i = 1; i <= duration; i++) {
+          const row = (ds || []).find((r) => r.day_index === i);
+          const current = (row?.label || '').trim();
+          if (!current) {
+            updates.push(upsertDayLabel(cid, i, ch.title));
+          }
+        }
+        if (updates.length) {
+          const chunk = 25;
+          for (let i = 0; i < updates.length; i += chunk) {
+            await Promise.all(updates.slice(i, i + chunk));
+          }
+        }
+      }
+      // Mostramos modal de éxito y dejamos que el usuario elija dónde ir
+      setShowSuccess(true);
+    } catch (e: any) {
+      setMsg(e?.message || 'No se pudo publicar el reto.');
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  if (!cid) {
+    return (
+      <main className="container mx-auto px-4 max-w-screen-sm py-6">
+        <p>Falta el parámetro <code>cid</code>.</p>
+      </main>
+    );
+  }
+
+  return (
+    <main className="container mx-auto px-4 max-w-screen-md py-6 space-y-6">
+      <header className="space-y-1">
+        <h1 className="text-xl font-semibold">Revisión del reto</h1>
+        {ch && (
+          <p className="text-sm muted">
+            {new Date(ch.start + 'T00:00:00').toLocaleDateString()} · {duration} días
+          </p>
+        )}
+        {ch && !isOwner && (
+          <p className="text-xs text-orange-600">
+            Solo el propietario puede publicar cambios. Vista de revisión en modo lectura.
+          </p>
+        )}
+      </header>
+
+      {msg && <div className="text-sm text-red-600">{msg}</div>}
+      {loading && <div>Cargando…</div>}
+
+      {!loading && ch && (
+        <>
+          {/* Portada */}
+          <section className="space-y-3">
+            <div className="w-full aspect-[3/1] rounded-2xl border overflow-hidden flex items-center justify-center">
+              {coverSrc ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={coverSrc} alt="Portada del reto" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-sm text-gray-500">
+                  Sin imagen de portada
+                </div>
+              )}
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold">{ch.title}</h2>
+              {ch.rules ? (
+                <p className="text-sm mt-1 whitespace-pre-wrap">{ch.rules}</p>
+              ) : (
+                <p className="text-sm mt-1 text-gray-500">Sin normas definidas.</p>
+              )}
+            </div>
+          </section>
+
+          {/* Meta: participantes y código */}
+          <section className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="rounded-xl border p-3" style={{ borderColor: 'var(--line)' }}>
+              <div className="text-xs text-gray-500 mb-1">Participantes</div>
+              <div className="text-base font-medium">{members.length || 1}</div>
+              <div className="text-xs text-gray-500">Incluye al creador del reto</div>
+            </div>
+            <div className="rounded-xl border p-3" style={{ borderColor: 'var(--line)' }}>
+              <div className="text-xs text-gray-500 mb-1">Código del reto</div>
+              <div className="text-base font-semibold tracking-wider">{ch.join_code}</div>
+              <div className="text-xs text-gray-500">Compártelo para invitar</div>
+            </div>
+          </section>
+
+          {/* Días */}
+          <section className="space-y-2">
+            <h3 className="text-sm font-medium">Estructura de días</h3>
+
+            <div className="rounded-xl border" style={{ borderColor: 'var(--line)' }}>
+              <ul className="divide-y" style={{ borderColor: 'var(--line)' }}>
+                {ch.customize_days
+                  ? (
+                    days.length
+                      ? days.map((r) => (
+                          <li key={r.day_index} className="p-3 flex items-center gap-3">
+                            <input type="checkbox" disabled className="h-4 w-4" />
+                            <div className="text-sm">
+                              <span className="font-medium mr-2">Día {r.day_index}</span>
+                              <span className="text-gray-700">{r.label || '—'}</span>
+                            </div>
+                          </li>
+                        ))
+                      : Array.from({ length: duration }, (_, i) => i + 1).map((d) => (
+                          <li key={d} className="p-3 flex items-center gap-3">
+                            <input type="checkbox" disabled className="h-4 w-4" />
+                            <div className="text-sm">
+                              <span className="font-medium mr-2">Día {d}</span>
+                              <span className="text-gray-500">—</span>
+                            </div>
+                          </li>
+                        ))
+                  )
+                  : Array.from({ length: duration }, (_, i) => i + 1).map((d) => (
+                      <li key={d} className="p-3 flex items-center gap-3">
+                        <input type="checkbox" disabled className="h-4 w-4" />
+                        <div className="text-sm">
+                          <span className="font-medium mr-2">Día {d}</span>
+                          <span className="text-gray-700">
+                            {getDefaultDayLabel(ch.title)}
+                          </span>
+                        </div>
+                      </li>
+                    ))}
+              </ul>
+            </div>
+          </section>
+
+          <div className="pt-2 flex gap-3">
+            <button
+              onClick={() => router.push(`/amigos/retos/crear/personalizar?cid=${cid}&duration=${duration}`)}
+              className="flex-1 rounded-2xl border px-4 py-3 hover:bg-black/5 transition"
+              style={{ borderColor: 'var(--line)' }}
+            >
+              Volver a personalizar
+            </button>
+
+            <button
+              onClick={publish}
+              disabled={publishing}
+              className="flex-1 rounded-2xl border px-4 py-3 hover:bg-black/5 transition disabled:opacity-50"
+              style={{ borderColor: 'var(--line)' }}
+            >
+              {publishing ? 'Publicando…' : 'Publicar y ver reto'}
+            </button>
+          </div>
+
+          {/* Modal de éxito */}
+          {showSuccess && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+              role="dialog"
+              aria-modal="true"
+            >
+              <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-lg">
+                <h4 className="text-lg font-semibold">¡Tu reto ha sido creado con éxito!</h4>
+                <p className="text-sm text-gray-600 mt-1">
+                  Puedes verlo en <span className="font-medium">Retos con amigos</span>.
+                </p>
+
+                <div className="mt-5 flex gap-3">
+                  <button
+                    onClick={() => {
+                      setShowSuccess(false);
+                      router.push('/amigos/retos/mis-retos');
+                    }}
+                    className="flex-1 rounded-xl border px-4 py-2 hover:bg-black/5 transition"
+                    style={{ borderColor: 'var(--line)' }}
+                  >
+                    Ver retos con amigos
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setShowSuccess(false);
+                      router.push(`/amigos/retos/${cid}`);
+                    }}
+                    className="flex-1 rounded-xl border px-4 py-2 hover:bg-black/5 transition"
+                    style={{ borderColor: 'var(--line)' }}
+                  >
+                    Ver este reto
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </main>
+  );
+}
+
+export default function RevisionRetoPage() {
+  return (
+    <Suspense fallback={<div className="container mx-auto px-4 py-6">Cargando…</div>}>
+      <RevisionRetoPageInner />
+    </Suspense>
+  );
+}

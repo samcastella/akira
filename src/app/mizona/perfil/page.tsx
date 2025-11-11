@@ -1,0 +1,727 @@
+// src/app/mizona/perfil/page.tsx
+'use client';
+
+import React, { useEffect, useState, useRef } from 'react';
+import Link from 'next/link';
+import { Camera, X } from 'lucide-react';
+import { logoutAndResetApp } from '@/lib/logout';
+import { useUserProfile, upsertProfile, getAuthUserId, Sex, normalizeUsername } from '@/lib/user';
+import { supabase } from '@/lib/supabaseClient';
+
+type Profile = {
+  username?: string;
+  nombre?: string;
+  apellido?: string;
+  // Conservamos edad por compatibilidad, pero usamos fechaNacimiento
+  edad?: number;
+  fechaNacimiento?: string; // YYYY-MM-DD
+  sexo?: Sex;
+  caloriasDiarias?: number;
+  instagram?: string;
+  tiktok?: string;
+  email?: string;
+  telefono?: string;
+  peso?: number;
+  estatura?: number; // cm
+  foto?: string; // dataURL/URL pública
+};
+
+/* ===== Helpers Instagram ===== */
+function normalizeInstagramLink(val?: string) {
+  if (!val) return undefined;
+  const trimmed = val.trim();
+  if (!trimmed) return undefined;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed; // ya es URL
+  const user = trimmed.replace(/^@/, '');
+  return `https://instagram.com/${user}`;
+}
+
+function instagramLabel(val?: string) {
+  if (!val) return '—';
+  const m = val.match(/instagram\.com\/([^/?#]+)/i);
+  if (m?.[1]) return '@' + m[1];
+  return '@' + val.replace(/^@/, '');
+}
+
+/* ===== Helpers de avatar (Storage) ===== */
+function dataURLToBlob(dataURL: string): Blob {
+  const [head, b64] = dataURL.split(',');
+  const mime = head.match(/data:(.*?);base64/)?.[1] || 'image/jpeg';
+  const bin = atob(b64);
+  const u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  return new Blob([u8], { type: mime });
+}
+
+/** Sube avatar a bucket 'avatars' en la ruta {uid}/avatar_YYYYMMDD_HHMMSS.jpg y devuelve la URL pública */
+async function uploadAvatarAndGetUrl(input: string | File, uid: string): Promise<string> {
+  let blob: Blob;
+  if (typeof input === 'string' && input.startsWith('data:')) {
+    blob = dataURLToBlob(input);
+  } else if (input instanceof File) {
+    blob = input;
+  } else {
+    throw new Error('Formato de avatar no válido');
+  }
+
+  const ts = new Date();
+  const stamp =
+    `${ts.getFullYear()}${String(ts.getMonth()+1).padStart(2,'0')}${String(ts.getDate()).padStart(2,'0')}_` +
+    `${String(ts.getHours()).padStart(2,'0')}${String(ts.getMinutes()).padStart(2,'0')}${String(ts.getSeconds()).padStart(2,'0')}`;
+
+  const path = `${uid}/avatar_${stamp}.jpg`;
+
+  const { error } = await supabase.storage
+    .from('avatars')
+    .upload(path, blob, {
+      cacheControl: '3600',
+      upsert: true,
+      contentType: 'image/jpeg',
+    });
+
+  if (error) throw error;
+
+  const { data } = supabase.storage.from('avatars').getPublicUrl(path);
+  if (!data?.publicUrl) throw new Error('No se pudo obtener la URL pública');
+  return data.publicUrl;
+}
+
+export default function PerfilPage() {
+  const user = useUserProfile(); // reactivo (pullProfile)
+  const [editing, setEditing] = useState(false);
+  const [profile, setProfile] = useState<Profile>({});
+  const [savedOpen, setSavedOpen] = useState(false); // pop-up guardado
+  const [saving, setSaving] = useState(false);
+
+  // Foto: modal + progreso propio
+  const [photoModalOpen, setPhotoModalOpen] = useState(false);
+  const [tempPhoto, setTempPhoto] = useState<string | undefined>(undefined);
+  const [photoSaving, setPhotoSaving] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const modalFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Hidratar formulario desde perfil global cuando no editamos
+  useEffect(() => {
+    if (!editing && user) {
+      setProfile(user as Profile);
+    }
+  }, [user, editing]);
+
+  function handleChange<K extends keyof Profile>(k: K, v: Profile[K]) {
+    setProfile((prev) => ({ ...prev, [k]: v }));
+  }
+
+  // === Redimensionar a máx 200 px antes de guardar ===
+  async function onPickFile(e: React.ChangeEvent<HTMLInputElement>, applyDirect = true) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const dataURL = await readFileAsDataURL(file);
+    const resized = await resizeImageDataURL(dataURL, 200); // max 200 px lado mayor
+
+    if (applyDirect) {
+      // Modo formulario: aplicamos directamente (no guardamos aún)
+      handleChange('foto', resized);
+    } else {
+      // Modo modal: lo dejamos en temp y mostramos botón Guardar (guardado directo)
+      setTempPhoto(resized);
+    }
+  }
+
+  function openPhotoModal() {
+    setTempPhoto(undefined);
+    setPhotoModalOpen(true);
+  }
+  function closePhotoModal() {
+    setTempPhoto(undefined);
+    setPhotoModalOpen(false);
+  }
+
+  // === Guardado DIRECTO de la foto desde el modal ===
+  async function applyTempPhoto() {
+    if (!tempPhoto || photoSaving) return;
+    setPhotoSaving(true);
+    try {
+      const uid = await getAuthUserId();
+      if (!uid) {
+        try { alert('Inicia sesión para actualizar tu foto.'); } catch {}
+        return;
+      }
+
+      // 1) Subimos a Storage
+      const publicUrl = await uploadAvatarAndGetUrl(tempPhoto, uid);
+
+      // 2) Guardamos SOLO la foto en el perfil remoto
+      const updated = await upsertProfile({ foto: publicUrl } as any);
+
+      // 3) Actualizamos UI local
+      setProfile(updated as Profile);
+      setTempPhoto(undefined);
+      setPhotoModalOpen(false);
+      setSavedOpen(true);
+    } catch (e) {
+      console.error('[PerfilPage] error guardando foto', e);
+      try { alert('No se pudo guardar la foto. Intenta de nuevo.'); } catch {}
+    } finally {
+      setPhotoSaving(false);
+    }
+  }
+
+  // Guardado general (texto/números)
+  async function save() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const uid = await getAuthUserId();
+      if (!uid) {
+        try { alert('Inicia sesión para guardar tu perfil.'); } catch {}
+        return;
+      }
+
+      // Si la foto ya es URL http, la dejamos; si es dataURL (subida desde el formulario sin modal), NO forzamos upload aquí.
+      let fotoOut = profile.foto;
+      const looksLikeHttp = typeof fotoOut === 'string' && /^https?:\/\//i.test(fotoOut);
+      if (fotoOut && !looksLikeHttp) {
+        try {
+          fotoOut = await uploadAvatarAndGetUrl(fotoOut, uid);
+        } catch (e) {
+          console.warn('[PerfilPage] subida de avatar (desde form) falló, continuo sin bloquear', e);
+        }
+      }
+
+      const payload: Profile = {
+        ...profile,
+        foto: fotoOut,
+        email: profile.email?.trim().toLowerCase(),
+        instagram: normalizeInstagramLink(profile.instagram),
+        tiktok: profile.tiktok?.trim() || undefined,
+        username: profile.username ? normalizeUsername(profile.username) : undefined,
+        fechaNacimiento: profile.fechaNacimiento || undefined,
+        peso:
+          typeof profile.peso === 'number'
+            ? profile.peso
+            : profile.peso
+            ? Number(profile.peso)
+            : undefined,
+        estatura:
+          typeof profile.estatura === 'number'
+            ? profile.estatura
+            : profile.estatura
+            ? Number(profile.estatura)
+            : undefined,
+      };
+
+      const timeout = new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), 12000));
+      const server = await Promise.race([upsertProfile(payload as any), timeout]);
+
+      setProfile(server as Profile);
+      setSavedOpen(true);
+      setEditing(false);
+    } catch (err: any) {
+      const code = String(err?.code || err?.status || '');
+      const msg  = String(err?.message || '');
+
+      if (code === '23505' || /duplicate|unique/i.test(msg)) {
+        try { alert('Ese nombre de usuario ya está en uso. Prueba con otro.'); } catch {}
+        return;
+      }
+      if (/Network|Failed to fetch|offline|ECONN|ETIMEDOUT|timeout/i.test(msg)) {
+        console.warn('[PerfilPage] red/offline/timeout, no se pudo guardar:', err);
+        try { alert('No hay conexión. Intenta de nuevo más tarde.'); } catch {}
+      } else {
+        console.error('[PerfilPage] error guardando perfil', err);
+        try { alert('Ocurrió un error guardando tu perfil.'); } catch {}
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleLogout() {
+    await logoutAndResetApp('/login');
+  }
+
+  return (
+    <main className="container" style={{ paddingTop: 24, paddingBottom: 24 }}>
+      <div className="flex items-center justify-between">
+        <h2 className="page-title">Perfil</h2>
+        <Link href="/mizona" className="btn secondary">
+          Volver
+        </Link>
+      </div>
+
+      {/* === Estilo tipo "Herramientas": sin card, con separadores === */}
+      <section className="mt-3">
+        {!editing ? (
+          <div className="text-sm">
+            {/* Avatar / cabecera */}
+            <div className="flex items-center gap-3 py-3 border-b" style={{ borderColor: 'var(--line)' }}>
+              <button
+                type="button"
+                onClick={openPhotoModal}
+                className="rounded-full overflow-hidden"
+                title="Ver/editar foto"
+                aria-label="Ver/editar foto"
+                style={{
+                  width: 80,
+                  height: 80,
+                  border: '1px solid var(--line)',
+                  background: '#f7f7f7',
+                  cursor: 'pointer',
+                }}
+              >
+                {profile.foto ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={profile.foto}
+                    alt="Foto de perfil"
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                  />
+                ) : null}
+              </button>
+              <div className="muted">
+                Tu foto de perfil
+                <div className="text-xs">{photoSaving ? 'Guardando foto…' : 'Toca para ampliar / cambiar'}</div>
+              </div>
+              <div className="ml-auto">
+                <button className="btn" onClick={() => setEditing(true)}>Editar</button>
+              </div>
+            </div>
+
+            {/* Filas con separadores */}
+            <Row label="Usuario" value={profile.username || '—'} first />
+            <Row label="Nombre" value={profile.nombre || '—'} />
+            <Row label="Apellidos" value={profile.apellido || '—'} />
+            <Row label="Fecha de nacimiento" value={profile.fechaNacimiento || '—'} />
+            <Row label="Sexo" value={profile.sexo || '—'} />
+            <Row label="Peso (kg)" value={profile.peso ?? '—'} />
+            <Row label="Estatura (cm)" value={profile.estatura ?? '—'} />
+            <Row label="Calorías diarias" value={profile.caloriasDiarias ?? '—'} />
+            <Row
+              label="Instagram"
+              value={profile.instagram ? instagramLabel(profile.instagram) : '—'}
+              link={normalizeInstagramLink(profile.instagram)}
+            />
+            <Row
+              label="TikTok"
+              value={profile.tiktok || '—'}
+              link={profile.tiktok?.startsWith('http') ? profile.tiktok : undefined}
+            />
+            <Row label="Email" value={profile.email || '—'} />
+            <Row label="Teléfono" value={profile.telefono || '—'} />
+          </div>
+        ) : (
+          <form
+            className="text-sm"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void save();
+            }}
+          >
+            {/* Avatar + selector de archivo con overlay de cámara */}
+            <div className="flex items-center gap-3 py-3 border-b" style={{ borderColor: 'var(--line)' }}>
+              <button
+                type="button"
+                onClick={openPhotoModal}
+                className="relative rounded-full overflow-hidden"
+                title="Ver/editar foto"
+                aria-label="Ver/editar foto"
+                style={{
+                  width: 96,
+                  height: 96,
+                  border: '1px solid var(--line)',
+                  background: '#f7f7f7',
+                  cursor: 'pointer',
+                }}
+              >
+                {profile.foto ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={profile.foto}
+                    alt="Foto de perfil"
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                ) : null}
+                <span
+                  className="absolute bottom-1 right-1 rounded-full shadow"
+                  title="Cambiar foto"
+                  aria-label="Cambiar foto"
+                  style={{
+                    background: 'white',
+                    border: '1px solid var(--line)',
+                    width: 32,
+                    height: 32,
+                    display: 'grid',
+                    placeItems: 'center',
+                  }}
+                >
+                  <Camera size={18} />
+                </span>
+              </button>
+
+              <div>
+                <label className="btn secondary" htmlFor="fotoInput">
+                  Subir foto
+                </label>
+                <input
+                  id="fotoInput"
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => onPickFile(e, true)}
+                  className="hidden"
+                />
+                <div className="muted text-xs mt-1">Actualiza tu foto de perfil.</div>
+              </div>
+            </div>
+
+            {/* Campos con separadores */}
+            <Field label="Nombre de usuario">
+              <input
+                className="input text-[16px]"
+                placeholder="tu_usuario"
+                value={profile.username || ''}
+                onChange={(e) => handleChange('username', e.target.value)}
+              />
+            </Field>
+            <Divider />
+
+            <Field label="Nombre">
+              <input
+                className="input text-[16px]"
+                value={profile.nombre || ''}
+                onChange={(e) => handleChange('nombre', e.target.value)}
+              />
+            </Field>
+            <Divider />
+
+            <Field label="Apellidos">
+              <input
+                className="input text-[16px]"
+                value={profile.apellido || ''}
+                onChange={(e) => handleChange('apellido', e.target.value)}
+              />
+            </Field>
+            <Divider />
+
+            <Field label="Fecha de nacimiento">
+              <input
+                type="date"
+                className="input text-[16px]"
+                value={profile.fechaNacimiento || ''}
+                onChange={(e) => handleChange('fechaNacimiento', e.target.value || undefined)}
+              />
+            </Field>
+            <Divider />
+
+            <Field label="Sexo">
+              <select
+                className="input text-[16px]"
+                value={profile.sexo || 'prefiero_no_decirlo'}
+                onChange={(e) => handleChange('sexo', e.target.value as Sex)}
+              >
+                <option value="masculino">Masculino</option>
+                <option value="femenino">Femenino</option>
+                <option value="prefiero_no_decirlo">Prefiero no decirlo</option>
+              </select>
+            </Field>
+            <Divider />
+
+            <Field label="Peso (kg)">
+              <input
+                type="number"
+                min={20}
+                step="0.1"
+                className="input text-[16px]"
+                value={profile.peso ?? ''}
+                onChange={(e) =>
+                  handleChange('peso', e.target.value ? Number(e.target.value) : undefined)
+                }
+              />
+            </Field>
+            <Divider />
+
+            <Field label="Estatura (cm)">
+              <input
+                type="number"
+                min={80}
+                max={250}
+                step={1}
+                className="input text-[16px]"
+                value={profile.estatura ?? ''}
+                onChange={(e) =>
+                  handleChange('estatura', e.target.value ? Number(e.target.value) : undefined)
+                }
+              />
+            </Field>
+            <Divider />
+
+            <Field label="Calorías diarias">
+              <input
+                type="number"
+                min={800}
+                className="input text-[16px]"
+                value={profile.caloriasDiarias ?? ''}
+                onChange={(e) =>
+                  handleChange(
+                    'caloriasDiarias',
+                    e.target.value ? Number(e.target.value) : undefined
+                  )
+                }
+              />
+            </Field>
+            <Divider />
+
+            <Field label="Instagram (URL o @usuario)">
+              <input
+                className="input text-[16px]"
+                placeholder="https://instagram.com/usuario o @usuario"
+                value={profile.instagram || ''}
+                onChange={(e) => handleChange('instagram', e.target.value)}
+              />
+            </Field>
+            <Divider />
+
+            <Field label="TikTok (URL)">
+              <input
+                className="input text-[16px]"
+                placeholder="https://tiktok.com/@usuario"
+                value={profile.tiktok || ''}
+                onChange={(e) => handleChange('tiktok', e.target.value)}
+              />
+            </Field>
+            <Divider />
+
+            <Field label="Email">
+              <input
+                type="email"
+                className="input text-[16px]"
+                value={profile.email || ''}
+                onChange={(e) => handleChange('email', e.target.value)}
+              />
+            </Field>
+            <Divider />
+
+            <Field label="Teléfono">
+              <input
+                className="input text-[16px]"
+                value={profile.telefono || ''}
+                onChange={(e) => handleChange('telefono', e.target.value)}
+              />
+            </Field>
+
+            <div className="flex gap-2 mt-4">
+              <button type="submit" className="btn" disabled={saving}>
+                {saving ? 'Guardando…' : 'Guardar cambios'}
+              </button>
+              <button
+                type="button"
+                className="btn secondary"
+                onClick={() => setEditing(false)}
+                disabled={saving}
+              >
+                Cancelar
+              </button>
+            </div>
+          </form>
+        )}
+      </section>
+
+      {/* Botón Cerrar sesión */}
+      <div className="mt-6">
+        <button
+          type="button"
+          className="btn"
+          onClick={handleLogout}
+          style={{
+            background: '#e10600',
+            color: 'white',
+            border: '1px solid #e10600',
+          }}
+        >
+          Cerrar sesión
+        </button>
+      </div>
+
+      {/* Pop-up de confirmación */}
+      {savedOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50">
+          <div
+            className="bg-white rounded-2xl shadow-xl p-6 text-sm"
+            style={{ width: 'min(90vw, 360px)' }}
+            role="dialog"
+            aria-modal="true"
+          >
+            <p className="font-semibold">Cambios guardados con éxito</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                className="btn"
+                onClick={() => {
+                  setSavedOpen(false);
+                }}
+              >
+                Aceptar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* === Modal de foto === */}
+      {photoModalOpen && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="bg-white rounded-2xl shadow-xl p-4" style={{ width: 'min(92vw, 420px)' }}>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="font-semibold">Foto de perfil</h3>
+              <button
+                type="button"
+                className="p-1 rounded hover:bg-black/5"
+                aria-label="Cerrar"
+                onClick={closePhotoModal}
+                disabled={photoSaving}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div
+              className="rounded-lg overflow-hidden"
+              style={{ border: '1px solid var(--line)', background: '#f7f7f7' }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={tempPhoto || profile.foto || ''}
+                alt="Vista previa de foto"
+                style={{
+                  width: '100%',
+                  height: 280,
+                  objectFit: 'cover',
+                  display: (tempPhoto || profile.foto) ? 'block' : 'none',
+                }}
+              />
+              {!tempPhoto && !profile.foto && (
+                <div className="h-[280px] grid place-items-center text-sm muted">Sin foto</div>
+              )}
+            </div>
+
+            <div className="mt-4 flex gap-2 justify-end">
+              <label className="btn secondary" htmlFor="modalFotoInput">
+                Subir foto
+              </label>
+              <input
+                id="modalFotoInput"
+                ref={modalFileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={(e) => onPickFile(e, false)}
+                className="hidden"
+              />
+
+              <button type="button" className="btn secondary" onClick={closePhotoModal} disabled={photoSaving}>
+                Cerrar
+              </button>
+
+              {tempPhoto && (
+                <button type="button" className="btn" onClick={applyTempPhoto} disabled={photoSaving}>
+                  {photoSaving ? 'Guardando…' : 'Guardar'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </main>
+  );
+}
+
+/* ===== Helpers UI ===== */
+function Row({
+  label,
+  value,
+  link,
+  first,
+}: {
+  label: string;
+  value: React.ReactNode;
+  link?: string;
+  first?: boolean;
+}) {
+  const content = link ? (
+    <a href={link} target="_blank" rel="noreferrer" className="underline break-all">
+      {value}
+    </a>
+  ) : (
+    <span className="break-all">{value}</span>
+  );
+
+  return (
+    <div
+      className={first ? 'flex items-start gap-3 py-3' : 'flex items-start gap-3 py-3 border-t'}
+      style={{ borderColor: 'var(--line)' }}
+    >
+      <div className="muted shrink-0">{label}</div>
+      <div className="ml-auto font-semibold text-right min-w-0">{content}</div>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block py-3">
+      <span className="text-xs font-medium">{label}</span>
+      <div className="mt-1">{children}</div>
+    </label>
+  );
+}
+
+function Divider() {
+  return <div className="border-t" style={{ borderColor: 'var(--line)' }} />;
+}
+
+/* ===== Utils: lectura/resize imagen ===== */
+function readFileAsDataURL(file: File): Promise<string> {
+  return new Promise((res, rej) => {
+    const reader = new FileReader();
+    reader.onload = () => res(String(reader.result || ''));
+    reader.onerror = rej;
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * Redimensiona un dataURL a que su lado mayor sea <= maxSize (p.ej. 200 px).
+ * Mantiene proporciones. Devuelve dataURL PNG.
+ */
+function resizeImageDataURL(dataURL: string, maxSize: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const { width, height } = img;
+      const scale = Math.min(1, maxSize / Math.max(width, height)); // no ampliamos
+      const newW = Math.max(1, Math.round(width * scale));
+      const newH = Math.max(1, Math.round(height * scale));
+
+      const canvas = document.createElement('canvas');
+      canvas.width = newW;
+      canvas.height = newH;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        reject(new Error('No canvas context'));
+        return;
+      }
+      ctx.drawImage(img, 0, 0, newW, newH);
+      try {
+        const out = canvas.toDataURL('image/png');
+        resolve(out);
+      } catch (e) {
+        reject(e as Error);
+      }
+    };
+    img.onerror = reject;
+    img.src = dataURL;
+  });
+}

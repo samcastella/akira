@@ -1,0 +1,1185 @@
+'use client';
+
+import { useEffect, useMemo, useRef, useState } from 'react';
+import Image from 'next/image';
+import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabaseClient';
+import {
+  UserProfile,
+  estimateCalories,
+  upsertProfile,
+  loadUser,
+  LS_USER_KEY,
+} from '@/lib/user';
+import { Rocket, ArrowLeft, CheckCircle2, Eye, EyeOff } from 'lucide-react';
+import { getCopy } from '@/lib/copy';
+import { detectLocale } from '@/lib/locale';
+
+type Step = 1 | 2 | 3 | 4 | 5;
+type Sex = 'masculino' | 'femenino' | 'prefiero_no_decirlo';
+type Act = 'sedentario' | 'ligero' | 'moderado' | 'intenso';
+
+type FormUser = UserProfile;
+type Mode = 'register' | 'login';
+
+type Props = {
+  onClose?: () => void;
+  initialStep?: Step;
+  prefill?: Partial<FormUser>;
+  initialMode?: Mode;
+  redirectTo?: string;
+};
+
+const LS_SEEN_AUTH = 'akira_seen_auth_v1';
+
+/** URL absoluta a /auth/callback con ?redirect=... (cliente/servidor) */
+function authRedirectTo(target: string = '/mizona'): string {
+  const build = (base: string) =>
+    `${base.replace(/\/$/, '')}/auth/callback?redirect=${encodeURIComponent(target)}`;
+
+  if (typeof window !== 'undefined') {
+    return build(window.location.origin);
+  }
+  const envBase =
+    (process.env.NEXT_PUBLIC_SITE_URL || '').trim() ||
+    (process.env.NEXT_PUBLIC_VERCEL_URL
+      ? (process.env.NEXT_PUBLIC_VERCEL_URL.startsWith('http')
+          ? process.env.NEXT_PUBLIC_VERCEL_URL
+          : `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`) as string
+      : '');
+  return build(envBase || '');
+}
+
+/** calcula edad (años) a partir de yyyy-mm-dd */
+function ageFromDOB(dob?: string): number | undefined {
+  if (!dob) return undefined;
+  const d = new Date(dob);
+  if (isNaN(+d)) return undefined;
+  const today = new Date();
+  let age = today.getFullYear() - d.getFullYear();
+  const m = today.getMonth() - d.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < d.getDate())) age--;
+  return age >= 0 ? age : undefined;
+}
+
+/** Marca onboardingDone en LS sin emitir evento */
+function setOnboardingDoneSilent() {
+  try {
+    const prev = loadUser() as any;
+    const next = { ...(prev || {}), onboardingDone: true };
+    localStorage.setItem(LS_USER_KEY, JSON.stringify(next));
+  } catch {}
+}
+
+export default function RegistrationModal({
+  onClose,
+  initialStep = 1,
+  prefill,
+  initialMode = 'register',
+  redirectTo = '/mizona',
+}: Props) {
+  const router = useRouter();
+
+  // i18n
+  const locale = detectLocale();
+  const copy = getCopy(locale);
+
+  const [mode, setMode] = useState<Mode>(initialMode);
+  const [step, setStep] = useState<Step>(initialStep);
+  const [user, setUser] = useState<FormUser>({
+    username: prefill?.username ?? '',
+    nombre: prefill?.nombre ?? '',
+    apellido: prefill?.apellido ?? '',
+    email: prefill?.email ?? '',
+    telefono: prefill?.telefono ?? '',
+    sexo: prefill?.sexo ?? 'prefiero_no_decirlo',
+    actividad: prefill?.actividad ?? 'sedentario',
+    fechaNacimiento: prefill?.fechaNacimiento,
+    edad: prefill?.edad,
+    estatura: prefill?.estatura,
+    peso: prefill?.peso,
+    caloriasDiarias: prefill?.caloriasDiarias,
+  });
+
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [showPass, setShowPass] = useState(false);
+  const [showPassConfirm, setShowPassConfirm] = useState(false);
+
+  const [loading, setLoading] = useState(false);
+  const [savingPersonalize, setSavingPersonalize] = useState(false);
+  const [finishing, setFinishing] = useState(false);
+
+  const [err, setErr] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+
+  // === Scroll fixes ===
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Refs a inputs de contraseña (fix iOS/Safari)
+  const passRef = useRef<HTMLInputElement>(null);
+  const confirmRef = useRef<HTMLInputElement>(null);
+
+  // Validación para “Calcular” (faltan datos)
+  const [missing, setMissing] = useState<{ fechaNacimiento: boolean; estatura: boolean; peso: boolean }>({
+    fechaNacimiento: false,
+    estatura: false,
+    peso: false,
+  });
+
+  // ---------- Username availability state ----------
+  const [usernameStatus, setUsernameStatus] =
+    useState<'idle' | 'checking' | 'free' | 'taken' | 'error'>('idle');
+
+  // Helpers
+  function handleChange<K extends keyof FormUser>(key: K, value: FormUser[K]) {
+    setUser((prev) => ({ ...prev, [key]: value }));
+  }
+  const normalizedEmail = (user.email || '').trim().toLowerCase();
+  const normalizeUsername = (u: string) =>
+    u.trim().replace(/^@+/, '').toLowerCase().replace(/\s+/g, '');
+
+  // 1) Reset scroll + limpiar mensajes y volver a ocultar contraseñas al cambiar de paso o modo
+  useEffect(() => {
+    try {
+      scrollRef.current?.scrollTo({ top: 0, behavior: 'auto' });
+    } catch {}
+    setErr(null);
+    setInfo(null);
+    setShowPass(false);
+    setShowPassConfirm(false);
+  }, [mode, step]);
+
+  // 2) Lock del scroll del body (simple) mientras el modal está abierto
+  useEffect(() => {
+    const body = document.body;
+    const prevOverflow = body.style.overflow;
+    body.style.overflow = 'hidden';
+    return () => {
+      body.style.overflow = prevOverflow;
+    };
+  }, []);
+
+  // 3) Comprobación debounced del username en public_profiles
+  useEffect(() => {
+    if (mode !== 'register' || step !== 2) return;
+
+    const raw = user.username ?? '';
+    theVal: {
+      const val = normalizeUsername(raw);
+      if (!val) {
+        setUsernameStatus('idle');
+        break theVal;
+      }
+      setUsernameStatus('checking');
+      const t = setTimeout(async () => {
+        try {
+          const { data, error } = await supabase
+            .from('public_profiles')
+            .select('user_id')
+            .eq('username', val)
+            .limit(1)
+            .maybeSingle();
+
+          if (error && !/No rows/i.test(error.message)) {
+            setUsernameStatus('error');
+            return;
+          }
+          setUsernameStatus(data ? 'taken' : 'free');
+        } catch {
+          setUsernameStatus('error');
+        }
+      }, 400);
+      return () => clearTimeout(t);
+    }
+  }, [user.username, mode, step]);
+
+  // Validación del paso 2
+  const canNextForm = useMemo(() => {
+    const okBasics =
+      !!user.username?.trim() &&
+      !!user.nombre?.trim() &&
+      !!user.apellido?.trim() &&
+      !!normalizedEmail &&
+      usernameStatus !== 'taken';
+
+    const passLen = password.length >= 6;
+    const match = password === confirm;
+    return okBasics && passLen && match;
+  }, [user.username, user.nombre, user.apellido, normalizedEmail, password, confirm, usernameStatus]);
+
+  const passError = useMemo(() => {
+    if (!password && !confirm) return '';
+    if (password.length < 6) return 'La contraseña debe tener al menos 6 caracteres.';
+    if (password !== confirm) return 'Las contraseñas no coinciden.';
+    return '';
+  }, [password, confirm]);
+
+  /** Guarda métricas en local y, best-effort, en Supabase. */
+  function persistBodyMetrics(extra?: Partial<FormUser>, opts?: { silent?: boolean }) {
+    const merged: Partial<FormUser> = {
+      sexo: user.sexo,
+      fechaNacimiento: user.fechaNacimiento,
+      edad: user.edad,
+      estatura: user.estatura,
+      peso: user.peso,
+      actividad: user.actividad,
+      caloriasDiarias: user.caloriasDiarias,
+      ...(extra ?? {}),
+    };
+
+    if (opts?.silent) {
+      try {
+        const prev = loadUser();
+        const next = { ...prev, ...merged };
+        localStorage.setItem(LS_USER_KEY, JSON.stringify(next));
+      } catch {}
+    } else {
+      void upsertProfile(merged as UserProfile);
+    }
+
+    // Best-effort a Supabase (no afecta al modal)
+    (async () => {
+      try {
+        const { data: u } = await supabase.auth.getUser();
+        const uid = u.user?.id;
+        if (!uid) return;
+
+        const derivedAge = merged.edad ?? ageFromDOB(merged.fechaNacimiento);
+
+        await supabase
+          .from('public_profiles')
+          .update({
+            sexo: merged.sexo ?? null,
+            edad: derivedAge ?? null,
+            estatura: merged.estatura ?? null,
+            peso: merged.peso ?? null,
+            calorias_diarias: merged.caloriasDiarias ?? null,
+            fecha_nacimiento: merged.fechaNacimiento ?? null,
+            telefono: user.telefono ?? null,
+          })
+          .eq('user_id', uid);
+      } catch {}
+    })();
+  }
+
+  function handleAutoCalories() {
+    try {
+      const est = estimateCalories?.(user);
+      if (est) {
+        setMissing({ fechaNacimiento: false, estatura: false, peso: false });
+        setUser((p) => ({ ...p, caloriasDiarias: est }));
+        return;
+      }
+    } catch {}
+
+    const derivedAge = user.edad ?? ageFromDOB(user.fechaNacimiento);
+
+    const nextMissing = {
+      fechaNacimiento: derivedAge == null,
+      estatura: user.estatura == null,
+      peso: user.peso == null,
+    };
+
+    setMissing(nextMissing);
+    if (nextMissing.fechaNacimiento || nextMissing.estatura || nextMissing.peso) return;
+
+    const sexAdj = user.sexo === 'masculino' ? 5 : user.sexo === 'femenino' ? -161 : 0;
+
+    const base =
+      10 * (user.peso ?? 0) +
+      6.25 * (user.estatura ?? 0) -
+      5 * (derivedAge ?? 0) +
+      sexAdj;
+
+    const activityFactor: Record<Act, number> = {
+      sedentario: 1.2,
+      ligero: 1.375,
+      moderado: 1.55,
+      intenso: 1.725,
+    };
+
+    const factor = activityFactor[(user.actividad ?? 'sedentario') as Act];
+    const tdee = Math.round(base * factor);
+
+    setUser((p) => ({ ...p, caloriasDiarias: tdee }));
+  }
+
+  // ——— OAuth desactivado temporalmente ———
+  function oauthSoon() {
+    setErr(null);
+    setInfo('Opción todavía no disponible');
+    try {
+      alert('Opción todavía no disponible');
+    } catch {}
+    window.setTimeout(() => setInfo(null), 2500);
+  }
+
+  // ——— Registro por email (con confirmación) ———
+  async function submitEmailForm(e: React.FormEvent) {
+    e.preventDefault();
+    setErr(null);
+    setInfo(null);
+    if (!canNextForm || passError || usernameStatus === 'taken') return;
+
+    setLoading(true);
+    let safety: any;
+    try {
+      const normalizedUsername = normalizeUsername(user.username || '');
+
+      safety = setTimeout(() => {
+        setLoading(false);
+        setErr('La solicitud está tardando demasiado. Revisa tu conexión e inténtalo de nuevo.');
+      }, 12000);
+
+      const { data, error } = await supabase.auth.signUp({
+        email: normalizedEmail,
+        password,
+        options: {
+          emailRedirectTo: authRedirectTo(redirectTo),
+          data: { nombre: user.nombre ?? '', apellido: user.apellido ?? '' },
+        },
+      });
+
+      if (error) throw new Error(error.message || 'No se pudo crear la cuenta.');
+
+      // Guardar básicos en local (no requiere sesión)
+      try {
+        const prev = loadUser();
+        const nextLocal = {
+          ...prev,
+          username: normalizedUsername || undefined,
+          nombre: user.nombre,
+          apellido: user.apellido,
+          email: normalizedEmail,
+          telefono: (user.telefono || '').trim() || undefined,
+        };
+        localStorage.setItem(LS_USER_KEY, JSON.stringify(nextLocal));
+      } catch {}
+
+      // Si por configuración hubiese sesión inmediata, enviamos a callback para fijar cookies server-side
+      if (data.session?.user) {
+        try {
+          localStorage.setItem(LS_SEEN_AUTH, '1');
+        } catch {}
+        onClose?.();
+        window.location.assign(authRedirectTo(redirectTo));
+        return;
+      }
+
+      // Si no hay sesión inmediata → paso de verificación
+      setInfo('Te hemos enviado un correo para confirmar tu email. Ábrelo desde este dispositivo y toca el enlace.');
+      setStep(3);
+    } catch (e: any) {
+      setErr(e?.message || 'No se pudo completar el registro.');
+    } finally {
+      clearTimeout(safety);
+      setLoading(false);
+    }
+  }
+
+  // ——— Login por email ———
+  const canLogin = useMemo(() => !!normalizedEmail && password.length >= 6, [normalizedEmail, password]);
+
+  async function submitLogin(e: React.FormEvent) {
+    e.preventDefault();
+    setErr(null);
+    setInfo(null);
+    if (!canLogin) return;
+
+    setLoading(true);
+
+    // Timeout de seguridad: evita spinner infinito
+    const safety = setTimeout(() => {
+      setLoading(false);
+      setErr('La solicitud está tardando demasiado. Revisa tu conexión e inténtalo de nuevo.');
+    }, 12000);
+
+    try {
+      const { error: signErr } = await supabase.auth.signInWithPassword({
+        email: normalizedEmail,
+        password,
+      });
+
+      if (signErr) {
+        const msg = (signErr as any)?.message?.toLowerCase?.() || '';
+        if (msg.includes('email not confirmed') || msg.includes('not confirmed')) {
+          setErr('Tu email no está verificado. Te hemos reenviado el correo de verificación.');
+          try {
+            await supabase.auth.resend({
+              type: 'signup',
+              email: normalizedEmail,
+              options: { emailRedirectTo: authRedirectTo(redirectTo) },
+            });
+            setInfo('Revisa tu bandeja y sigue el enlace para activar tu cuenta.');
+          } catch {}
+          clearTimeout(safety);
+          setLoading(false);
+          return;
+        }
+        if (msg.includes('invalid login') || msg.includes('invalid credentials')) {
+          setErr('Email o contraseña incorrectos.');
+        } else {
+          setErr((signErr as any).message || 'No se pudo iniciar sesión.');
+        }
+        clearTimeout(safety);
+        setLoading(false);
+        return;
+      }
+
+      // ✅ ÉXITO (login por contraseña): sincroniza cookies en servidor y recarga final
+
+// 1) Espera breve hasta que la sesión tenga tokens (algunos navegadores tardan unos ms)
+let at: string | undefined;
+let rt: string | undefined;
+for (let i = 0; i < 8; i++) {
+  const { data } = await supabase.auth.getSession();
+  at = data.session?.access_token;
+  rt = data.session?.refresh_token;
+  if (at && rt) break;
+  await new Promise((r) => setTimeout(r, 120));
+}
+
+// 2) Enviar tokens al servidor para fijar la cookie httpOnly sb-*-auth-token
+if (at && rt) {
+  try {
+    const resp = await fetch('/auth/set', {
+      method: 'POST',
+      credentials: 'include',
+      cache: 'no-store',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ access_token: at, refresh_token: rt }),
+    });
+    if (!resp.ok) {
+      // No bloqueamos el flujo por esto, pero lo dejamos logueado
+      console.warn('[auth/set] server did not accept tokens', await resp.json().catch(() => ({})));
+    } else {
+      // pequeño margen para aplicar Set-Cookie en el navegador
+      await new Promise((r) => setTimeout(r, 80));
+    }
+  } catch (e) {
+    console.warn('[auth/set] fetch failed', e);
+    // seguimos igualmente; la navegación puede no llevar la cookie si esto falla
+  }
+} else {
+  console.warn('[login] tokens not available yet; proceeding without /auth/set');
+}
+
+// 3) Recarga dura a la ruta final (para que el server ya reciba la cookie httpOnly)
+onClose?.();
+window.location.assign(redirectTo || '/mizona');
+return;
+
+    } catch (e: any) {
+      console.warn('[login] unexpected error', e);
+      setErr(e?.message || 'No se pudo iniciar sesión. Inténtalo de nuevo.');
+    } finally {
+      clearTimeout(safety);
+      setLoading(false);
+    }
+  }
+
+  async function sendRecovery() {
+    setErr(null);
+    setInfo(null);
+    if (!normalizedEmail) {
+      setErr('Introduce tu email para enviarte el enlace de recuperación.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const origin =
+        typeof window !== 'undefined'
+          ? window.location.origin.replace(/\/$/, '')
+          : (process.env.NEXT_PUBLIC_SITE_URL || '').replace(/\/$/, '');
+      const recoveryUrl = `${origin}/auth/recovery`;
+
+      const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+        redirectTo: recoveryUrl, // ← nueva ruta de recuperación
+      });
+      if (error) throw error;
+
+      setInfo('Te hemos enviado un correo con el enlace para recuperar tu contraseña.');
+    } catch (e: any) {
+      setErr(e?.message || 'No se pudo enviar el enlace de recuperación.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function resendVerification() {
+    setErr(null);
+    setInfo(null);
+    const email = normalizedEmail;
+    if (!email) {
+      setErr('Introduce tu email para reenviar la verificación.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email,
+        options: { emailRedirectTo: authRedirectTo(redirectTo) },
+      });
+      if (error) throw error;
+      setInfo('Te hemos reenviado el correo de verificación. Revisa tu bandeja.');
+    } catch (e: any) {
+      setErr(e?.message || 'No se pudo reenviar el correo de verificación.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function goToPersonalize() {
+    setStep(4);
+  }
+
+  function savePersonalizeAndNext(e: React.FormEvent) {
+    e.preventDefault();
+    if (savingPersonalize) return;
+    setSavingPersonalize(true);
+    try {
+      // Guardamos en local/Supabase SIN evento → no se cierra el modal
+      persistBodyMetrics(undefined, { silent: true });
+      setStep(5);
+    } finally {
+      setSavingPersonalize(false);
+    }
+  }
+
+  function finish() {
+    if (finishing) return;
+    setFinishing(true);
+
+    // Permitir terminar aunque falten métricas
+    try {
+      setOnboardingDoneSilent(); // marca onboardingDone en local
+      localStorage.setItem(LS_SEEN_AUTH, '1');
+    } catch {}
+
+    onClose?.();
+    setTimeout(() => {
+      router.replace(redirectTo || '/mizona');
+    }, 0);
+  }
+
+  function goLogin() {
+    setMode('login');
+    setErr(null);
+    setInfo(null);
+    setPassword('');
+    setConfirm('');
+  }
+
+  // === Toggles iOS-safe ===
+  function toggleShowPass() {
+    setShowPass((prev) => {
+      const next = !prev;
+      requestAnimationFrame(() => {
+        const el = passRef.current;
+        if (el) try { el.setAttribute('type', next ? 'text' : 'password'); } catch {}
+      });
+      return next;
+    });
+  }
+  function toggleShowPassConfirm() {
+    setShowPassConfirm((prev) => {
+      const next = !prev;
+      requestAnimationFrame(() => {
+        const el = confirmRef.current;
+        if (el) try { el.setAttribute('type', next ? 'text' : 'password'); } catch {}
+      });
+      return next;
+    });
+  }
+
+  // límites de la fecha (no menores de 5 años)
+  const minISO = '1900-01-01';
+  const fiveYearsAgo = new Date();
+  fiveYearsAgo.setFullYear(fiveYearsAgo.getFullYear() - 5);
+  const maxISO = fiveYearsAgo.toISOString().slice(0, 10);
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60">
+      <div
+        className="bg-white w-[70vw] max-w-2xl mx-4 rounded-2xl shadow-xl text-sm flex flex-col max-h-[85svh] overflow-hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="reg-title"
+      >
+        {/* Cabecera */}
+        <div className="relative w-full h-[160px] sm:h-[200px]">
+          <Image
+            src="/Intro.png"
+            alt=""
+            fill
+            priority
+            sizes="(max-width: 768px) 100vw, 640px"
+            className="object-cover"
+          />
+        </div>
+
+        <div className="p-6 pb-3 flex items-center justify-between">
+          <h2 id="reg-title" className="text-base font-bold">
+            {mode === 'login' ? 'Iniciar sesión' : 'Registro'}
+          </h2>
+
+          {mode === 'register' && (
+            <div className="flex items-center gap-2 text-[10px]">
+              <StepDot active={step >= 1} />
+              <StepDot active={step >= 2} />
+              <StepDot active={step >= 3} />
+              <StepDot active={step >= 4} />
+              <StepDot active={step >= 5} />
+            </div>
+          )}
+        </div>
+
+        <div
+          ref={scrollRef}
+          className="px-6 pb-6 overflow-y-auto"
+          style={{ overscrollBehavior: 'contain' }}
+        >
+          {/* ======== LOGIN MODE ======== */}
+          {mode === 'login' && (
+            <div className="space-y-4">
+              <div>
+                <p className="text-base font-extrabold mb-1">¡Bienvenid@ de nuevo!</p>
+                <p className="text-xs text-gray-600">
+                  Ya tienes una cuenta creada con este mail. Entra con tu cuenta para continuar o
+                  solicita recuperar la contraseña.
+                </p>
+              </div>
+
+              {/* OAuth → pop-up */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <button
+                  type="button"
+                  onClick={oauthSoon}
+                  className="w-full btn secondary !bg-white !text-black !border !border-gray-300 inline-flex items-center justify-center gap-2"
+                >
+                  <Image src="/google.png" alt="" width={16} height={16} className="shrink-0" />
+                  Entrar con Google
+                </button>
+                <button
+                  type="button"
+                  onClick={oauthSoon}
+                  className="w-full btn secondary !bg-black !text-white inline-flex items-center justify-center gap-2"
+                >
+                  <Image src="/apple.png" alt="" width={16} height={16} className="shrink-0" />
+                  Entrar con Apple
+                </button>
+              </div>
+
+              <form onSubmit={submitLogin} className="space-y-3 pt-1">
+                <label className="block text-xs">
+                  <span className="font-medium">Email</span>
+                  <input
+                    type="email"
+                    autoComplete="email"
+                    className="mt-1 input text-[16px]"
+                    value={user.email ?? ''}
+                    onChange={(e) => handleChange('email', e.target.value)}
+                    required
+                  />
+                </label>
+
+                <label className="block text-xs">
+                  <span className="font-medium">Contraseña</span>
+                  <div className="relative">
+                    <input
+                      type={showPass ? 'text' : 'password'}
+                      autoComplete="current-password"
+                      className="mt-1 input text-[16px] w-full pr-10"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                    />
+                    <button
+                      type="button"
+                      aria-pressed={showPass}
+                      onClick={() => setShowPass((v) => !v)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 opacity-70 hover:opacity-100"
+                      aria-label={showPass ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                    >
+                      {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={sendRecovery}
+                    className="mt-1 text-[11px] underline underline-offset-2"
+                  >
+                    He olvidado mi contraseña
+                  </button>
+                </label>
+
+                {err && <p className="text-[11px] text-red-600">{err}</p>}
+                {info && <p className="text-[11px] text-amber-700">{info}</p>}
+
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setMode('register')}
+                    className="btn secondary inline-flex items-center whitespace-nowrap"
+                  >
+                    <ArrowLeft size={16} className="mr-1" />
+                    Atrás
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!canLogin || loading}
+                    className="btn disabled:opacity-50"
+                  >
+                    {loading ? 'Entrando…' : 'Entrar'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* ======== REGISTRATION MODE ======== */}
+          {mode === 'register' && (
+            <>
+              {step === 1 && (
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-base font-extrabold mb-1">¡Bienvenid@ a Build your Habits!</p>
+                    <p className="text-xs text-gray-600">Elige cómo quieres registrarte.</p>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={oauthSoon}
+                      className="w-full btn secondary !bg-white !text-black !border !border-gray-300 inline-flex items-center justify-center gap-2"
+                    >
+                      <Image src="/google.png" alt="" width={16} height={16} className="shrink-0" />
+                      Continuar con Google
+                    </button>
+                    <button
+                      type="button"
+                      onClick={oauthSoon}
+                      className="w-full btn secondary !bg-black !text-white inline-flex items-center justify-center gap-2"
+                    >
+                      <Image src="/apple.png" alt="" width={16} height={16} className="shrink-0" />
+                      Continuar con Apple
+                    </button>
+                  </div>
+
+                  <div className="pt-2 grid gap-2 sm:grid-cols-2">
+                    <button type="button" onClick={() => setStep(2)} className="btn w-full">
+                      Regístrate ahora
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMode('login')}
+                      className="btn secondary w-full"
+                    >
+                      Ya tengo cuenta
+                    </button>
+                  </div>
+
+                  {err && <p className="text-[11px] text-red-600">{err}</p>}
+                  {info && <p className="text-[11px] text-amber-700">{info}</p>}
+                </div>
+              )}
+
+              {step === 2 && (
+                <form onSubmit={submitEmailForm} className="space-y-4">
+                  <div>
+                    <p className="text-base font-extrabold mb-1">Regístrate con tu email</p>
+                    <p className="text-xs text-gray-600">
+                      Completa el formulario para crear tu cuenta.
+                    </p>
+                  </div>
+
+                  {/* Username */}
+                  <label className="block text-xs">
+                    <span className="font-medium">Nombre de usuario</span>
+                    <input
+                      className="mt-1 input text-[16px]"
+                      autoComplete="username"
+                      value={user.username ?? ''}
+                      onChange={(e) => handleChange('username', e.target.value)}
+                      required
+                    />
+                    <div className="mt-1" aria-live="polite">
+                      {usernameStatus === 'taken' && (
+                        <p className="text-[11px] text-red-600">
+                          Este nombre de usuario ya está registrado.
+                        </p>
+                      )}
+                      {usernameStatus === 'checking' && (
+                        <p className="text-[11px] text-gray-500">Comprobando…</p>
+                      )}
+                      {usernameStatus === 'free' && !!(user.username || '').trim() && (
+                        <p className="text-[11px] text-green-600 inline-flex items-center gap-1">
+                          <CheckCircle2 size={12} /> Este nombre de usuario está libre
+                        </p>
+                      )}
+                    </div>
+                  </label>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <label className="block text-xs">
+                      <span className="font-medium">Nombre</span>
+                      <input
+                        className="mt-1 input text-[16px]"
+                        value={user.nombre ?? ''}
+                        onChange={(e) => handleChange('nombre', e.target.value)}
+                        required
+                      />
+                    </label>
+                    <label className="block text-xs">
+                      <span className="font-medium">Apellido</span>
+                      <input
+                        className="mt-1 input text-[16px]"
+                        value={user.apellido ?? ''}
+                        onChange={(e) => handleChange('apellido', e.target.value)}
+                        required
+                      />
+                    </label>
+                  </div>
+
+                  <label className="block text-xs">
+                    <span className="font-medium">Email</span>
+                    <input
+                      type="email"
+                      autoComplete="email"
+                      className="mt-1 input text-[16px]"
+                      value={user.email ?? ''}
+                      onChange={(e) => handleChange('email', e.target.value)}
+                      required
+                    />
+                  </label>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <label className="block text-xs">
+                      <span className="font-medium">Contraseña</span>
+                      <div className="relative">
+                        <input
+                          key={`pass-${showPass ? 't' : 'p'}`}
+                          ref={passRef}
+                          type={showPass ? 'text' : 'password'}
+                          name="new-password"
+                          autoComplete="new-password"
+                          className="mt-1 input text-[16px] w-full pr-10"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          required
+                        />
+                        <button
+                          type="button"
+                          aria-pressed={showPass}
+                          onClick={() => {
+                            setShowPass((v) => !v);
+                            requestAnimationFrame(() => {
+                              const el = passRef.current;
+                              if (el) try { el.setAttribute('type', !showPass ? 'text' : 'password'); } catch {}
+                            });
+                          }}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 opacity-70 hover:opacity-100"
+                          aria-label={showPass ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                        >
+                          {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </button>
+                      </div>
+                    </label>
+
+                    <label className="block text-xs">
+                      <span className="font-medium">Repetir contraseña</span>
+                      <div className="relative">
+                        <input
+                          key={`passc-${showPassConfirm ? 't' : 'p'}`}
+                          ref={confirmRef}
+                          type={showPassConfirm ? 'text' : 'password'}
+                          name="new-password-confirm"
+                          autoComplete="new-password"
+                          className="mt-1 input text-[16px] w-full pr-10"
+                          value={confirm}
+                          onChange={(e) => setConfirm(e.target.value)}
+                          required
+                        />
+                        <button
+                          type="button"
+                          aria-pressed={showPassConfirm}
+                          onClick={() => {
+                            setShowPassConfirm((v) => !v);
+                            requestAnimationFrame(() => {
+                              const el = confirmRef.current;
+                              if (el) try { el.setAttribute('type', !showPassConfirm ? 'text' : 'password'); } catch {}
+                            });
+                          }}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 opacity-70 hover:opacity-100"
+                          aria-label={
+                            showPassConfirm ? 'Ocultar contraseña' : 'Mostrar contraseña'
+                          }
+                        >
+                          {showPassConfirm ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </button>
+                      </div>
+                    </label>
+                  </div>
+
+                  {passError && <p className="text-[11px] text-red-600">{passError}</p>}
+
+                  <label className="block text-xs">
+                    <span className="font-medium">Teléfono (opcional)</span>
+                    <input
+                      className="mt-1 input text-[16px]"
+                      value={user.telefono ?? ''}
+                      onChange={(e) => handleChange('telefono', e.target.value)}
+                    />
+                  </label>
+
+                  {err && <p className="text-[11px] text-red-600">{err}</p>}
+                  {info && <p className="text-[11px] text-amber-700">{info}</p>}
+
+                  <div className="flex gap-2 justify-between flex-nowrap">
+                    <button
+                      type="button"
+                      onClick={() => setStep(1)}
+                      className="btn secondary whitespace-nowrap inline-flex items-center"
+                    >
+                      <ArrowLeft size={16} className="mr-1" /> Atrás
+                    </button>
+                    <div className="flex-1" />
+                    <button
+                      type="submit"
+                      disabled={!canNextForm || !!passError || loading}
+                      className="btn disabled:opacity-50 whitespace-nowrap"
+                    >
+                      {loading ? 'Creando cuenta…' : 'Continuar'}
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {step === 3 && (
+                <div className="py-6 space-y-4 text-center">
+                  <div className="flex justify-center">
+                    <CheckCircle2 size={56} />
+                  </div>
+                  <h3 className="text-lg font-bold">Tu registro ha sido creado con éxito</h3>
+
+                  <p className="text-xs text-gray-600 max-w-sm mx-auto">
+                    Este email no está verificado.
+                    <button
+                      type="button"
+                      onClick={resendVerification}
+                      disabled={loading}
+                      className="ml-1 underline underline-offset-2"
+                    >
+                      {loading ? 'Enviando…' : 'Verificar ahora'}
+                    </button>
+                  </p>
+
+                  {err && <p className="text-[11px] text-red-600">{err}</p>}
+                  {info && <p className="text-[11px] text-amber-700">{info}</p>}
+
+                  <div className="flex justify-center">
+                    <button onClick={goToPersonalize} className="btn whitespace-nowrap">
+                      Continuar
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {step === 4 && (
+                <form onSubmit={savePersonalizeAndNext} className="space-y-4">
+                  <div>
+                    <p className="text-sm font-semibold">Vamos a personalizar tu experiencia</p>
+                    <p className="text-xs text-gray-600">
+                      Estos datos pueden ayudarte a medir los progresos en algunos de nuestros
+                      programas.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <label className="block text-xs">
+                      <span className="font-medium">Sexo</span>
+                      <select
+                        className="mt-1 input text-[16px]"
+                        value={user.sexo ?? 'prefiero_no_decirlo'}
+                        onChange={(e) => handleChange('sexo', e.target.value as Sex)}
+                      >
+                        <option value="masculino">Masculino</option>
+                        <option value="femenino">Femenino</option>
+                        <option value="prefiero_no_decirlo">Prefiero no decirlo</option>
+                      </select>
+                    </label>
+
+                    {/* Sustituye "Edad" por "Fecha de nacimiento" */}
+                    <label className="block text-xs">
+                      <span className="font-medium">Fecha de nacimiento</span>
+                      <input
+                        type="date"
+                        className="mt-1 input text-[16px]"
+                        value={user.fechaNacimiento ?? ''}
+                        min={minISO}
+                        max={maxISO}
+                        onChange={(e) => {
+                          handleChange('fechaNacimiento', e.target.value || undefined);
+                          const derived = ageFromDOB(e.target.value || undefined);
+                          handleChange('edad', derived);
+                          setMissing((m) => ({ ...m, fechaNacimiento: false }));
+                        }}
+                      />
+                      {missing.fechaNacimiento && (
+                        <p className="text-[11px] text-red-600 mt-1">Falta este dato</p>
+                      )}
+                    </label>
+
+                    <label className="block text-xs">
+                      <span className="font-medium">Estatura (cm)</span>
+                      <input
+                        type="number"
+                        min={80}
+                        className="mt-1 input text-[16px]"
+                        value={user.estatura ?? ''}
+                        onChange={(e) => {
+                          handleChange(
+                            'estatura',
+                            e.target.value ? Number(e.target.value) : undefined
+                          );
+                          setMissing((m) => ({ ...m, estatura: false }));
+                        }}
+                      />
+                      {missing.estatura && (
+                        <p className="text-[11px] text-red-600 mt-1">Falta este dato</p>
+                      )}
+                    </label>
+
+                    <label className="block text-xs">
+                      <span className="font-medium">Peso (kg)</span>
+                      <input
+                        type="number"
+                        min={20}
+                        step="0.1"
+                        className="mt-1 input text-[16px]"
+                        value={user.peso ?? ''}
+                        onChange={(e) => {
+                          handleChange('peso', e.target.value ? Number(e.target.value) : undefined);
+                          setMissing((m) => ({ ...m, peso: false }));
+                        }}
+                      />
+                      {missing.peso && (
+                        <p className="text-[11px] text-red-600 mt-1">Falta este dato</p>
+                      )}
+                    </label>
+
+                    <label className="block text-xs">
+                      <span className="font-medium">Actividad</span>
+                      <select
+                        className="mt-1 input text-[16px]"
+                        value={user.actividad ?? 'sedentario'}
+                        onChange={(e) => handleChange('actividad', e.target.value as Act)}
+                      >
+                        <option value="sedentario">Sedentario</option>
+                        <option value="ligero">Ligero (1–3 días/sem)</option>
+                        <option value="moderado">Moderado (3–5 días/sem)</option>
+                        <option value="intenso">Intenso (6–7 días/sem)</option>
+                      </select>
+                    </label>
+
+                    <label className="block text-xs md:col-span-2">
+                      <span className="font-medium">Calorías diarias</span>
+                      <div className="mt-1 flex gap-2">
+                        <input
+                          type="number"
+                          min={800}
+                          className="input text-[16px]"
+                          value={user.caloriasDiarias ?? ''}
+                          onChange={(e) =>
+                            handleChange(
+                              'caloriasDiarias',
+                              e.target.value ? Number(e.target.value) : undefined
+                            )
+                          }
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAutoCalories}
+                          className="btn secondary whitespace-nowrap"
+                        >
+                          Calcular
+                        </button>
+                      </div>
+                    </label>
+                  </div>
+
+                  <p className="text-xs text-gray-600 text-center mt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        persistBodyMetrics(undefined, { silent: true });
+                        setOnboardingDoneSilent();
+                        setStep(5);
+                      }}
+                      className="underline underline-offset-2"
+                    >
+                      Omitir este paso
+                    </button>
+                  </p>
+
+                  <div className="flex justify-end">
+                    <button type="submit" disabled={savingPersonalize} className="btn whitespace-nowrap">
+                      {savingPersonalize ? 'Guardando…' : 'Guardar'}
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {step === 5 && (
+                <div className="space-y-4 text-sm leading-snug">
+                  <p className="font-bold text-center">Bienvenid@ a Build your Habits</p>
+                  <p className="text-gray-700">{copy.auth.welcomeIntro}</p>
+                  <p className="font-medium">Pero tenemos algunas reglas que nos guiarán en el camino:</p>
+                  <ol className="list-decimal pl-5 space-y-2 text-gray-700">
+                    <li>
+                      <strong>Decir siempre la verdad.</strong> Si marcas un hábito como realizado sin
+                      haberlo hecho, al único que engañas es a ti mism@.
+                    </li>
+                    <li>
+                      <strong>Está permitido fallar, pero nunca rendirse.</strong> Si un día no
+                      consigues un reto, tendrás otra oportunidad al día siguiente.
+                    </li>
+                    <li>
+                      <strong>Disfruta del proceso y celebra cada paso.</strong> La constancia es la
+                      clave, y cada avance merece orgullo.
+                    </li>
+                  </ol>
+                  <p className="text-gray-800">
+                    ✨ <strong>Recuerda: eres la suma de tus acciones</strong>
+                  </p>
+
+                  <div className="flex justify-center pt-2">
+                    <button
+                      onClick={finish}
+                      disabled={finishing}
+                      className="btn inline-flex items-center gap-2 disabled:opacity-50"
+                    >
+                      <Rocket size={18} /> {finishing ? 'Cargando…' : 'Vamos a por ello'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StepDot({ active }: { active: boolean }) {
+  return (
+    <span
+      className="inline-block h-2.5 w-2.5 rounded-full"
+      style={{ background: active ? '#000' : '#D1D5DB' }}
+      aria-hidden="true"
+    />
+  );
+}

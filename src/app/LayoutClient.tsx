@@ -1,0 +1,412 @@
+// src/app/LayoutClient.tsx
+'use client';
+
+import { useEffect, useState } from 'react';
+import { usePathname } from 'next/navigation';
+import {
+  loadUser,
+  isUserComplete,
+  LS_FIRST_RUN,
+  LS_USER,
+  pullProfile,
+  syncLocalToRemoteIfMissing,
+  LS_USER_KEY,
+  startUserLibRealtime,
+  stopUserLibRealtime,
+} from '@/lib/user';
+import { supabase, isSupabaseEnvReady } from '@/lib/supabaseClient';
+import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
+import RegistrationModal from '@/components/RegistrationModal';
+import { pullUserPrograms } from '@/lib/programSync';
+
+const LS_SEEN_AUTH = 'akira_seen_auth_v1';
+const LS_LAST_UID = 'akira_last_uid';
+const PROFILE_TIMEOUT_MS = 15000;
+
+// === NUEVO: versión de build para invalidar cachés locales ===
+const BUILD_V = process.env.NEXT_PUBLIC_BUILD_VERSION || 'dev';
+const LS_BUILD_V = 'akira_build_v';
+const SS_BUILD_RELOADED = 'akira_build_reloaded_v';
+
+function canEnter(): boolean {
+  try {
+    const u = loadUser();
+    return isUserComplete(u) || !!(u as any)?.onboardingDone;
+  } catch {
+    return false;
+  }
+}
+
+export default function LayoutClient({
+  children,
+  bottomNav,
+}: {
+  children: React.ReactNode;
+  bottomNav: React.ReactNode;
+}) {
+  const pathname = usePathname();
+  const isAuthRoute = pathname === '/login' || pathname?.startsWith('/auth');
+
+  const [userOk, setUserOk] = useState<boolean | null>(null);
+  const [hasSession, setHasSession] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
+  const [bootSynced, setBootSynced] = useState(false);
+  const [justSignedIn, setJustSignedIn] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showRegistration, setShowRegistration] = useState(false);
+  const [registrationStartStep, setRegistrationStartStep] =
+    useState<1 | 2 | 3 | 4 | 5>(1);
+
+  // === Nuevo: guardamos el UID para el RPC de sugerencias
+  const [uid, setUid] = useState<string | null>(null);
+
+  const SUPA_READY = isSupabaseEnvReady();
+
+  useEffect(() => { setUserOk(canEnter()); }, []);
+  useEffect(() => {
+    const onUserUpdated = () => setUserOk(canEnter());
+    if (typeof window !== 'undefined') {
+      window.addEventListener('akira:user-updated', onUserUpdated);
+      window.addEventListener('storage', onUserUpdated);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('akira:user-updated', onUserUpdated);
+        window.removeEventListener('storage', onUserUpdated);
+      }
+    };
+  }, []);
+
+  // === NUEVO: invalidar cachés locales cuando cambia la versión del build
+  useEffect(() => {
+    try {
+      const last = localStorage.getItem(LS_BUILD_V);
+      const alreadyReloadedForThis = sessionStorage.getItem(SS_BUILD_RELOADED) === BUILD_V;
+
+      if (last !== BUILD_V && !alreadyReloadedForThis) {
+        localStorage.clear();
+        localStorage.setItem(LS_BUILD_V, BUILD_V);
+        sessionStorage.setItem(SS_BUILD_RELOADED, BUILD_V);
+        location.reload();
+      } else if (last !== BUILD_V && alreadyReloadedForThis) {
+        localStorage.setItem(LS_BUILD_V, BUILD_V);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+    return new Promise((resolve, reject) => {
+      const to = setTimeout(() => {
+        console.warn(`[syncAll] ${label} timed out after ${ms}ms`);
+        reject(new Error(`${label} timeout`));
+      }, ms);
+      p.then(
+        (v) => { clearTimeout(to); resolve(v); },
+        (e) => { clearTimeout(to); reject(e); }
+      );
+    });
+  }
+
+  /** ===== Instrumentación de sincronización inicial ===== */
+  async function syncAll() {
+    console.info('[syncAll] start');
+    const t0 = performance.now();
+
+    try {
+      // Perfil
+      console.time('[Supabase] pullProfile');
+      await withTimeout((async () => {
+        try {
+          const remote = await pullProfile();
+          console.timeEnd('[Supabase] pullProfile');
+
+          if (!remote) {
+            console.time('[Supabase] syncLocalToRemoteIfMissing');
+            await syncLocalToRemoteIfMissing();
+            console.timeEnd('[Supabase] syncLocalToRemoteIfMissing');
+          }
+        } catch (e) {
+          console.timeEnd('[Supabase] pullProfile');
+          console.warn('[syncAll] profile err:', e);
+        }
+      })(), PROFILE_TIMEOUT_MS, 'profile');
+
+      // Programas
+      console.time('[Supabase] pullUserPrograms');
+      await withTimeout((async () => {
+        try {
+          await pullUserPrograms();
+        } catch (e) {
+          console.warn('[syncAll] pullUserPrograms err:', e);
+        }
+      })(), PROFILE_TIMEOUT_MS, 'programs');
+      console.timeEnd('[Supabase] pullUserPrograms');
+    } catch (e) {
+      console.warn('[LayoutClient] syncAll wrapper warn:', e);
+    } finally {
+      const dt = Math.round(performance.now() - t0);
+      console.info(`[syncAll] end in ${dt} ms`);
+      if (canEnter()) setUserOk(true);
+      setBootSynced(true);
+    }
+  }
+
+  useEffect(() => {
+    if (!SUPA_READY) {
+      console.warn('[auth] Supabase env no disponible. Se omite initAuth.');
+      setHasSession(false); setAuthReady(true); setBootSynced(true);
+      return;
+    }
+    let cancelled = false;
+
+    async function initAuth() {
+      console.time('[auth] getSession');
+      const { data, error } = await supabase.auth.getSession();
+      console.timeEnd('[auth] getSession');
+      if (error) console.warn('[auth] getSession error:', error);
+      if (cancelled) return;
+
+      const has = !!data.session;
+      try {
+        const sUid = data.session?.user?.id ?? null;
+        setUid(sUid);
+        if (sUid) localStorage.setItem(LS_LAST_UID, sUid);
+        else localStorage.removeItem(LS_LAST_UID);
+      } catch {}
+      setHasSession(has);
+      setAuthReady(true);
+
+      try {
+        window.dispatchEvent(new CustomEvent('akira:auth-changed', {
+          detail: { initial: true, has }
+        }));
+      } catch {}
+
+      if (has) {
+        await syncAll();
+      } else {
+        setBootSynced(true);
+      }
+    }
+
+    void initAuth();
+
+    startUserLibRealtime();
+
+    const { data: sub } = supabase.auth.onAuthStateChange(
+      async (evt: AuthChangeEvent, session: Session | null) => {
+        console.info('[auth] onAuthStateChange –', evt, '–', session?.user?.id ?? null);
+        setHasSession(!!session);
+
+        try {
+          window.dispatchEvent(new CustomEvent('akira:auth-changed', { detail: { evt } }));
+        } catch {}
+
+        try {
+          const sUid = session?.user?.id ?? null;
+          setUid(sUid);
+          if (sUid) localStorage.setItem(LS_LAST_UID, sUid);
+          else localStorage.removeItem(LS_LAST_UID);
+        } catch {}
+
+        if (evt === 'SIGNED_IN') {
+          try {
+            localStorage.setItem(LS_SEEN_AUTH, '1');
+            const raw = localStorage.getItem(LS_USER_KEY);
+            const prev = raw ? JSON.parse(raw) : {};
+            localStorage.setItem(LS_USER_KEY, JSON.stringify({ ...prev, onboardingDone: true }));
+            window.dispatchEvent(new CustomEvent('akira:user-updated'));
+          } catch {}
+          setUserOk(true);
+          setShowAuthModal(false);
+          setShowRegistration(false);
+          setJustSignedIn(true);
+        }
+
+        if (session && (evt === 'SIGNED_IN' || evt === 'TOKEN_REFRESHED' || evt === 'USER_UPDATED')) {
+          console.time('[syncAll] after onAuthStateChange');
+          await syncAll();
+          console.timeEnd('[syncAll] after onAuthStateChange');
+          if (evt === 'SIGNED_IN') setJustSignedIn(false);
+        } else if (evt === 'SIGNED_OUT') {
+          setShowAuthModal(false);
+          setShowRegistration(false);
+          setUserOk(false);
+          setBootSynced(true);
+        } else {
+          if (canEnter()) setUserOk(true);
+        }
+
+        const okNow = canEnter();
+        if (session && !okNow) {
+          type AppMeta = { provider?: string };
+          const provider = (session.user?.app_metadata as AppMeta | undefined)?.provider;
+          const isOAuth = provider && provider !== 'email' && provider !== 'phone';
+          setShowAuthModal(false);
+          setRegistrationStartStep(isOAuth ? 2 : 4);
+          setShowRegistration(true);
+        } else if (!session) {
+          setShowRegistration(false);
+        }
+      }
+    );
+
+    return () => {
+      try { (sub as any)?.subscription?.unsubscribe?.(); } catch {}
+      try { (sub as any)?.unsubscribe?.(); } catch {}
+      stopUserLibRealtime();
+      cancelled = true;
+    };
+  }, [SUPA_READY]);
+
+  // ==== NUEVO: proponer reto diario 1 vez al día (idempotente por date_key) ====
+  useEffect(() => {
+    if (!SUPA_READY) return;
+    if (!uid) return;
+
+    let cancelled = false;
+    const LS_KEY = 'akira_suggestion_last_call_v1';
+
+    async function maybeProposeToday() {
+      try {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const iso = today.toISOString().slice(0, 10);
+
+        const last = localStorage.getItem(LS_KEY);
+        if (last === iso) return;
+
+        await supabase.rpc('propose_suggested_challenge', {
+          p_user_id: uid,
+          p_date: iso,
+          p_frequency: 'daily',
+        });
+
+        if (!cancelled) {
+          localStorage.setItem(LS_KEY, iso);
+        }
+      } catch (e) {
+        console.warn('[suggestions] propose_suggested_challenge failed', e);
+      }
+    }
+
+    void maybeProposeToday();
+
+    return () => { cancelled = true; };
+  }, [SUPA_READY, uid]);
+
+  // Refetch al volver a foco/online (con tiempos)
+  useEffect(() => {
+    if (!SUPA_READY) return;
+    const refetch = async () => {
+      if (!hasSession) return;
+      console.time('[visibility/online] pullProfile');
+      await pullProfile().catch(() => {});
+      console.timeEnd('[visibility/online] pullProfile');
+
+      console.time('[visibility/online] pullUserPrograms');
+      await pullUserPrograms().catch(() => {});
+      console.timeEnd('[visibility/online] pullUserPrograms');
+    };
+    const onVisibility = () => { if (document.visibilityState === 'visible') void refetch(); };
+    window.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('online', refetch);
+    return () => {
+      window.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('online', refetch);
+    };
+  }, [SUPA_READY, hasSession]);
+
+  // Gating y modales
+  useEffect(() => {
+    if (!authReady || userOk === null || !bootSynced) return;
+    const isAuth = isAuthRoute;
+    if (isAuth) { setShowAuthModal(false); setShowRegistration(false); return; }
+    if (!SUPA_READY) { setShowAuthModal(false); setShowRegistration(false); return; }
+    if (userOk) { setShowAuthModal(false); setShowRegistration(false); return; }
+    if (!hasSession) { setShowAuthModal(true); setShowRegistration(false); return; }
+    setShowAuthModal(false); setRegistrationStartStep(4); setShowRegistration(true);
+  }, [authReady, userOk, hasSession, isAuthRoute, bootSynced, SUPA_READY]);
+
+  const gating =
+    mounted && authReady && bootSynced && userOk === false && !isAuthRoute && !justSignedIn;
+
+  const hideNav = pathname === '/bienvenida' || isAuthRoute;
+
+  function handleCloseRegistration() {
+    setShowRegistration(false);
+    if (canEnter()) setUserOk(true);
+  }
+  function handleCloseAuthModal() {
+    setShowAuthModal(false);
+    try { localStorage.setItem(LS_SEEN_AUTH, '1'); } catch {}
+    if (canEnter()) setUserOk(true);
+  }
+
+  const isDev = process.env.NODE_ENV === 'development';
+  function handleDevReset() {
+    try {
+      localStorage.removeItem(LS_FIRST_RUN);
+      localStorage.removeItem(LS_USER);
+      localStorage.removeItem(LS_USER_KEY);
+      localStorage.removeItem(LS_SEEN_AUTH);
+      localStorage.removeItem(LS_LAST_UID);
+    } catch {}
+    location.reload();
+  }
+
+  return (
+    <>
+      {/* Overlays de gating */}
+      {gating && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            style={{
+              backgroundImage: 'url(/splash.jpg)',
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              backgroundRepeat: 'no-repeat',
+            }}
+          />
+          {!hasSession && showAuthModal && (
+            <div className="fixed inset-0 z-50">
+              <RegistrationModal initialStep={1} onClose={handleCloseAuthModal} redirectTo="/mizona" />
+            </div>
+          )}
+          {showRegistration && (
+            <div className="fixed inset-0 z-50">
+              <RegistrationModal
+                onClose={handleCloseRegistration}
+                initialStep={registrationStartStep as any}
+                redirectTo="/mizona"
+              />
+            </div>
+          )}
+          {isDev && (
+            <button
+              onClick={handleDevReset}
+              title="Reset onboarding (solo dev)"
+              className="fixed bottom-4 right-4 z-[70] rounded-full px-3 py-1.5 text-xs font-semibold border border-black bg-white/90 backdrop-blur"
+            >
+              Reset onboarding
+            </button>
+          )}
+        </>
+      )}
+
+      {/* App (sin reservas aquí: las hace #app-main en layout.tsx) */}
+      <div className="bg-[#FAFAFA] overflow-x-hidden">
+        <div className="w-full">{children}</div>
+      </div>
+
+      {/* Bottom nav lo pintamos una vez, sin wrappers extra */}
+      {!hideNav && bottomNav}
+    </>
+  );
+}

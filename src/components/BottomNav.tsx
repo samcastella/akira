@@ -2,56 +2,87 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, ListChecks, User, GraduationCap, Users } from 'lucide-react';
-import { COLORS, NAV_HEIGHT } from '@/lib/constants';
+import { NAV_HEIGHT } from '@/lib/constants';
+
+import {
+  HomeIcon as HomeSolid,
+  PlayCircleIcon as PlaySolid,
+  ChartBarIcon as ChartBarSolid,
+  UsersIcon as UsersSolid,
+} from '@heroicons/react/24/solid';
+
+import {
+  HomeIcon as HomeOutline,
+  PlayCircleIcon as PlayOutline,
+  ChartBarIcon as ChartBarOutline,
+  UsersIcon as UsersOutline,
+} from '@heroicons/react/24/outline';
+
+type Item = {
+  href: string;
+  label: string;
+  outline: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+  solid: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+};
 
 export default function BottomNav() {
   const pathname = usePathname();
 
-  const items = [
-    { href: '/', label: 'Inicio', icon: Home },
-    { href: '/habitos', label: 'Hábitos', icon: ListChecks },
-    { href: '/mizona', label: 'Mi zona', icon: User },
-    { href: '/herramientas', label: 'Herramientas', icon: GraduationCap },
-    { href: '/amigos', label: 'Amigos', icon: Users },
-  ] as const;
+  const items: Item[] = [
+    { href: '/',          label: 'Home',         outline: HomeOutline,     solid: HomeSolid },
+    { href: '/programas', label: 'Programas',    outline: PlayOutline,     solid: PlaySolid },
+    { href: '/mizona',    label: 'Mi actividad', outline: ChartBarOutline, solid: ChartBarSolid },
+    { href: '/amigos',    label: 'Comunidad',    outline: UsersOutline,    solid: UsersSolid },
+  ];
+
+  const INACTIVE = 'text-gray-500';
+  const ACTIVE = 'text-black';
+
+  const isActive = (href: string) =>
+    pathname === href || (href !== '/' && (pathname?.startsWith(href + '/') ?? false));
 
   return (
     <nav
-      className="bottomnav"
+      aria-label="Navegación inferior"
+      role="navigation"
+      className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t"
       style={{
-        // altura incluye el safe-area; SIN padding-bottom aquí
-        height: `calc(${NAV_HEIGHT}px + env(safe-area-inset-bottom, 0px))`,
-        background: COLORS.accent, // amarillo
+        height: `${NAV_HEIGHT}px`,         // altura fija
+        borderColor: 'var(--line)',
+        WebkitTapHighlightColor: 'transparent',
+        touchAction: 'manipulation',
       }}
     >
-      <div className="mx-auto flex h-full w-full max-w-md">
-        {items.map(({ href, label, icon: Icon }) => {
-          const active = pathname === href;
-
-          // estilo de la "píldora"
-          const pillStyle: React.CSSProperties = active
-            ? { background: '#fff', color: COLORS.text }
-            : href === '/mizona'
-            ? { background: COLORS.black, color: '#fff' } // Mi zona negra cuando no está activa
-            : { background: 'transparent', color: COLORS.text };
-
+      <ul
+        className="mx-auto flex h-full w-full max-w-md items-stretch justify-between px-4"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }} // solo padding interno
+      >
+        {items.map(({ href, label, outline: Outline, solid: Solid }) => {
+          const active = isActive(href);
+          const Icon = active ? Solid : Outline;
           return (
-            <Link
-              key={href}
-              href={href}
-              aria-label={label}
-              aria-current={active ? 'page' : undefined}
-              className="bn-item"
-            >
-              <span className="bn-pill" style={pillStyle}>
-                <Icon className="h-5 w-5" />
-                <span className="mt-1 text-[12px] leading-none">{label}</span>
-              </span>
-            </Link>
+            <li key={href} className="flex-1">
+              <Link
+                href={href}
+                aria-current={active ? 'page' : undefined}
+                className={[
+                  'group flex h-full flex-col items-center justify-center gap-1',
+                  active ? ACTIVE : INACTIVE,
+                ].join(' ')}
+              >
+                <Icon
+                  className={[
+                    'h-6 w-6 transition-transform duration-150',
+                    active ? 'scale-105' : 'scale-100',
+                  ].join(' ')}
+                  aria-hidden="true"
+                />
+                <span className="text-[12px] leading-none">{label}</span>
+              </Link>
+            </li>
           );
         })}
-      </div>
+      </ul>
     </nav>
   );
 }

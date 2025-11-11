@@ -1,0 +1,243 @@
+// src/app/mizona/crear-habitos/page.tsx
+'use client';
+
+import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
+import CreateHabitBar from '@/components/habits/CreateHabitBar';
+import HabitForm, { HabitMaster } from '@/components/habits/HabitForm';
+import HabitsCreatedList from '@/components/habits/HabitsCreatedList';
+import { queueMasterUpsert } from '@/lib/useHabitsSupabaseSync'; // ⬅️ NUEVO
+
+/* ===========================
+   Claves de almacenamiento
+   =========================== */
+const LS_HABITS_MASTER = 'akira_habits_master_v1';
+
+/* ===========================
+   Helpers almacenamiento
+   =========================== */
+function loadMasterHabits(): HabitMaster[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(LS_HABITS_MASTER);
+    return raw ? (JSON.parse(raw) as HabitMaster[]) : [];
+  } catch {
+    return [];
+  }
+}
+function saveMasterHabits(list: HabitMaster[]) {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(LS_HABITS_MASTER, JSON.stringify(list));
+}
+const nowIso = () => new Date().toISOString();
+
+/* ===========================
+   Modal base (con scroll interno)
+   =========================== */
+function Modal({
+  open,
+  onClose,
+  title,
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title?: string;
+  children: React.ReactNode;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" aria-modal="true" role="dialog">
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} aria-hidden="true" />
+      <div className="relative z-10 w-[92%] max-w-lg rounded-2xl border border-black/10 bg-white shadow-lg max-h-[85svh] flex flex-col">
+        <div className="flex items-center justify-between gap-4 border-b border-black/10 px-5 py-4 shrink-0">
+          <h2 className="text-lg font-semibold">{title ?? 'Selecciona una opción'}</h2>
+          <button
+            onClick={onClose}
+            className="rounded-full border border-black/10 px-3 py-1 text-sm hover:bg-black/5"
+            aria-label="Cerrar"
+          >
+            Cerrar
+          </button>
+        </div>
+        <div className="px-5 py-4 overflow-y-auto" style={{ overscrollBehavior: 'contain' }}>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ===========================
+   Opciones iniciales (selector)
+   =========================== */
+type PresetKey =
+  | 'custom'
+  | 'ejercicio'
+  | 'paseo'
+  | 'correr'
+  | 'agua'
+  | 'planning'
+  | 'dientes'
+  | 'casa'
+  | 'fruta';
+
+const PRESET_OPTIONS: { key: PresetKey; label: string; icon: string }[] = [
+  { key: 'custom',   label: 'Crear hábito personalizado',      icon: '✨' },
+  { key: 'fruta',    label: 'Comer 1 pieza de fruta',          icon: '🍎' },
+  { key: 'ejercicio',label: 'Hacer ejercicio',                 icon: '🏋️‍♂️' },
+  { key: 'paseo',    label: 'Paseo diario',                    icon: '🚶' },
+  { key: 'correr',   label: 'Correr',                           icon: '🏃' },
+  { key: 'agua',     label: 'Beber 1,5 litros de agua',        icon: '💧' },
+  { key: 'planning', label: 'Hacer mi planning del día',       icon: '🗒️' },
+  { key: 'dientes',  label: 'Cepillarme los dientes',          icon: '🪥' },
+  { key: 'casa',     label: 'Arreglar y ordenar la casa',      icon: '🧹' },
+];
+
+/* ===========================
+   Página
+   =========================== */
+export default function CrearHabitosPage() {
+  const [openSelector, setOpenSelector] = useState(false);
+
+  // Form modal state
+  const [openForm, setOpenForm] = useState(false);
+  const [formPreset, setFormPreset] = useState<PresetKey>('custom');
+  const [editTarget, setEditTarget] = useState<HabitMaster | null>(null);
+
+  const [habits, setHabits] = useState<HabitMaster[]>([]);
+
+  useEffect(() => {
+    // Cargamos TODO para mantener storage consistente,
+    // pero en UI filtramos los que no estén “tombstoned”.
+    const all = loadMasterHabits();
+    setHabits(all.filter((h: any) => !h?.deleted_at));
+  }, []);
+
+  function handleSelectPreset(key: PresetKey) {
+    setOpenSelector(false);
+    setFormPreset(key);
+    setEditTarget(null);
+    setOpenForm(true);
+  }
+
+  function handleCreateOrUpdate(h: HabitMaster) {
+    // sellamos updated_at y encolamos sync
+    const enriched = { ...(h as any), updated_at: nowIso() } as HabitMaster;
+
+    setHabits((prev) => {
+      const prevAll = loadMasterHabits(); // importante: trabajamos sobre el source of truth
+      const idx = prevAll.findIndex((x) => x.id === enriched.id);
+      let nextAll: HabitMaster[];
+      if (idx >= 0) {
+        nextAll = [...prevAll];
+        nextAll[idx] = enriched;
+      } else {
+        nextAll = [enriched, ...prevAll];
+      }
+      saveMasterHabits(nextAll);
+      // UI: solo los no borrados
+      return nextAll.filter((x: any) => !x?.deleted_at);
+    });
+
+    // ➕ sincronización con Supabase
+    try { queueMasterUpsert(enriched as any); } catch {}
+
+    setOpenForm(false);
+    setEditTarget(null);
+  }
+
+  function openEdit(h: HabitMaster) {
+    setEditTarget(h);
+    setFormPreset(((h as any).presetKey as PresetKey) ?? 'custom');
+    setOpenForm(true);
+  }
+
+  function handleDelete(id: string) {
+    const ts = nowIso();
+    // Tombstone en storage (para que se sincronice la baja)
+    const all = loadMasterHabits();
+    const idx = all.findIndex((h) => h.id === id);
+    if (idx >= 0) {
+      const tomb = { ...(all[idx] as any), deleted_at: ts, updated_at: ts };
+      all[idx] = tomb as HabitMaster;
+      saveMasterHabits(all);
+      try { queueMasterUpsert(tomb as any); } catch {}
+    }
+    // UI: lo ocultamos
+    setHabits(all.filter((h: any) => !h?.deleted_at));
+  }
+
+  return (
+    <main className="mx-auto w-full max-w-3xl px-4 py-6">
+      {/* Menú superior persistente */}
+      <nav className="mb-5 flex flex-wrap gap-3">
+        <Link href="/mizona" className="btn" style={{ background: 'white', color: 'black', border: '1px solid var(--line)' }}>
+          Mis hábitos
+        </Link>
+        <Link href="/mizona/crear-habitos" className="btn" style={{ background: 'black', color: 'white', border: '1px solid black' }}>
+          Crear hábitos
+        </Link>
+        <Link href="/mizona/logros" className="btn" style={{ background: 'white', color: 'black', border: '1px solid var(--line)' }}>
+          Logros
+        </Link>
+        <Link href="/mizona/perfil" className="btn" style={{ background: 'white', color: 'black', border: '1px solid var(--line)' }}>
+          Mi perfil
+        </Link>
+      </nav>
+
+      {/* Intro */}
+      <p className="mb-5 text-sm leading-relaxed text-black/70">
+        En esta sección podrás crear hábitos personalizados para incorporarlos a{' '}
+        <span className="font-semibold">Mis hábitos</span> en <span className="font-semibold">Mi Zona</span>.
+      </p>
+
+      {/* Barra (+) Crear hábito */}
+      <CreateHabitBar onClick={() => setOpenSelector(true)} />
+
+      {/* Modal selector de tipo de hábito */}
+      <Modal open={openSelector} onClose={() => setOpenSelector(false)} title="¿Qué tipo de hábito quieres crear?">
+        <div className="flex flex-col">
+          {PRESET_OPTIONS.map((opt) => (
+            <button
+              key={opt.key}
+              onClick={() => handleSelectPreset(opt.key)}
+              className="flex items-center justify-between rounded-xl border border-black/10 px-4 py-3 text-left hover:bg-black/5"
+            >
+              <span className="flex items-center gap-3">
+                <span className="text-xl">{opt.icon}</span>
+                <span className="text-[15px]">{opt.label}</span>
+              </span>
+              <span aria-hidden className="text-black/40">›</span>
+            </button>
+          ))}
+        </div>
+      </Modal>
+
+      {/* Modal formulario */}
+      <Modal
+        open={openForm}
+        onClose={() => { setOpenForm(false); setEditTarget(null); }}
+        title={editTarget ? 'Editar hábito' : 'Crear hábito'}
+      >
+        <HabitForm
+          mode={editTarget ? 'edit' : 'create'}
+          presetKey={formPreset}
+          initial={editTarget ?? undefined}
+          onCancel={() => { setOpenForm(false); setEditTarget(null); }}
+          onSave={handleCreateOrUpdate} // ⬅️ ya encola y sella updated_at
+        />
+      </Modal>
+
+      {/* Hábitos creados */}
+      <section className="mt-8">
+        <h3 className="mb-3 text-base font-semibold">Hábitos creados</h3>
+        <HabitsCreatedList
+          habits={habits}
+          onEdit={openEdit}
+          onDelete={handleDelete}
+        />
+      </section>
+    </main>
+  );
+}
