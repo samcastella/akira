@@ -44,6 +44,19 @@ function addAlpha(hexOrCss: string, alpha: number) {
   return `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, alpha))})`;
 }
 
+// Determina si un color hex es “oscuro” (para poner texto blanco encima)
+function isDark(hex: string): boolean {
+  if (!/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(hex)) return false;
+  const h = hex.replace('#', '');
+  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+  // luminancia relativa perceptual aprox
+  const lum = 0.2126 * (r / 255) + 0.7152 * (g / 255) + 0.0722 * (b / 255);
+  return lum < 0.5;
+}
+
 /* ========= confeti ========= */
 let confettiInstance: any | null = null;
 let confettiCanvas: HTMLCanvasElement | null = null;
@@ -126,9 +139,12 @@ export default function CreateHabitBar(props: Props) {
   if (props.variant === 'task') {
     const { checked, onToggle, onInfo, color, showInfoButton, rightSlot } = props;
     const theme = color || '#F5F5F5';
+
+    // Fondo & texto: cuando está marcado, fondo = color del programa
     const bg = checked ? theme : '#fff';
-    const border = checked ? '#00000080' : addAlpha(theme, 0.4);
-    const text = '#111';
+    const text = checked ? (isDark(theme) ? '#fff' : '#111') : '#111';
+    // Borde suave: si marcado, borde con alpha del propio color; si no, alpha suave del color
+    const border = checked ? addAlpha(theme, 0.55) : addAlpha(theme, 0.4);
 
     const lastXY = useRef<{ x?: number; y?: number }>({});
     const prev = useRef<boolean>(checked);

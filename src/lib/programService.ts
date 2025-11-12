@@ -1,20 +1,17 @@
 // src/lib/programService.ts
 // Servicios para Programas guiados con sincronización Supabase.
-// Fuente de metadatos: src/data/programs.ts
-// Fuente de contenidos detallados: JSON local (ej. lectura-30.json).
+// Fuente de metadatos: public/data/programs/*.json
 // Fuente de estado: Supabase (multi-dispositivo).
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { getBySlug, type ProgramMeta } from '@/data/programs';
+import { getBySlug, type ProgramMeta } from '@/lib/programRegistry';
+import { loadProgramJson, canonicalizeSlug, type ProgramJson } from '@/lib/programLoader';
 import { supabase } from '@/lib/supabaseClient';
-
-// JSON del programa Lectura
-import lecturaProgramRaw from '../data/programs/lectura-30.json';
 
 // ---------- Tipos de contenido (JSON) ----------
 export type ProgramTaskDef = {
-  id: string;    // p.ej. "d1_t2"
-  label: string; // texto corto
+  id: string;
+  label: string;
   detail: string;
   tags?: string[];
 };
@@ -23,6 +20,7 @@ export type ProgramDayDef = { day: number; tasks: ProgramTaskDef[] };
 export type ProgramDef = ProgramMeta & {
   howItWorks: string;
   daysDef: ProgramDayDef[];
+  durationDays?: number;
 };
 
 // ---------- Tipos de estado (Supabase) ----------
@@ -48,13 +46,14 @@ export type UserTaskRow = {
 export const TABLE_PROGRAMS = 'user_programs';
 export const TABLE_TASKS = 'user_program_tasks';
 
-// Helper: compara contra slugRoute o slugData
+// Helper actualizado: compara el slug o su forma canónica
 function matchesSlug(meta: ProgramMeta, slug: string) {
-  return meta.slugRoute === slug || meta.slugData === slug;
+  const can = canonicalizeSlug(slug);
+  return meta.slug === slug || canonicalizeSlug(meta.slug) === can;
 }
 
 // Normaliza el JSON + enlaza con metadatos del catálogo
-function normalizeProgramDef(slug: string, input: any): ProgramDef {
+function normalizeProgramDef(slug: string, input: ProgramJson): ProgramDef {
   const meta = getBySlug(slug);
   if (!meta) throw new Error(`No se encontró metadato para ${slug}`);
 
@@ -65,7 +64,7 @@ function normalizeProgramDef(slug: string, input: any): ProgramDef {
     ? input.days.map((d: any, idx: number) => ({
         day: typeof d?.day === 'number' ? d.day : idx + 1,
         tasks: Array.isArray(d?.tasks)
-          ? d?.tasks.map((t: any, tIdx: number) => ({
+          ? d.tasks.map((t: any, tIdx: number) => ({
               id: String(t?.id ?? `d${idx + 1}-t${tIdx + 1}`),
               label: String(t?.label ?? 'Tarea'),
               detail: String(t?.detail ?? ''),
@@ -75,27 +74,29 @@ function normalizeProgramDef(slug: string, input: any): ProgramDef {
       }))
     : [];
 
-  return { ...meta, howItWorks, daysDef };
+  return {
+    ...meta,
+    howItWorks,
+    daysDef,
+    durationDays: input?.durationDays ?? daysDef.length,
+  };
 }
 
-// Solo tenemos lectura por ahora
-const lecturaProgram: ProgramDef = normalizeProgramDef('lectura-30', lecturaProgramRaw as any);
-
-// Acepta tanto slugRoute (ej. "lectura") como slugData (ej. "lectura-30")
-export function getProgramDef(slug: string): ProgramDef {
-  if (matchesSlug(lecturaProgram, slug)) return lecturaProgram;
-  throw new Error(`Programa no soportado: ${slug}`);
+// ---------- Carga dinámica del programa ----------
+export async function getProgramDef(slug: string): Promise<ProgramDef> {
+  const json = await loadProgramJson(slug);
+  return normalizeProgramDef(slug, json);
 }
 
-// ---------- Helpers de cache local (puntos/rank/streak) ----------
+// ---------- Helpers de cache local ----------
 const LS_POINTS_KEY = 'akira_points_cache_v1';
 const LS_RANK_KEY = 'akira_rank_cache_v1';
 const LS_STREAK_KEY = 'akira_streak_cache_v1';
-export const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
+export const CACHE_TTL_MS = 5 * 60 * 1000;
 
 type PointsCacheFormat =
   | { ts: number; value: { total_points: number } }
-  | { _ts: number; total_points: number }; // compat con prewarm
+  | { _ts: number; total_points: number };
 
 function nowTs() {
   return Date.now();
@@ -109,18 +110,15 @@ export function readPointsCache(): { total_points: number } | null {
     const ts = (obj as any).ts ?? (obj as any)._ts;
     const value =
       'value' in (obj as any) ? (obj as any).value : { total_points: (obj as any).total_points };
-    if (typeof ts !== 'number') return null;
-    if (nowTs() - ts > CACHE_TTL_MS) return null;
-    if (!value || typeof value.total_points !== 'number') return null;
+    if (typeof ts !== 'number' || nowTs() - ts > CACHE_TTL_MS) return null;
     return value;
   } catch {
     return null;
   }
 }
 
-export function writePointsCache(v: { total_points: number } & Record<string, any>) {
+export function writePointsCache(v: { total_points: number }) {
   try {
-    // Siempre persistimos en formato { ts, value } y conservamos props extra
     const payload = { ts: nowTs(), value: { total_points: Number(v.total_points) } };
     localStorage.setItem(LS_POINTS_KEY, JSON.stringify(payload));
   } catch {}
@@ -132,8 +130,7 @@ export function readRankCache(): number | null {
     if (!raw) return null;
     const obj = JSON.parse(raw);
     const ts = obj?.ts ?? obj?._ts;
-    if (typeof ts !== 'number') return null;
-    if (nowTs() - ts > CACHE_TTL_MS) return null;
+    if (typeof ts !== 'number' || nowTs() - ts > CACHE_TTL_MS) return null;
     const val = obj?.value;
     return typeof val === 'number' ? val : null;
   } catch {
@@ -153,8 +150,7 @@ export function readStreakCache(): number | null {
     if (!raw) return null;
     const obj = JSON.parse(raw);
     const ts = obj?._ts ?? obj?.ts;
-    if (typeof ts !== 'number') return null;
-    if (nowTs() - ts > CACHE_TTL_MS) return null;
+    if (typeof ts !== 'number' || nowTs() - ts > CACHE_TTL_MS) return null;
     const v = obj?.v;
     return typeof v === 'number' ? v : null;
   } catch {
@@ -162,19 +158,17 @@ export function readStreakCache(): number | null {
   }
 }
 
-/** Devuelve true si la caché mínima para entrar “caliente” está fresca. */
 export function isBootCacheFresh(): boolean {
   try {
     const pts = readPointsCache();
     const rank = readRankCache();
-    // Consideramos “fresco” si tenemos puntos y (ranking o streak) recientes.
     return !!pts && (typeof rank === 'number' || readStreakCache() !== null);
   } catch {
     return false;
   }
 }
 
-// ---------- Servicios de estado Supabase ----------
+// ---------- Estado Supabase ----------
 export async function getActiveProgram(
   sb: SupabaseClient,
   userId: string,
@@ -190,13 +184,11 @@ export async function getActiveProgram(
   if (error && (error as any).code !== 'PGRST116') throw error;
   if (!data) return null;
 
-  const row = data as unknown as ActiveProgramRow;
-  try {
-    localStorage.setItem(
-      'akira_program_active',
-      JSON.stringify({ slug, startedAt: row.started_at, currentDay: row.current_day, ts: nowTs() })
-    );
-  } catch {}
+  const row = data as ActiveProgramRow;
+  localStorage.setItem(
+    'akira_program_active',
+    JSON.stringify({ slug, startedAt: row.started_at, currentDay: row.current_day, ts: nowTs() })
+  );
   return row;
 }
 
@@ -220,7 +212,7 @@ export async function startProgram(
     .select('*')
     .single();
   if (error) throw error;
-  return data as unknown as ActiveProgramRow;
+  return data as ActiveProgramRow;
 }
 
 export async function resetProgram(
@@ -299,7 +291,7 @@ export async function getDayTasks(
   slug: string,
   day: number
 ): Promise<TaskWithStatus[]> {
-  const def = getProgramDef(slug);
+  const def = await getProgramDef(slug);
   await ensureDayTaskRows(sb, userId, slug, day, def);
 
   const { data: rows, error } = await sb
@@ -382,7 +374,7 @@ export async function getProgress(
   userId: string,
   slug: string
 ): Promise<{ daysCompleted: number; totalDays: number; currentDay: number }> {
-  const def = getProgramDef(slug);
+  const def = await getProgramDef(slug);
 
   const { data: prog, error: pErr } = await sb
     .from(TABLE_PROGRAMS)
@@ -417,17 +409,18 @@ export async function getProgress(
 
   return {
     daysCompleted,
-    totalDays: def.days,
+    totalDays: def.durationDays ?? def.daysDef.length,
     currentDay: (prog as ActiveProgramRow | null)?.current_day ?? 1,
   };
 }
 
-/* ========= PUNTUACIÓN (RPC por PROGRAMA) ========= */
+/* ========= RPCs de puntos y ranking ========= */
 export type ProgramPointsTotals = {
   total_points: number;
   checks_done: number;
   days_completed: number;
 };
+
 export type ProgramPointsByDayRow = {
   day_index: number;
   tasks_total: number;
@@ -441,16 +434,23 @@ export async function fetchProgramPoints(uid: string, slug: string): Promise<Pro
   if (error) throw error;
   return (data?.[0] ?? { total_points: 0, checks_done: 0, days_completed: 0 }) as ProgramPointsTotals;
 }
-export async function fetchProgramPointsByDay(uid: string, slug: string): Promise<ProgramPointsByDayRow[]> {
+
+export async function fetchProgramPointsByDay(
+  uid: string,
+  slug: string
+): Promise<ProgramPointsByDayRow[]> {
   const { data, error } = await supabase.rpc('get_program_points_by_day', { p_user: uid, p_slug: slug });
   if (error) throw error;
   return (data ?? []) as ProgramPointsByDayRow[];
 }
 
-/* ========= Puntuación GLOBAL (todos los programas) y RANKING ========= */
+/* ========= GLOBAL y ranking mensual ========= */
 export type GlobalPointsTotal = { total_points: number };
 
-export async function fetchGlobalProgramPoints(fromISO: string, toISO: string): Promise<GlobalPointsTotal | null> {
+export async function fetchGlobalProgramPoints(
+  fromISO: string,
+  toISO: string
+): Promise<GlobalPointsTotal | null> {
   const { data: auth } = await supabase.auth.getUser();
   const uid = auth?.user?.id;
   if (!uid) return { total_points: 0 };
@@ -464,7 +464,9 @@ export async function fetchGlobalProgramPoints(fromISO: string, toISO: string): 
     console.warn('[fetchGlobalProgramPoints]', error);
     return null;
   }
-  return Array.isArray(data) ? (data[0] ?? { total_points: 0 }) : (data ?? { total_points: 0 });
+  return Array.isArray(data)
+    ? (data[0] ?? { total_points: 0 })
+    : (data ?? { total_points: 0 });
 }
 
 export type MonthlyRank = { rank_month: number; total_points: number } | null;
@@ -482,9 +484,7 @@ export async function fetchMyMonthlyRank(): Promise<MonthlyRank> {
   return Array.isArray(data) ? (data[0] ?? null) : (data ?? null);
 }
 
-/* ========= Racha real de días (todas las tareas de un día > 0) =========
-   RPC esperada: get_user_streak_days(p_user_id uuid) RETURNS integer
-*/
+/* ========= Racha real de días ========= */
 export async function fetchUserStreakDays(): Promise<number> {
   const { data: auth } = await supabase.auth.getUser();
   const uid = auth?.user?.id;
@@ -495,6 +495,7 @@ export async function fetchUserStreakDays(): Promise<number> {
     console.warn('[fetchUserStreakDays]', error);
     return 0;
   }
-  const v = Array.isArray(data) ? (data[0] as any)?.streak_days : (data as any)?.streak_days ?? data;
+  const v =
+    Array.isArray(data) ? (data[0] as any)?.streak_days : (data as any)?.streak_days ?? data;
   return typeof v === 'number' ? v : 0;
 }
