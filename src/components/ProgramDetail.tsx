@@ -1,10 +1,11 @@
+// src/components/ProgramDetail.tsx
 'use client';
 
 import type { FC } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { getProgramDef, type ProgramDef, type ProgramTask } from '@/data/programs';
+import { loadProgramJson, type ProgramJson, type ProgramTask } from '@/lib/programLoader';
 import {
   RotateCcw,
   CheckCircle2,
@@ -47,9 +48,8 @@ import {
 /* === UI barras === */
 import CreateHabitBar from '@/components/habits/CreateHabitBar';
 
-// Usa los tipos del registro
+// Usa los tipos del loader unificado
 type JsonTask = ProgramTask;
-type ProgramJson = ProgramDef;
 
 /* === helpers fecha === */
 function todayKey() {
@@ -158,30 +158,32 @@ export default function ProgramDetail({
   const [loadingPoints, setLoadingPoints] = useState(false);
   const [pointsTick, setPointsTick] = useState(0); // refresco tras cada check
 
-/* cargar desde el registro central (fresh-first con fallback) */
-useEffect(() => {
-  let alive = true;
-  setLoadingData(true);
-  setErrorMsg(null);
+  /* cargar desde el registro central (fresh-first con fallback a bundle) */
+  useEffect(() => {
+    let alive = true;
+    setLoadingData(true);
+    setErrorMsg(null);
 
-  getProgramDef(slug)
-   .then((def) => {
-  if (!alive) return;
-  // Si quieres forzar resolución estática, usa el slug como fallback:
-  // setData(resolveProgramDef(def.slug) ?? def);
-  setData(def);
-  setOpenAcc({ do: false, get: false, use: false });
-})
-    .catch((err) => {
-      console.warn('[ProgramDetail] getProgramDef error', err);
-      if (!alive) return;
-      setData(null);
-      setErrorMsg('No se pudo cargar el programa. Revisa tu conexión e inténtalo de nuevo.');
-    })
-    .finally(() => { if (alive) setLoadingData(false); });
+    loadProgramJson(slug)
+      .then((json) => {
+        if (!alive) return;
+        setData(json);
+        setOpenAcc({ do: false, get: false, use: false });
+      })
+      .catch((err) => {
+        console.warn('[ProgramDetail] loadProgramJson error', err);
+        if (!alive) return;
+        setData(null);
+        setErrorMsg('No se pudo cargar el programa. Revisa tu conexión e inténtalo de nuevo.');
+      })
+      .finally(() => {
+        if (alive) setLoadingData(false);
+      });
 
-  return () => { alive = false; };
-}, [slug]);
+    return () => {
+      alive = false;
+    };
+  }, [slug]);
 
   /* cargar progreso + listeners */
   useEffect(() => {
@@ -518,7 +520,7 @@ useEffect(() => {
     );
   }
 
-const programColor = data?.themeColor ?? (PROGRAM_COLORS[slug] ?? '#111111');
+  const programColor = data?.themeColor ?? (PROGRAM_COLORS[slug] ?? '#111111');
   const badgeSrc = BADGE_FILES[slug] ?? '/images/badges/generic-badge.png';
   const badgeTitle = BADGE_TITLES[slug] ?? 'Insignia';
 
@@ -543,64 +545,63 @@ const programColor = data?.themeColor ?? (PROGRAM_COLORS[slug] ?? '#111111');
       )}
 
       {/* Título */}
-     {/* Título y duración (JSON primero; fallback a props) */}
-<h1 className="text-2xl font-semibold text-neutral-900">
-  {data?.title ?? title}
-</h1>
+      {/* Título y duración (JSON primero; fallback a props) */}
+      <h1 className="text-2xl font-semibold text-neutral-900">
+        {data?.title ?? title}
+      </h1>
 
-{(data?.durationDays ?? data?.days?.length) ? (
-  <div className="mt-1 inline-flex items-center gap-2">
-    <span className="text-xs px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-700">
-      Duración: {(data?.durationDays ?? data?.days?.length)!} días
-    </span>
-  </div>
-) : null}
+      {(data?.durationDays ?? data?.days?.length) ? (
+        <div className="mt-1 inline-flex items-center gap-2">
+          <span className="text-xs px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-700">
+            Duración: {(data?.durationDays ?? data?.days?.length)!} días
+          </span>
+        </div>
+      ) : null}
 
-{/* CTA */}
-<div className="mt-4">
-  {errorMsg && (
-    <div className="mb-3 rounded-xl border border-red-200 bg-red-50 text-red-700 px-3 py-2 text-sm">
-      {errorMsg}
-    </div>
-  )}
+      {/* CTA */}
+      <div className="mt-4">
+        {errorMsg && (
+          <div className="mb-3 rounded-xl border border-red-200 bg-red-50 text-red-700 px-3 py-2 text-sm">
+            {errorMsg}
+          </div>
+        )}
 
-  {!loadingData && (
-    <div className="mt-2 flex items-center gap-2">
-      {!started ? (
-        <button
-          onClick={handleStartProgram}
-          disabled={starting || loadingData || !uid}
-          className="inline-flex items-center gap-2 rounded-2xl px-5 py-3.5 text-[15px] font-semibold bg-black text-white shadow-md active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
-        >
-          <Play className="w-4 h-4" />
-          {starting ? 'Iniciando…' : 'Empezar programa'}
-        </button>
-      ) : (
-        <button
-          onClick={requestReset}
-          disabled={resetting || !uid}
-          className="inline-flex items-center gap-2 justify-center rounded-xl px-3.5 py-2.5 text-xs font-medium bg-neutral-100 text-neutral-700 hover:bg-neutral-200 transition disabled:opacity-60 disabled:cursor-not-allowed"
-          title="Reiniciar programa"
-        >
-          <RotateCcw className="w-4 h-4" />
-          {resetting ? 'Reiniciando…' : 'Reiniciar'}
-        </button>
-      )}
-    </div>
-  )}
+        {!loadingData && (
+          <div className="mt-2 flex items-center gap-2">
+            {!started ? (
+              <button
+                onClick={handleStartProgram}
+                disabled={starting || loadingData || !uid}
+                className="inline-flex items-center gap-2 rounded-2xl px-5 py-3.5 text-[15px] font-semibold bg-black text-white shadow-md active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                <Play className="w-4 h-4" />
+                {starting ? 'Iniciando…' : 'Empezar programa'}
+              </button>
+            ) : (
+              <button
+                onClick={requestReset}
+                disabled={resetting || !uid}
+                className="inline-flex items-center gap-2 justify-center rounded-xl px-3.5 py-2.5 text-xs font-medium bg-neutral-100 text-neutral-700 hover:bg-neutral-200 transition disabled:opacity-60 disabled:cursor-not-allowed"
+                title="Reiniciar programa"
+              >
+                <RotateCcw className="w-4 h-4" />
+                {resetting ? 'Reiniciando…' : 'Reiniciar'}
+              </button>
+            )}
+          </div>
+        )}
 
-  {/* Enlace a la comunidad del programa San Silvestre */}
-  {slug === 'san-silvestre-60' && (
-    <a
-      href="/programas/san-silvestre-60/comunidad"
-      className="inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-medium hover:bg-neutral-50 mt-3"
-      style={{ borderColor: 'var(--line)' }}
-    >
-      Ver comunidad y ranking
-    </a>
-  )}
-</div>
-
+        {/* Enlace a la comunidad del programa San Silvestre */}
+        {slug === 'san-silvestre-60' && (
+          <a
+            href="/programas/san-silvestre-60/comunidad"
+            className="inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-medium hover:bg-neutral-50 mt-3"
+            style={{ borderColor: 'var(--line)' }}
+          >
+            Ver comunidad y ranking
+          </a>
+        )}
+      </div>
 
       {/* TABS */}
       <nav className="border-b bg-white sticky top-[48px] z-10 -mt-px mt-6">
@@ -897,7 +898,7 @@ const programColor = data?.themeColor ?? (PROGRAM_COLORS[slug] ?? '#111111');
 
 /* ===== Subcomponentes ===== */
 
-function PreviewDayOne({ data }: { data: ProgramDef | null }) {
+function PreviewDayOne({ data }: { data: ProgramJson | null }) {
   const first = data?.days?.[0] ?? null;
   if (!first) {
     return (

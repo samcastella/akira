@@ -2,7 +2,7 @@
 'use client';
 
 import type { FC, ReactNode } from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import {
@@ -24,8 +24,53 @@ import {
   type ProgramPointsTotals,
 } from '@/lib/programService';
 
-import { loadProgramLeaders, loadProgramMembersCount, loadAvatarsFor, type ProgramLeaderRow } from '@/lib/communityProgram';
+import {
+  loadProgramLeaders,
+  loadProgramMembersCount,
+  loadAvatarsFor,
+  type ProgramLeaderRow
+} from '@/lib/communityProgram';
+
 import { pushStartProgram, pushResetProgram, pullUserPrograms } from '@/lib/programSync';
+
+/* =========================================================================================
+   NUEVO: Carga de ProgramJson desde /public/data/programs/[slug].json?v=BUILD_V (client-side)
+   ========================================================================================= */
+
+const BUILD_V = process.env.NEXT_PUBLIC_BUILD_VERSION ?? 'dev';
+const PROGRAM_CACHE_KEY = (slug: string) => `akira_program_json_v2:${slug}`; // v2 para evitar colisiones antiguas
+const PROGRAM_CACHE_TTL_MS = 5 * 60 * 1000; // 5 min (ajustable)
+
+/** Guarda en cache local con timestamp */
+function writeProgramCache(slug: string, data: unknown) {
+  try {
+    const payload = { ts: Date.now(), data };
+    localStorage.setItem(PROGRAM_CACHE_KEY(slug), JSON.stringify(payload));
+  } catch {}
+}
+
+/** Lee cache local si no está expirado */
+function readProgramCache<T = unknown>(slug: string, ttlMs = PROGRAM_CACHE_TTL_MS): T | null {
+  try {
+    const raw = localStorage.getItem(PROGRAM_CACHE_KEY(slug));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { ts: number; data: T };
+    if (!parsed || typeof parsed.ts !== 'number') return null;
+    if (Date.now() - parsed.ts > ttlMs) return null;
+    return parsed.data;
+  } catch { return null; }
+}
+
+/** Carga desde /data/programs/[slug].json?v=BUILD_V con abort y control de errores */
+async function fetchProgramJsonRemote<T>(slug: string, signal?: AbortSignal): Promise<T> {
+  const url = `/data/programs/${encodeURIComponent(slug)}.json?v=${encodeURIComponent(BUILD_V)}`;
+  const res = await fetch(url, { method: 'GET', cache: 'no-store', signal });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`Error ${res.status} al cargar ${url}: ${txt || res.statusText}`);
+  }
+  return (await res.json()) as T;
+}
 
 /* ===== Tabs ===== */
 const TABS = ['Resumen', 'Check del día', 'Estadísticas', 'Ranking'] as const;
@@ -165,12 +210,54 @@ type Props = {
   slug: string;
   imageSrc?: string;
   title: string;
-  program: ProgramJson;
+  // ⛔️ Eliminado: program: ProgramJson;  -> ahora se carga desde /public/data/programs
 };
 
-export default function ProgramCommunityDetail({ slug, imageSrc, title, program }: Props) {
+export default function ProgramCommunityDetail({ slug, imageSrc, title }: Props) {
   const router = useRouter();
   const uid = useAuthUserId();
+
+  /* ====== Estado del ProgramJson cargado dinámicamente ====== */
+  const [program, setProgram] = useState<ProgramJson | null>(null);
+  const [progLoading, setProgLoading] = useState<boolean>(true);
+  const [progError, setProgError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    // Cancelar petición previa si cambia slug/BUILD_V
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+
+    let mounted = true;
+    (async () => {
+      setProgLoading(true);
+      setProgError(null);
+
+      // 1) Intento cache local (rápido, pinta inmediato si válido)
+      const cached = readProgramCache<ProgramJson>(slug);
+      if (cached && mounted) setProgram(cached);
+
+      try {
+        // 2) Fetch fresco (fuerza lectura "fresh" con BUILD_V)
+        const fresh = await fetchProgramJsonRemote<ProgramJson>(slug, ac.signal);
+        if (!mounted) return;
+        // Validaciones mínimas
+        if (!fresh || !Array.isArray(fresh.days)) {
+          throw new Error('JSON inválido: falta days[]');
+        }
+        setProgram(fresh);
+        writeProgramCache(slug, fresh);
+      } catch (e: any) {
+        // Si no había cache válida, señaliza error
+        if (!cached) setProgError(e?.message || 'No se pudo cargar el programa');
+      } finally {
+        if (mounted) setProgLoading(false);
+      }
+    })();
+
+    return () => { mounted = false; ac.abort(); };
+  }, [slug]);
 
   const [activeMap, setActiveMap] = useState<LocalStore>({});
   const [activeTab, setActiveTab] = useState<Tab>('Resumen');
@@ -185,13 +272,13 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title, program 
   const [pointsTick, setPointsTick] = useState(0);
 
   // Ranking / miembros
-   const [leaders, setLeaders] = useState<ProgramLeaderRow[]>([]);
- const [leaderPhotos, setLeaderPhotos] = useState<Record<string, string | null>>({});
+  const [leaders, setLeaders] = useState<ProgramLeaderRow[]>([]);
+  const [leaderPhotos, setLeaderPhotos] = useState<Record<string, string | null>>({});
   const [leaderImgOk, setLeaderImgOk] = useState<Record<string, boolean>>({});
   const [membersCount, setMembersCount] = useState<number>(0);
 
   // theme
-  const themeColor = program.themeColor ?? '#111111';
+  const themeColor = program?.themeColor ?? '#111111';
 
   /* ====== Modal de detalles (como en Checks) ====== */
   const [infoOpen, setInfoOpen] = useState(false);
@@ -283,13 +370,13 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title, program 
   }, [active?.startedAt, totalDays]);
 
   /* ====== Asegurar filas del día ====== */
-  async function ensureDayRows(uid: string, slug: string, dayNum: number, taskIds: string[]) {
+  async function ensureDayRows(uid: string, slugX: string, dayNum: number, taskIds: string[]) {
     if (!taskIds.length) return;
     const { data: existing, error: selErr } = await supabase
       .from('user_program_tasks')
       .select('task_id')
       .eq('user_id', uid)
-      .eq('program_slug', slug)
+      .eq('program_slug', slugX)
       .eq('day', dayNum);
     if (selErr) { console.warn('[ensureDayRows] select error', selErr); return; }
     const have = new Set((existing ?? []).map((r: any) => r.task_id));
@@ -298,7 +385,7 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title, program 
 
     const now = new Date().toISOString();
     const seedRows = missing.map((id) => ({
-      user_id: uid, program_slug: slug, day: dayNum, task_id: id,
+      user_id: uid, program_slug: slugX, day: dayNum, task_id: id,
       completed: false, completed_at: null, updated_at: now,
     }));
     const { error: upErr } = await supabase
@@ -328,7 +415,7 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title, program 
     setActiveMap(newStore);
 
     try {
-      if (!uid) return;
+      if (!uid || !program) return;
       const dayTasks = (program.days.find(d => d.day === dayNum)?.tasks ?? []).map((t, i) => t.id ?? `task_${i}`);
       await ensureDayRows(uid, slug, dayNum, dayTasks);
       await supabase
@@ -483,7 +570,7 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title, program 
       </div>
 
       {/* TABS (más aire: h-11 + pb-1 y subrayado -3px) */}
-      <nav className="border-b bg-white sticky top-[48px] z-10 -mt-px mt-5">
+      <nav className="border-b bg-white sticky top=[48px] z-10 -mt-px mt-5">
         <div className="flex gap-5 h-11 items-center px-2 pb-1 overflow-x-auto">
           {TABS.map((tab) => {
             const locked = (tab === 'Check del día' || tab === 'Estadísticas' || tab === 'Ranking') && !started;
@@ -513,8 +600,29 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title, program 
 
       {/* CONTENIDO */}
       <section className="py-6 space-y-6">
+        {/* ===== Estado de carga/errores del ProgramJson ===== */}
+        {(progLoading || progError) && (
+          <div className="px-2">
+            {progLoading && (
+              <div className="rounded-xl border border-neutral-200 p-4 bg-white">
+                <div className="animate-pulse space-y-3">
+                  <div className="h-4 w-40 bg-neutral-200 rounded" />
+                  <div className="h-3 w-80 bg-neutral-200 rounded" />
+                  <div className="h-3 w-64 bg-neutral-200 rounded" />
+                </div>
+              </div>
+            )}
+            {progError && !progLoading && (
+              <div className="rounded-xl border border-red-200 bg-red-50 text-red-700 p-4">
+                <div className="font-semibold mb-1">No se pudo cargar el programa</div>
+                <div className="text-sm opacity-90">{progError}</div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ===== Resumen ===== */}
-        {activeTab === 'Resumen' && (
+        {program && activeTab === 'Resumen' && (
           <div className="space-y-5 px-2">
             {program.howItWorks ? (
               <MD className="block text-[15px] md:text-[16px] leading-[1.75] text-neutral-900">
@@ -553,7 +661,7 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title, program 
         )}
 
         {/* ===== Check del día ===== */}
-        {activeTab === 'Check del día' && started && (
+        {program && activeTab === 'Check del día' && started && (
           <div className="px-2">
             <p className="text-sm text-neutral-700">
               <strong>Tus retos de hoy</strong>. Márcalos cuando los completes.
@@ -596,7 +704,7 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title, program 
                 <p className="text-sm mt-2">Cuando inicies, verás tus puntos y tu progreso semanal.</p>
               </div>
             )}
-            {started && (
+            {started && program && (
               <div className="space-y-6">
                 {/* Puntos totales */}
                 <div className="text-center">
@@ -637,7 +745,7 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title, program 
                     />
                     <div className="mt-3 flex items-center gap-4 text-xs text-neutral-600">
                       <div className="flex items-center gap-2"><span className="inline-block w-4 h-[2px] bg-neutral-300" /> Objetivo</div>
-                      <div className="flex items-center gap-2"><span className="inline-block w-4 h-[2px] bg-blue-500" /> Hecho</div>
+                      <div className="flex items-center gap-2"><span className="inline-block w-4 h-[2px]" /> Hecho</div>
                     </div>
                   </div>
                 </div>
@@ -699,7 +807,7 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title, program 
       {/* Modal de detalles (reutilizado de Checks) */}
       <InfoModal
         open={infoOpen}
-        title={`${program.title} · ${infoTitle}`}
+        title={`${program?.title ?? title} · ${infoTitle}`}
         detail={infoDetail}
         onClose={closeInfo}
       />
