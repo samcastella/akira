@@ -11,6 +11,7 @@ import {
 
 import { supabase } from '@/lib/supabaseClient';
 import { useAuthUserId } from '@/lib/user';
+import { getBySlug as getProgramMeta } from '@/lib/programRegistry';
 
 import CreateHabitBar from '@/components/habits/CreateHabitBar';
 
@@ -39,7 +40,7 @@ import { pushStartProgram, pushResetProgram, pullUserPrograms } from '@/lib/prog
 
 const BUILD_V = process.env.NEXT_PUBLIC_BUILD_VERSION ?? 'dev';
 const PROGRAM_CACHE_KEY = (slug: string) => `akira_program_json_v2:${slug}`; // v2 para evitar colisiones antiguas
-const PROGRAM_CACHE_TTL_MS = 5 * 60 * 1000; // 5 min (ajustable)
+const PROGRAM_CACHE_TTL_MS = 5 * 60 * 1000; // 5 min (ajustable);
 
 /** Guarda en cache local con timestamp */
 function writeProgramCache(slug: string, data: unknown) {
@@ -121,7 +122,7 @@ function InlineMarkdown({ text }: { text: string }) {
   let i = 0; let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
     if (m.index > i) parts.push(text.slice(i, m.index));
-    parts.push(<strong key={m.index as unknown as string} className="font-semibold">{m[1]}</strong>);
+    
     i = m.index + m[0].length;
   }
   if (i < text.length) parts.push(text.slice(i));
@@ -156,7 +157,11 @@ function InfoModal({ open, title, detail, onClose }:{
 
 /* ===== helpers fecha ===== */
 function startOfDayMs(date: Date) { const d = new Date(date); d.setHours(0,0,0,0); return d.getTime(); }
-function todayKey() { const d = new Date(); const mm = String(d.getMonth()+1).padStart(2,'0'); const dd = String(d.getDate()).padStart(2,'0'); return `${d.getFullYear()}-${mm}-${dd}`; }
+function todayKeyTZ(tz = 'Europe/Madrid') {
+  const parts = new Intl.DateTimeFormat('es-ES', { timeZone: tz, year:'numeric', month:'2-digit', day:'2-digit' }).formatToParts(new Date());
+  const g = (t:string) => parts.find(p=>p.type===t)?.value!;
+  return `${g('year')}-${g('month')}-${g('day')}`;
+}
 function daysBetweenFromMs(startMs: number, endISOyyyyMmDd: string) {
   const a = startOfDayMs(new Date(startMs));
   const b = startOfDayMs(new Date(`${endISOyyyyMmDd}T00:00:00`));
@@ -277,8 +282,19 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title }: Props)
   const [leaderImgOk, setLeaderImgOk] = useState<Record<string, boolean>>({});
   const [membersCount, setMembersCount] = useState<number>(0);
 
-  // theme
-  const themeColor = program?.themeColor ?? '#111111';
+  /* ====== Tema coherente con Checks ====== */
+  function sanitizeHex(c?: string | null) {
+    if (!c) return null;
+    const m = c.trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+    return m ? c : null;
+  }
+  const metaColor = useMemo(() => {
+    try { return sanitizeHex(getProgramMeta(slug)?.color as string | undefined); }
+    catch { return null; }
+  }, [slug]);
+  const themeColor = useMemo(() => {
+    return sanitizeHex(program?.themeColor) || metaColor || '#F5F5F5';
+  }, [program?.themeColor, metaColor]);
 
   /* ====== Modal de detalles (como en Checks) ====== */
   const [infoOpen, setInfoOpen] = useState(false);
@@ -359,13 +375,13 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title }: Props)
 
   const currentDay = useMemo(() => {
     if (!active?.startedAt || totalDays <= 0) return 1;
-    const delta = daysBetweenFromMs(active.startedAt, todayKey());
+    const delta = daysBetweenFromMs(active.startedAt, todayKeyTZ());
     return Math.min(totalDays, Math.max(1, delta + 1));
   }, [active?.startedAt, totalDays]);
 
   const progressPct = useMemo(() => {
     if (!active?.startedAt || totalDays === 0) return 0;
-    const passed = Math.min(totalDays, Math.max(0, daysBetweenFromMs(active.startedAt, todayKey()) + 1));
+    const passed = Math.min(totalDays, Math.max(0, daysBetweenFromMs(active.startedAt, todayKeyTZ()) + 1));
     return Math.round((passed / totalDays) * 100);
   }, [active?.startedAt, totalDays]);
 
@@ -533,8 +549,7 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title }: Props)
 
       {/* Título + participantes (más aire) */}
       <div className="mb-3">
-        <h1 className="text-2xl font-semibold text-neutral-900">{title}</h1>
-        <div className="mt-1 text-[13px] text-neutral-500">👥 {membersCount} participantes</div>
+        <h1 className="text-2xl font-semibold text-neutral-900">{title}</h1><h1 className="text-2xl font-semibold text-neutral-900">{program?.title ?? title}</h1>        <div className="mt-1 text-[13px] text-neutral-500">👥 {membersCount} participantes</div>
       </div>
 
       {/* CTA */}
@@ -570,7 +585,7 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title }: Props)
       </div>
 
       {/* TABS (más aire: h-11 + pb-1 y subrayado -3px) */}
-      <nav className="border-b bg-white sticky top=[48px] z-10 -mt-px mt-5">
+      <nav className="border-b bg-white sticky top-[48px] z-10 -mt-px mt-5">
         <div className="flex gap-5 h-11 items-center px-2 pb-1 overflow-x-auto">
           {TABS.map((tab) => {
             const locked = (tab === 'Check del día' || tab === 'Estadísticas' || tab === 'Ranking') && !started;
@@ -578,7 +593,8 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title }: Props)
             return (
               <button
                 key={tab}
-                onClick={() => setActiveTab(tab)}
+                onClick={() => { if (!locked) setActiveTab(tab); }}
+ disabled={locked}
                 className={`group relative inline-flex items-center px-1.5 py-0.5 text-[13px] text-neutral-600 hover:text-black transition ${locked ? 'opacity-60' : ''} whitespace-nowrap`}
                 aria-current={isActive ? 'page' : undefined}
                 title={locked ? 'Bloqueado hasta que empieces el programa' : tab}
@@ -745,7 +761,7 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title }: Props)
                     />
                     <div className="mt-3 flex items-center gap-4 text-xs text-neutral-600">
                       <div className="flex items-center gap-2"><span className="inline-block w-4 h-[2px] bg-neutral-300" /> Objetivo</div>
-                      <div className="flex items-center gap-2"><span className="inline-block w-4 h-[2px]" /> Hecho</div>
+                      <div className="flex items-center gap-2"><span className="inline-block w-4 h-[2px]" style={{ background: '#3b82f6' }} /> Hecho</div>
                     </div>
                   </div>
                 </div>

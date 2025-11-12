@@ -185,10 +185,12 @@ export async function getActiveProgram(
   if (!data) return null;
 
   const row = data as ActiveProgramRow;
-  localStorage.setItem(
-    'akira_program_active',
-    JSON.stringify({ slug, startedAt: row.started_at, currentDay: row.current_day, ts: nowTs() })
-  );
+ try {
+    localStorage.setItem(
+      'akira_program_active',
+      JSON.stringify({ slug, startedAt: row.started_at, currentDay: row.current_day, ts: nowTs() })
+    );
+  } catch {}
   return row;
 }
 
@@ -260,18 +262,18 @@ async function ensureDayTaskRows(
     .eq('program_slug', slug)
     .eq('day', day);
   if (exErr) throw exErr;
-  if (existing && existing.length >= dayDef.tasks.length) return;
-
-  const toInsert = dayDef.tasks
-    .filter((t) => !existing?.some((e: any) => e.task_id === t.id))
-    .map<UserTaskRow>((t) => ({
-      user_id: userId,
-      program_slug: slug,
-      day,
-      task_id: t.id,
-      completed: false,
-      completed_at: null,
-    }));
+  
+  const existingIds = new Set((existing ?? []).map((e: any) => e.task_id));
+ const toInsert = dayDef.tasks
+   .filter((t) => !existingIds.has(t.id))
+   .map<UserTaskRow>((t) => ({
+     user_id: userId,
+     program_slug: slug,
+     day,
+     task_id: t.id,
+     completed: false,
+     completed_at: null,
+   }));
 
   if (toInsert.length) {
     const { error: insErr } = await sb.from(TABLE_TASKS).insert(toInsert);
@@ -423,11 +425,12 @@ export type ProgramPointsTotals = {
 
 export type ProgramPointsByDayRow = {
   day_index: number;
-  tasks_total: number;
-  tasks_done: number;
+  total_tasks: number;
+  done_tasks: number;
   day_completed: boolean;
-  day_points: number;
+  day_points?: number; // opcional si no lo devuelve tu RPC
 };
+
 
 export async function fetchProgramPoints(uid: string, slug: string): Promise<ProgramPointsTotals> {
   const { data, error } = await supabase.rpc('get_program_points', { p_user: uid, p_slug: slug });

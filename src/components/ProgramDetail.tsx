@@ -52,12 +52,11 @@ import CreateHabitBar from '@/components/habits/CreateHabitBar';
 type JsonTask = ProgramTask;
 
 /* === helpers fecha === */
-function todayKey() {
-  const d = new Date();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${d.getFullYear()}-${mm}-${dd}`;
-}
+function todayKeyTZ(tz = 'Europe/Madrid') {
+   const parts = new Intl.DateTimeFormat('es-ES', { timeZone: tz, year:'numeric', month:'2-digit', day:'2-digit' }).formatToParts(new Date());
+   const g = (t:string) => parts.find(p=>p.type===t)?.value!;
+   return `${g('year')}-${g('month')}-${g('day')}`;
+ }
 function startOfDayMs(date: Date) {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
@@ -75,6 +74,13 @@ function weekdayLabel(dateMs: number) {
   const map = ['D', 'L', 'M', 'X', 'J', 'V', 'S'] as const;
   const d = new Date(dateMs).getDay();
   return map[d];
+}
+
+function mdInlineToPlain(s: string) {
+  if (!s) return s;
+  return s
+    .replace(/\*\*(.+?)\*\*/g, '$1') // **negrita**
+    .replace(/\*(.+?)\*/g, '$1');    // *cursiva*
 }
 
 /* ---------- Mini Markdown ---------- */
@@ -285,7 +291,7 @@ export default function ProgramDetail({
 
   const currentDay = useMemo(() => {
     if (!active?.startedAt || totalDays <= 0) return 1;
-    const delta = daysBetweenFromMs(active.startedAt, todayKey());
+    const delta = daysBetweenFromMs(active.startedAt, todayKeyTZ());
     return Math.min(totalDays, Math.max(1, delta + 1));
   }, [active?.startedAt, totalDays]);
 
@@ -521,8 +527,8 @@ export default function ProgramDetail({
   }
 
   const programColor = data?.themeColor ?? (PROGRAM_COLORS[slug] ?? '#111111');
-  const badgeSrc = BADGE_FILES[slug] ?? '/images/badges/generic-badge.png';
-  const badgeTitle = BADGE_TITLES[slug] ?? 'Insignia';
+ const badgeSrc = data?.badgeImage ?? (BADGE_FILES[slug] ?? '/images/badges/generic-badge.png');
+ const badgeTitle = data?.badgeName ?? (BADGE_TITLES[slug] ?? 'Insignia');
 
   return (
     <div className="px-4 pb-24 bg-white">
@@ -612,7 +618,8 @@ export default function ProgramDetail({
             return (
               <button
                 key={tab}
-                onClick={() => setActiveTab(tab)}
+                onClick={() => { if (!locked) setActiveTab(tab); }}
+ disabled={locked}
                 className={`relative py-3 px-3 text-sm whitespace-nowrap transition ${
                   isActive
                     ? 'font-semibold text-black after:absolute after:left-0 after:right-0 after:-bottom-[1px] after:h-[2px] after:bg-black'
@@ -759,7 +766,7 @@ export default function ProgramDetail({
                       <CreateHabitBar
                         key={`t_${id}`}
                         variant="task"
-                        label={t.label}
+                        label={mdInlineToPlain(t.label)}
                         checked={done}
                         color={programColor}
                         onToggle={() => toggleTaskDone(currentDay, id)}
@@ -820,7 +827,7 @@ export default function ProgramDetail({
                         <span className="inline-block w-4 h-[2px] bg-neutral-300" /> Objetivo
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="inline-block w-4 h-[2px] bg-blue-500" /> Hecho
+                         <span className="inline-block w-4 h-[2px]" style={{ background: '#3b82f6' }} />
                       </div>
                     </div>
                   </div>

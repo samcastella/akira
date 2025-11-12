@@ -15,9 +15,10 @@ import {
 import { useAuthUserId } from '@/lib/user';
 import { supabase } from '@/lib/supabaseClient';
 import { pullUserPrograms } from '@/lib/programSync';
+import { loadProgramJson, type ProgramJson } from '@/lib/programJson';
 
 /* ===== Colores desde ProgramDefs (solo para color de las barras) ===== */
-import { resolveProgramDef } from '@/data/programs';
+import { resolveProgramDef } from '@/lib/programRegistry';
 
 /* ===== Sync de hábitos personalizados ===== */
 import {
@@ -30,7 +31,6 @@ import {
 /* ===== Dynamic loaders (desde /public/data/programs/*.json) ===== */
 type JsonTask = { id?: string; label: string; detail?: string };
 type JsonDay = { day: number; tasks: JsonTask[] };
-type ProgramJson = { slug: string; title: string; durationDays?: number; days: JsonDay[] };
 
 const V = process.env.NEXT_PUBLIC_BUILD_VERSION || 'dev';
 
@@ -42,15 +42,10 @@ async function fetchProgramJsonFresh(slug: string, signal?: AbortSignal): Promis
   return res.json();
 }
 
-/** Fallback (solo si aún hay algún JSON empaquetado en el bundle) */
-function tryGetProgramJson(slug: string): any | null {
-  try {
-    // @ts-ignore
-    const m = require(`@/data/programs/${slug}.json`);
-    return m?.default ?? m ?? null;
-  } catch {
-    return null;
-  }
+/** Memo global síncrono para fallback instantáneo */
+const PROGRAM_JSON_MEMO = new Map<string, ProgramJson>();
+function getProgramJsonCachedSync(slug: string): ProgramJson | null {
+  return PROGRAM_JSON_MEMO.get(slug) ?? null;
 }
 
 /* ===== Helpers fecha/TZ ===== */
@@ -230,28 +225,39 @@ export default function MiActividadChecks() {
     return out;
   }, [activeMap]);
 
-  // ======= Cargar JSON SOLO de los slugs activos desde /public =======
+  // ======= Cargar JSON SOLO de los slugs activos desde /public; poblar memo =======
   useEffect(() => {
     if (!activeSlugs.length) return;
-    const controller = new AbortController();
+    const controller = new AbortSignalController();
     let cancelled = false;
 
     (async () => {
       try {
         const entries = await Promise.all(
           activeSlugs.map(async (slug) => {
+            const canonical = slug;
             try {
-              const json = await fetchProgramJsonFresh(slug, controller.signal);
-              return [slug, json] as const;
+              const json = await fetchProgramJsonFresh(canonical, controller.signal);
+              return [canonical, json] as const;
             } catch {
-              const fb = tryGetProgramJson(slug);
-              return fb ? ([slug, fb] as const) : null;
+              // fallback: intenta desde loader unificado (async)
+              try {
+                const fb = await loadProgramJson(canonical);
+                return [canonical, fb] as const;
+              } catch {
+                return null;
+              }
             }
           })
         );
         if (cancelled) return;
         const map: Record<string, ProgramJson> = { ...jsonBySlug };
-        for (const e of entries) if (e) map[e[0]] = e[1];
+        for (const e of entries) {
+          if (!e) continue;
+          const [slug, json] = e;
+          map[slug] = json;
+          PROGRAM_JSON_MEMO.set(slug, json); // <- memo síncrono
+        }
         setJsonBySlug(map);
       } catch {
         // silencioso
@@ -275,7 +281,7 @@ export default function MiActividadChecks() {
       const lp = activeMap[slug] as LocalProgram | undefined;
       if (!lp?.startedAt) continue;
 
-      const json = jsonBySlug[slug] || tryGetProgramJson(slug);
+      const json = jsonBySlug[slug] || getProgramJsonCachedSync(slug);
       if (!json) continue;
 
       const totalDays = json?.days?.length ?? json?.durationDays ?? 0;
@@ -285,7 +291,7 @@ export default function MiActividadChecks() {
       if (rawIdx > totalDays) continue;
       const currentDay = Math.min(totalDays, Math.max(1, rawIdx));
 
-      const dayDef = json?.days?.find((d: any) => d.day === currentDay) ?? json?.days?.[currentDay - 1];
+      const dayDef = (json.days as JsonDay[]).find((d) => d.day === currentDay) ?? json.days?.[currentDay - 1];
       const plannedTasks = (dayDef?.tasks ?? []) as JsonTask[];
       if (!plannedTasks.length) continue;
 
@@ -376,7 +382,7 @@ export default function MiActividadChecks() {
       if (!uid) return;
 
       // 2) Sembrar filas del día
-      const json = jsonBySlug[slug] || tryGetProgramJson(slug);
+      const json = jsonBySlug[slug] || getProgramJsonCachedSync(slug);
       const taskIds = (json?.days.find((d: any) => d.day === day)?.tasks ?? json?.days?.[day - 1]?.tasks ?? [])
         .map((t: any, i: number) => t.id ?? `task_${i}`);
       await ensureDayRows(uid, slug, day, taskIds);
@@ -796,9 +802,11 @@ export default function MiActividadChecks() {
 
 /* ===== Colores por slug (usa ProgramDefs y fallbacks) ===== */
 function colorFor(slug: string) {
-  const def = resolveProgramDef(slug);
-  if (def?.themeColor) return def.themeColor;
-
+  try {
+    const def = resolveProgramDef(slug);
+    if (def?.themeColor) return def.themeColor as string;
+    if ((def as any)?.color) return (def as any).color as string; // compat si algunas defs aún usan "color"
+  } catch {}
   // Fall-backs por si llega un slug legacy o un comunitario sin color definido
   const FALLBACK: Record<string, string> = {
     'lectura': '#E0E7FF',
@@ -811,4 +819,12 @@ function colorFor(slug: string) {
     if (slug.includes(key)) return FALLBACK[key];
   }
   return '#F8E68A';
+}
+
+/** Pequeño helper para tener AbortController tipado en TS sin DOM libs diferentes */
+class AbortSignalController {
+  controller: AbortController;
+  constructor() { this.controller = new AbortController(); }
+  get signal() { return this.controller.signal; }
+  abort() { try { this.controller.abort(); } catch {} }
 }

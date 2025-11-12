@@ -18,7 +18,9 @@ import { supabase, isSupabaseEnvReady } from '@/lib/supabaseClient';
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import RegistrationModal from '@/components/RegistrationModal';
 import { pullUserPrograms } from '@/lib/programSync';
-import { BUILD_V, detectAndHandleBuildChange } from '@/lib/buildVersion'; // ← NUEVO
+
+/* ===== Build bust ===== */
+import { BUILD_V, detectAndHandleBuildChange } from '@/lib/buildVersion';
 
 const LS_SEEN_AUTH = 'akira_seen_auth_v1';
 const LS_LAST_UID = 'akira_last_uid';
@@ -81,7 +83,8 @@ export default function LayoutClient({
 
   /** ===== Build version: purga selectiva + recarga 1 vez por sesión ===== */
   useEffect(() => {
-    detectAndHandleBuildChange(); // purga claves locales y emite evento
+    // Purga claves locales + emit evento a toda la app
+    detectAndHandleBuildChange();
   }, []);
   useEffect(() => {
     function onBuildChanged() {
@@ -92,8 +95,8 @@ export default function LayoutClient({
       } catch {}
       location.reload();
     }
-    window.addEventListener('akira:build:changed', onBuildChanged);
-    return () => window.removeEventListener('akira:build:changed', onBuildChanged);
+    window.addEventListener('akira:build:changed', onBuildChanged as EventListener);
+    return () => window.removeEventListener('akira:build:changed', onBuildChanged as EventListener);
   }, []);
 
   function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {

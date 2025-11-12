@@ -8,6 +8,7 @@ import { useUserProfile } from '@/lib/user';
 import { useEffect, useMemo, useRef, useState, startTransition } from 'react';
 import { loadActive, type LocalStore, type LocalProgram } from '@/lib/programsLocal';
 import { ChevronRight } from 'lucide-react';
+import { loadProgramJson, type ProgramJson } from '@/lib/programJson';
 
 /* === Puntuación GLOBAL + Ranking (RPC) === */
 import {
@@ -19,16 +20,20 @@ import {
   type GlobalPointsTotal,
 } from '@/lib/programService';
 
-/* ===== helpers JSON / fechas ===== */
-function tryGetProgramJson(slug: string): any | null {
-  try {
-    // @ts-ignore
-    const m = require(`@/data/programs/${slug}.json`);
-    return m?.default ?? m ?? null;
-  } catch {
-    return null;
-  }
+/* ===============================
+   Memo JSON programas (síncrono)
+   =============================== */
+const PROGRAM_JSON_MEMO = new Map<string, ProgramJson>();
+
+function routeSlug(slug: string) {
+  return slug.replace(/-30$/, '');
 }
+function getProgramJsonCachedSync(slug: string): ProgramJson | null {
+  const key = routeSlug(slug);
+  return PROGRAM_JSON_MEMO.get(key) ?? null;
+}
+
+/* ===== helpers fechas ===== */
 function startOfDay(d: Date) { const x = new Date(d); x.setHours(0,0,0,0); return x; }
 function dayIdxSince(startedAt: number, when: Date) {
   const a = startOfDay(new Date(startedAt)).getTime();
@@ -39,9 +44,7 @@ function clampDay(startedAt: number, when: Date, totalDays: number) {
   const idx = dayIdxSince(startedAt, when);
   return Math.min(totalDays, Math.max(1, idx));
 }
-function routeSlug(slug: string) {
-  return slug.replace(/-30$/, '');
-}
+
 /* Mini mapa explícito de thumbnails */
 const THUMB_MAP: Record<string, string> = {
   lectura: '/images/programs/lectura-hero.jpg',
@@ -55,7 +58,7 @@ function computeLocalProgramPoints(): number {
   for (const [slug, prog] of Object.entries(active)) {
     const lp = prog as LocalProgram;
     if (!lp?.progress || !lp.startedAt) continue;
-    const json = tryGetProgramJson(slug); // Solo contamos si existe JSON oficial
+    const json = getProgramJsonCachedSync(slug); // Solo contamos si existe JSON oficial en memo
     const totalDays: number = json?.days?.length ?? json?.durationDays ?? 0;
     if (!totalDays) continue;
     for (let d = 1; d <= totalDays; d++) {
@@ -102,6 +105,33 @@ async function refreshTotalsAndRank(setTotals: any, setRank: any) {
 export default function MiActividadResumen() {
   const { totalGoal, totalDone, historicalPoints } = useTodayActivity();
   const pct = totalGoal ? Math.round((totalDone / totalGoal) * 100) : 0;
+
+  /* ===== Precarga JSON de programas activos en memo ===== */
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const active = loadActive(); // { [slug]: LocalProgram }
+        const slugs = Object.keys(active).map(routeSlug);
+        const uniq = Array.from(new Set(slugs));
+
+        const results = await Promise.allSettled(
+          uniq.map(async (s) => {
+            const json = await loadProgramJson(s);
+            return { slug: s, json };
+          })
+        );
+        if (!alive) return;
+        results.forEach((r) => {
+          if (r.status === 'fulfilled') {
+            PROGRAM_JSON_MEMO.set(r.value.slug, r.value.json);
+          }
+        });
+        try { window.dispatchEvent(new Event('akira:program-json:ready')); } catch {}
+      } catch {}
+    })();
+    return () => { alive = false; };
+  }, []);
 
   const user = useUserProfile();
   const displayName =
@@ -174,11 +204,13 @@ export default function MiActividadResumen() {
     const handler = () => doRefresh();
     window.addEventListener('akira:points:refresh', handler);
     window.addEventListener('akira:activity:changed', handler);
+    window.addEventListener('akira:program-json:ready', handler);
 
     return () => {
       mounted = false;
       window.removeEventListener('akira:points:refresh', handler);
       window.removeEventListener('akira:activity:changed', handler);
+      window.removeEventListener('akira:program-json:ready', handler);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -237,7 +269,7 @@ export default function MiActividadResumen() {
       <section>
         <div className="mb-2 flex items-baseline justify-between">
           <h3 className="text-lg font-semibold">Estadísticas</h3>
-        <Link href="/mizona/estadisticas" className="text-sm font-medium text-neutral-700 hover:underline">Ver todo</Link>
+          <Link href="/mizona/estadisticas" className="text-sm font-medium text-neutral-700 hover:underline">Ver todo</Link>
         </div>
         <p className="text-sm text-neutral-600 mb-3">Descubre tus estadísticas de esta semana</p>
         <MiniWeeklyChartReal />
@@ -334,7 +366,7 @@ function ActiveProgramsList() {
   const entries = Object.entries(activeMap).filter(([slug, p]) => {
     const lp = p as LocalProgram;
     if (!lp?.startedAt) return false;
-    const json = tryGetProgramJson(slug);
+    const json = getProgramJsonCachedSync(slug);
     const totalDays: number = json?.days?.length ?? json?.durationDays ?? 0;
     if (!totalDays) return false;
     const rawIdx = dayIdxSince(lp.startedAt, new Date());
@@ -348,7 +380,7 @@ function ActiveProgramsList() {
     <div className="space-y-3">
       {entries.map(([slug, p]) => {
         const lp = p as LocalProgram;
-        const json = tryGetProgramJson(slug);
+        const json = getProgramJsonCachedSync(slug);
         const title: string = json?.title || slug.replaceAll('-', ' ');
         const totalDays: number = json?.days?.length ?? json?.durationDays ?? 0;
         const today = totalDays ? clampDay(lp.startedAt!, new Date(), totalDays) : 0;
@@ -420,7 +452,7 @@ function buildWeeklySeries(activeMap: LocalStore) {
   for (const [slug, prog] of Object.entries(activeMap)) {
     const lp = prog as LocalProgram;
     if (!lp?.startedAt) continue;
-    const json = tryGetProgramJson(slug);
+    const json = getProgramJsonCachedSync(slug);
     const totalDays: number = json?.days?.length ?? json?.durationDays ?? 0;
     if (!totalDays) continue;
 
@@ -496,7 +528,7 @@ function getDayStatus(date: Date): 'none'|'some'|'all'|'missed' {
   for (const [slug, prog] of Object.entries(map)) {
     const lp = prog as LocalProgram;
     if (!lp?.startedAt) continue;
-    const json = tryGetProgramJson(slug);
+    const json = getProgramJsonCachedSync(slug);
     const totalDays: number = json?.days?.length ?? json?.durationDays ?? 0;
     if (!totalDays) continue;
 

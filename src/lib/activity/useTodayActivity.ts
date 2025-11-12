@@ -5,6 +5,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { loadActive, saveActive, type LocalProgram } from '@/lib/programsLocal';
 import { useAuthUserId } from '@/lib/user';
 import { supabase } from '@/lib/supabaseClient';
+import { resolveProgramDef } from '@/data/programs'; // usa el util existente de defs (si está)
+import { loadProgramJson } from '@/lib/programJson';
 
 /* ===== Tipos públicos para hoy ===== */
 export type ProgramToday = {
@@ -43,9 +45,7 @@ async function fetchProgramJsonFresh(slug: string, signal?: AbortSignal) {
 
 function tryGetProgramJsonBundled(slug: string): any | null {
   try {
-    // @ts-ignore
-    const m = require(`@/data/programs/${slug}.json`);
-    return m?.default ?? m ?? null;
+   return await loadProgramJson(slug);
   } catch {
     return null;
   }
@@ -63,10 +63,22 @@ export function useTodayActivity() {
   /* Cache en memoria de JSON frescos por slug */
   const [programJsonCache, setProgramJsonCache] = useState<Record<string, any>>({});
 
-  // Descarga JSON actualizados para los slugs activos; reintenta en cada build nuevo
+  /* Firma de slugs activos (empezados y no completados) para re-disparar fetch */
+  const activeSlugsSig = useMemo(() => {
+    const store = loadActive();
+    const slugs = Object.entries(store)
+      .filter(([, p]) => {
+        const lp = p as LocalProgram & { startedAt?: number; completedAt?: number | null };
+        return !!lp?.startedAt && !lp?.completedAt;
+      })
+      .map(([slug]) => slug)
+      .sort();
+    return JSON.stringify(slugs);
+  }, [version, todayISO]);
+
+  // Descarga JSON actualizados para los slugs activos; reintenta al cambiar build o slugs
   useEffect(() => {
     const store = loadActive();
-    // Sólo slugs "vivos": empezados y no completados
     const activeSlugs = Object.entries(store)
       .filter(([, p]) => {
         const lp = p as LocalProgram & { startedAt?: number; completedAt?: number | null };
@@ -100,7 +112,7 @@ export function useTodayActivity() {
       cancelled = true;
       controller.abort();
     };
-  }, [BUILD_V]);
+  }, [BUILD_V, activeSlugsSig]);
 
   /* Getter: usa fresco si existe; si no, cae al bundled */
   const getJson = useCallback(
@@ -220,9 +232,11 @@ export function useTodayActivity() {
       .eq('user_id', uid);
     if (error) return console.warn('[suggestion] accept error:', error);
     setSuggestion((s) => (s ? { ...s, status: 'accepted' } : s));
-    window.dispatchEvent(new CustomEvent('akira:activity:changed', {
-      detail: { source: 'suggestion', action: 'accept' },
-    }));
+    window.dispatchEvent(
+      new CustomEvent('akira:activity:changed', {
+        detail: { source: 'suggestion', action: 'accept' },
+      })
+    );
   }, [uid, suggestion]);
 
   const dismissSuggestion = useCallback(async () => {
@@ -234,9 +248,11 @@ export function useTodayActivity() {
       .eq('user_id', uid);
     if (error) return console.warn('[suggestion] dismiss error:', error);
     setSuggestion((s) => (s ? { ...s, status: 'dismissed' } : s));
-    window.dispatchEvent(new CustomEvent('akira:activity:changed', {
-      detail: { source: 'suggestion', action: 'dismiss' },
-    }));
+    window.dispatchEvent(
+      new CustomEvent('akira:activity:changed', {
+        detail: { source: 'suggestion', action: 'dismiss' },
+      })
+    );
   }, [uid, suggestion]);
 
   const toggleSuggestionDone = useCallback(async () => {
@@ -250,9 +266,11 @@ export function useTodayActivity() {
       .eq('user_id', uid);
     if (error) return console.warn('[suggestion] toggle error:', error);
     setSuggestion((s) => (s ? { ...s, status: next } : s));
-    window.dispatchEvent(new CustomEvent('akira:activity:changed', {
-      detail: { source: 'suggestion', action: 'toggle' },
-    }));
+    window.dispatchEvent(
+      new CustomEvent('akira:activity:changed', {
+        detail: { source: 'suggestion', action: 'toggle' },
+      })
+    );
   }, [uid, suggestion]);
 
   /* ===== Totales para rueda ===== (sin suggestion: no puntúa ranking) */
@@ -357,8 +375,12 @@ function dayIdxSince(startedAt: number, when: Date) {
   return Math.floor((b - a) / 86_400_000) + 1;
 }
 function colorFor(slug: string) {
-  if (slug.includes('detox')) return '#0a7cff';
-  if (slug.includes('lectura')) return '#f59e0b';
+  try {
+    const def = resolveProgramDef?.(slug as string);
+    if (def?.color) return def.color as string;
+  } catch {}
+  if ((slug || '').includes('detox')) return '#0a7cff';
+  if ((slug || '').includes('lectura')) return '#f59e0b';
   return '#111';
 }
 
