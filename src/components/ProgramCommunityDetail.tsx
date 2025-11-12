@@ -1,7 +1,7 @@
 // src/components/ProgramCommunityDetail.tsx
 'use client';
 
-import type { FC, ReactNode } from 'react';
+import type { FC, ReactNode, CSSProperties } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -35,12 +35,12 @@ import {
 import { pushStartProgram, pushResetProgram, pullUserPrograms } from '@/lib/programSync';
 
 /* =========================================================================================
-   NUEVO: Carga de ProgramJson desde /public/data/programs/[slug].json?v=BUILD_V (client-side)
+   Carga de ProgramJson desde /public/data/programs/[slug].json?v=BUILD_V (client-side)
    ========================================================================================= */
 
 const BUILD_V = process.env.NEXT_PUBLIC_BUILD_VERSION ?? 'dev';
-const PROGRAM_CACHE_KEY = (slug: string) => `akira_program_json_v2:${slug}`; // v2 para evitar colisiones antiguas
-const PROGRAM_CACHE_TTL_MS = 5 * 60 * 1000; // 5 min (ajustable);
+const PROGRAM_CACHE_KEY = (slug: string) => `akira_program_json_v2:${slug}`;
+const PROGRAM_CACHE_TTL_MS = 5 * 60 * 1000;
 
 /** Guarda en cache local con timestamp */
 function writeProgramCache(slug: string, data: unknown) {
@@ -122,7 +122,6 @@ function InlineMarkdown({ text }: { text: string }) {
   let i = 0; let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
     if (m.index > i) parts.push(text.slice(i, m.index));
-    
     i = m.index + m[0].length;
   }
   if (i < text.length) parts.push(text.slice(i));
@@ -215,8 +214,40 @@ type Props = {
   slug: string;
   imageSrc?: string;
   title: string;
-  // ⛔️ Eliminado: program: ProgramJson;  -> ahora se carga desde /public/data/programs
+  // ⛔️ Eliminado: program: ProgramJson; -> se carga desde /public/data/programs
 };
+
+/* =======================
+   Helpers de color (CSS)
+   ======================= */
+function hexToRgb(hex: string) {
+  const m = hex.trim().match(/^#?([0-9a-f]{6}|[0-9a-f]{3})$/i);
+  if (!m) return { r: 0, g: 0, b: 0 };
+  let h = m[1];
+  if (h.length === 3) h = h.split('').map(c => c + c).join('');
+  const num = parseInt(h, 16);
+  return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255 };
+}
+function rgbToHex(r: number, g: number, b: number) {
+  const to = (v: number) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0');
+  return `#${to(r)}${to(g)}${to(b)}`;
+}
+function darkenHex(hex: string, pct = 12) {
+  const { r, g, b } = hexToRgb(hex);
+  const f = 1 - pct / 100;
+  return rgbToHex(r * f, g * f, b * f);
+}
+/** CSS vars que suelen leer nuestras barras; inofensivas si el comp no las usa */
+function buildBarVars(hex?: string | null): CSSProperties {
+  if (!hex) return {};
+  const end = darkenHex(hex, 12);
+  return {
+    ['--bar-start' as any]: hex,
+    ['--bar-end' as any]: end,
+    ['--bar-ring' as any]: end,
+    ['--bar-color' as any]: hex,
+  };
+}
 
 export default function ProgramCommunityDetail({ slug, imageSrc, title }: Props) {
   const router = useRouter();
@@ -229,7 +260,6 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title }: Props)
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    // Cancelar petición previa si cambia slug/BUILD_V
     abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
@@ -239,22 +269,18 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title }: Props)
       setProgLoading(true);
       setProgError(null);
 
-      // 1) Intento cache local (rápido, pinta inmediato si válido)
       const cached = readProgramCache<ProgramJson>(slug);
       if (cached && mounted) setProgram(cached);
 
       try {
-        // 2) Fetch fresco (fuerza lectura "fresh" con BUILD_V)
         const fresh = await fetchProgramJsonRemote<ProgramJson>(slug, ac.signal);
         if (!mounted) return;
-        // Validaciones mínimas
         if (!fresh || !Array.isArray(fresh.days)) {
           throw new Error('JSON inválido: falta days[]');
         }
         setProgram(fresh);
         writeProgramCache(slug, fresh);
       } catch (e: any) {
-        // Si no había cache válida, señaliza error
         if (!cached) setProgError(e?.message || 'No se pudo cargar el programa');
       } finally {
         if (mounted) setProgLoading(false);
@@ -288,40 +314,39 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title }: Props)
     const m = c.trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
     return m ? c : null;
   }
-const FALLBACK_COLOR: Record<string, string> = {
-  'lectura': '#E0E7FF',
-  'lectura-30': '#E0E7FF',
-  'detox-tecnologico': '#FCD34D',
-  'detox-tecnologico-30': '#FCD34D',
-  'san-silvestre-60': '#FCA5A5',
-};
+  const FALLBACK_COLOR: Record<string, string> = {
+    'lectura': '#E0E7FF',
+    'lectura-30': '#E0E7FF',
+    'detox-tecnologico': '#FCD34D',
+    'detox-tecnologico-30': '#FCD34D',
+    'san-silvestre-60': '#FCA5A5',
+  };
 
-const metaColor = useMemo(() => {
-  try {
-    const meta = getProgramMeta(slug);
-    const raw =
-      (meta as any)?.themeColor ??
-      (meta as any)?.color ??
-      undefined;
-    return sanitizeHex(typeof raw === 'string' ? raw : undefined);
-  } catch {
-    return null;
-  }
-}, [slug]);
+  const metaColor = useMemo(() => {
+    try {
+      const meta = getProgramMeta(slug);
+      const raw =
+        (meta as any)?.themeColor ??
+        (meta as any)?.color ??
+        undefined;
+      return sanitizeHex(typeof raw === 'string' ? raw : undefined);
+    } catch {
+      return null;
+    }
+  }, [slug]);
 
-const themeColor = useMemo(() => {
-  const fromProgram = sanitizeHex((program as any)?.themeColor);
-  if (fromProgram) return fromProgram;
-  if (metaColor) return metaColor;
+  const themeColor = useMemo(() => {
+    const fromProgram = sanitizeHex((program as any)?.themeColor);
+    if (fromProgram) return fromProgram;
+    if (metaColor) return metaColor;
 
-  for (const key in FALLBACK_COLOR) {
-    if (slug.includes(key)) return FALLBACK_COLOR[key];
-  }
-  return '#F5F5F5';
-}, [program?.themeColor, metaColor, slug]);
+    for (const key in FALLBACK_COLOR) {
+      if (slug.includes(key)) return FALLBACK_COLOR[key];
+    }
+    return '#F5F5F5';
+  }, [program?.themeColor, metaColor, slug]);
 
-
-  /* ====== Modal de detalles (como en Checks) ====== */
+  /* ====== Modal de detalles ====== */
   const [infoOpen, setInfoOpen] = useState(false);
   const [infoTitle, setInfoTitle] = useState('');
   const [infoDetail, setInfoDetail] = useState<string | undefined>(undefined);
@@ -368,7 +393,7 @@ const themeColor = useMemo(() => {
   const reloadLeadersAndMembers = async () => {
     const [lb, count] = await Promise.all([ loadProgramLeaders(slug), loadProgramMembersCount(slug) ]);
     setLeaders(lb);
-    setMembersCount(Math.max(count, lb.length)); // coherencia si count llega retrasado
+    setMembersCount(Math.max(count, lb.length));
     const ids = lb.map(l => l.user_id);
     const map = await loadAvatarsFor(ids);
     setLeaderPhotos(map);
@@ -550,16 +575,18 @@ const themeColor = useMemo(() => {
   }, [started, program, active?.startedAt, activeMap, slug, currentDay]);
 
   /* ===== UI ===== */
+  const displayTitle = (program?.title ?? title)?.trim();
+
   return (
     <div className="px-2 pb-24 bg-white">
       {/* HERO */}
       {imageSrc && (
         <div className="-mx-2 mb-5 relative">
           <div className="relative w-full aspect-[16/9]">
-            <Image src={imageSrc} alt={title} fill className="object-cover" priority />
+            <Image src={imageSrc} alt={displayTitle} fill className="object-cover" priority />
           </div>
 
-          {/* Botón Volver como en ProgramDetail */}
+          {/* Botón Volver */}
           <div className="absolute top-3 right-3">
             <button
               onClick={() => { try { router.back(); } catch { location.href = '/programas'; } }}
@@ -572,9 +599,10 @@ const themeColor = useMemo(() => {
         </div>
       )}
 
-      {/* Título + participantes (más aire) */}
+      {/* Título + participantes (sin duplicados) */}
       <div className="mb-3">
-        <h1 className="text-2xl font-semibold text-neutral-900">{title}</h1><h1 className="text-2xl font-semibold text-neutral-900">{program?.title ?? title}</h1>        <div className="mt-1 text-[13px] text-neutral-500">👥 {membersCount} participantes</div>
+        <h1 className="text-2xl font-semibold text-neutral-900">{displayTitle}</h1>
+        <div className="mt-1 text-[13px] text-neutral-500">👥 {membersCount} participantes</div>
       </div>
 
       {/* CTA */}
@@ -609,7 +637,7 @@ const themeColor = useMemo(() => {
         </div>
       </div>
 
-      {/* TABS (más aire: h-11 + pb-1 y subrayado -3px) */}
+      {/* TABS */}
       <nav className="border-b bg-white sticky top-[48px] z-10 -mt-px mt-5">
         <div className="flex gap-5 h-11 items-center px-2 pb-1 overflow-x-auto">
           {TABS.map((tab) => {
@@ -619,13 +647,12 @@ const themeColor = useMemo(() => {
               <button
                 key={tab}
                 onClick={() => { if (!locked) setActiveTab(tab); }}
- disabled={locked}
+                disabled={locked}
                 className={`group relative inline-flex items-center px-1.5 py-0.5 text-[13px] text-neutral-600 hover:text-black transition ${locked ? 'opacity-60' : ''} whitespace-nowrap`}
                 aria-current={isActive ? 'page' : undefined}
                 title={locked ? 'Bloqueado hasta que empieces el programa' : tab}
               >
                 <span className={isActive ? 'font-semibold text-black' : ''}>{tab}</span>
-                {/* subrayado corto y fino */}
                 <span
                   aria-hidden
                   className={`pointer-events-none absolute left-1/2 -translate-x-1/2 -bottom-[3px] h-px rounded transition-all duration-200
@@ -641,7 +668,6 @@ const themeColor = useMemo(() => {
 
       {/* CONTENIDO */}
       <section className="py-6 space-y-6">
-        {/* ===== Estado de carga/errores del ProgramJson ===== */}
         {(progLoading || progError) && (
           <div className="px-2">
             {progLoading && (
@@ -708,7 +734,8 @@ const themeColor = useMemo(() => {
               <strong>Tus retos de hoy</strong>. Márcalos cuando los completes.
             </p>
 
-            <div className="mt-5 space-y-2">
+            {/* Inyectamos CSS vars basadas en themeColor para evitar fallback negro */}
+            <div className="mt-5 space-y-2" style={buildBarVars(themeColor)}>
               {(program.days.find(d => d.day === currentDay)?.tasks ?? []).map((t, i) => {
                 const id = t.id ?? `task_${i}`;
                 const done = Boolean((activeMap[slug]?.progress?.[currentDay] as any)?.[id]);
@@ -765,7 +792,7 @@ const themeColor = useMemo(() => {
                         La obtienes al completar el reto (≥ <b>90%</b> de los días).
                       </p>
                     </div>
-                    <div className="w-24 h-24 relative rounded-xl overflow-hidden border border-neutral-200 bg-neutral-50">
+                    <div className="w-24 h-24 relative rounded-XL overflow-hidden border border-neutral-200 bg-neutral-50">
                       {program.badgeImage ? (
                         <Image src={program.badgeImage} alt={`Insignia: ${program.badgeName ?? ''}`} fill className="object-cover" />
                       ) : (
@@ -845,10 +872,10 @@ const themeColor = useMemo(() => {
         )}
       </section>
 
-      {/* Modal de detalles (reutilizado de Checks) */}
+      {/* Modal de detalles */}
       <InfoModal
         open={infoOpen}
-        title={`${program?.title ?? title} · ${infoTitle}`}
+        title={`${displayTitle} · ${infoTitle}`}
         detail={infoDetail}
         onClose={closeInfo}
       />
