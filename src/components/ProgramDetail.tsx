@@ -83,6 +83,39 @@ function mdInlineToPlain(s: string) {
     .replace(/\*(.+?)\*/g, '$1');    // *cursiva*
 }
 
+function dateKeyTZ(d = new Date(), tz = 'Europe/Madrid') {
+  const parts = new Intl.DateTimeFormat('es-ES', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(d);
+  const g = (t: string) => parts.find(p => p.type === t)?.value!;
+  return `${g('year')}-${g('month')}-${g('day')}`;
+}
+
+type Badgeish = {
+  badge?: { image?: string; title?: string };
+  badgeImage?: string;
+  badgeName?: string;
+};
+
+function pickBadge(slug: string, data?: Badgeish | null) {
+  const FALLBACK_IMG = '/images/badges/generic-badge.png';
+
+  const img =
+    data?.badge?.image ??
+    data?.badgeImage ??
+    (BADGE_FILES as Record<string, string | undefined>)[slug] ??
+    FALLBACK_IMG;
+
+  const title =
+    data?.badge?.title ??
+    data?.badgeName ??
+    (BADGE_TITLES as Record<string, string | undefined>)[slug] ??
+    'Insignia';
+
+  return { img, title };
+}
+
+
 /* ---------- Mini Markdown ---------- */
 function escapeHtml(s: string) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -311,7 +344,10 @@ export default function ProgramDetail({
 
   const progressPct = useMemo(() => {
     if (!active?.startedAt || totalDays === 0) return 0;
-    const passed = Math.min(totalDays, Math.max(0, daysBetweenFromMs(active.startedAt, todayKey()) + 1));
+    const passed = Math.min(
+   totalDays,
+   Math.max(0, daysBetweenFromMs(active.startedAt, dateKeyTZ()) + 1)
+ );
     return Math.round((passed / totalDays) * 100);
   }, [active?.startedAt, totalDays]);
 
@@ -526,9 +562,8 @@ export default function ProgramDetail({
     );
   }
 
-  const programColor = data?.themeColor ?? (PROGRAM_COLORS[slug] ?? '#111111');
- const badgeSrc = data?.badgeImage ?? (BADGE_FILES[slug] ?? '/images/badges/generic-badge.png');
- const badgeTitle = data?.badgeName ?? (BADGE_TITLES[slug] ?? 'Insignia');
+const programColor = data?.themeColor ?? (PROGRAM_COLORS[slug] ?? '#111111');
+const { img: badgeSrc, title: badgeTitle } = pickBadge(slug, data as any);
 
   return (
     <div className="px-4 pb-24 bg-white">

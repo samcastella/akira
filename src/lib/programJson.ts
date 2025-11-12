@@ -3,7 +3,7 @@ import { BUILD_V } from '@/lib/buildVersion';
 import {
   getBySlug as getProgramMeta,
   PROGRAM_SLUG_ALIASES,
-  resolveProgramDef, // fallback estático ya normalizado
+  resolveProgramDef, // fallback estático ya normalizado (META, normalmente sin days)
 } from '@/data/programs';
 
 /* ======================================
@@ -29,7 +29,7 @@ export type ProgramJson = {
     whatYouWillGet?: string[];
     howToUse?: string[];
   };
-  days: ProgramDay[];
+  days: ProgramDay[];            // en fresh/LS siempre existirá; en estático usamos [] si no hay datos
 };
 
 /* ======================================
@@ -184,19 +184,22 @@ export async function loadProgramJson(slug: string): Promise<ProgramJson> {
     }
   }
 
-  // 4) estático (índice ya normalizado en data/programs)
+  // 4) estático (índice ya normalizado en data/programs – normalmente META SOLA)
   const staticDef = resolveProgramDef(canonical);
   if (staticDef) {
-    // Adaptamos ProgramDef → ProgramJson (son muy parecidos)
+    // OJO: el índice estático suele NO tener "days". Rellenamos con [] y conservamos meta útil.
+    const staticAny = staticDef as any;
     const norm: ProgramJson = {
       slug: staticDef.slug,
       title: staticDef.title,
       shortDescription: staticDef.shortDescription,
       howItWorks: staticDef.howItWorks,
-      durationDays: staticDef.durationDays,
-      themeColor: staticDef.themeColor,
+      durationDays:
+        staticDef.durationDays ??
+        (Array.isArray(staticAny?.days) ? staticAny.days.length : undefined),
+      themeColor: staticDef.themeColor ?? (staticAny?.color as string | undefined),
       accordions: staticDef.accordions,
-      days: staticDef.days,
+      days: Array.isArray(staticAny?.days) ? (staticAny.days as ProgramDay[]) : [], // ✅ sin days en meta: []
     };
     LAST_FETCH_META[canonical] = { source: 'static-index', build: BUILD_V, ok: true };
     MEMO.set(canonical, norm);

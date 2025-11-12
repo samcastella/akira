@@ -44,12 +44,18 @@ async function fetchProgramJsonFresh(slug: string, signal?: AbortSignal) {
 }
 
 function tryGetProgramJsonBundled(slug: string): any | null {
+  // Fallback síncrono SOLO si el JSON está empaquetado en el bundle.
+  // Si no está, devolvemos null y usaremos el loader “fresh” desde /public.
   try {
-   return await loadProgramJson(slug);
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    // @ts-ignore – dynamic require como último recurso
+    const m = require(`@/data/programs/${slug}.json`);
+    return m?.default ?? m ?? null;
   } catch {
     return null;
   }
 }
+
 function getDayDef(json: any, day: number) {
   return json?.days?.find((x: any) => x.day === day) ?? json?.days?.[day - 1];
 }
@@ -375,10 +381,10 @@ function dayIdxSince(startedAt: number, when: Date) {
   return Math.floor((b - a) / 86_400_000) + 1;
 }
 function colorFor(slug: string) {
-  try {
-    const def = resolveProgramDef?.(slug as string);
-    if (def?.color) return def.color as string;
-  } catch {}
+try {
+  const def = resolveProgramDef?.(slug as string);
+  if (def?.themeColor) return def.themeColor as string;
+} catch {}
   if ((slug || '').includes('detox')) return '#0a7cff';
   if ((slug || '').includes('lectura')) return '#f59e0b';
   return '#111';

@@ -288,13 +288,38 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title }: Props)
     const m = c.trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
     return m ? c : null;
   }
-  const metaColor = useMemo(() => {
-    try { return sanitizeHex(getProgramMeta(slug)?.color as string | undefined); }
-    catch { return null; }
-  }, [slug]);
-  const themeColor = useMemo(() => {
-    return sanitizeHex(program?.themeColor) || metaColor || '#F5F5F5';
-  }, [program?.themeColor, metaColor]);
+const FALLBACK_COLOR: Record<string, string> = {
+  'lectura': '#E0E7FF',
+  'lectura-30': '#E0E7FF',
+  'detox-tecnologico': '#FCD34D',
+  'detox-tecnologico-30': '#FCD34D',
+  'san-silvestre-60': '#FCA5A5',
+};
+
+const metaColor = useMemo(() => {
+  try {
+    const meta = getProgramMeta(slug);
+    const raw =
+      (meta as any)?.themeColor ??
+      (meta as any)?.color ??
+      undefined;
+    return sanitizeHex(typeof raw === 'string' ? raw : undefined);
+  } catch {
+    return null;
+  }
+}, [slug]);
+
+const themeColor = useMemo(() => {
+  const fromProgram = sanitizeHex((program as any)?.themeColor);
+  if (fromProgram) return fromProgram;
+  if (metaColor) return metaColor;
+
+  for (const key in FALLBACK_COLOR) {
+    if (slug.includes(key)) return FALLBACK_COLOR[key];
+  }
+  return '#F5F5F5';
+}, [program?.themeColor, metaColor, slug]);
+
 
   /* ====== Modal de detalles (como en Checks) ====== */
   const [infoOpen, setInfoOpen] = useState(false);

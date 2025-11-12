@@ -1,3 +1,4 @@
+// src/app/mizona/estadisticas/page.tsx
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
@@ -5,7 +6,7 @@ import CalendarLite from '@/components/mizona/CalendarLite';
 import Image from 'next/image';
 import { useTodayActivity } from '@/lib/activity/useTodayActivity';
 import { loadActive, type LocalProgram } from '@/lib/programsLocal';
-import { loadProgramJson, type ProgramJson } from '@/lib/programJson';
+import { loadProgramJson } from '@/lib/programJson';
 
 /* === Puntuación (RPC) === */
 import {
@@ -13,7 +14,7 @@ import {
   type ProgramPointsTotals,
 } from '@/lib/programService';
 
-/* ==== Helpers de fecha ==== */
+// ==== Helpers (idénticos a Resumen) ====
 function startOfDay(d: Date) { const x = new Date(d); x.setHours(0,0,0,0); return x; }
 function addDays(d: Date, n: number) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
 function toISO(d: Date) {
@@ -25,78 +26,97 @@ function toISO(d: Date) {
 function dayIdxSince(startedAt: number, when: Date) {
   const a = startOfDay(new Date(startedAt)).getTime();
   const b = startOfDay(when).getTime();
-  return Math.floor((b - a) / 86_400_000) + 1; // 1..N
+  return Math.floor((b - a) / 86_400_000) + 1;
 }
 
-/* ==== Carga dinámica de ProgramJson (fresco + memo síncrono) ==== */
-const V = process.env.NEXT_PUBLIC_BUILD_VERSION || 'dev';
-async function fetchProgramJsonFresh(slug: string, signal?: AbortSignal): Promise<ProgramJson> {
-  const url = `/data/programs/${encodeURIComponent(slug)}.json?v=${encodeURIComponent(V)}`;
-  const res = await fetch(url, { cache: 'no-store', signal });
-  if (!res.ok) throw new Error(`HTTP ${res.status} al cargar ${url}`);
-  return res.json();
-}
-const PROGRAM_JSON_MEMO = new Map<string, ProgramJson>();
-function getProgramJsonCachedSync(slug: string): ProgramJson | null {
-  return PROGRAM_JSON_MEMO.get(slug) ?? null;
+/* ========= Carga/caché síncrona amistosa del JSON =========
+   No podemos hacer await en helpers síncronos (calendario, etc.),
+   así que mantenemos una caché in-memory y "primeamos" en background. */
+const programJsonCache: Record<string, any> = {};
+
+function primeProgramJson(slug: string) {
+  // Fire-and-forget para ir llenando la caché
+  if (!programJsonCache[slug]) {
+    loadProgramJson(slug).then((j) => {
+      programJsonCache[slug] = j;
+      // Opcional: disparar un refresh suave si hace falta
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('akira:program-json:warmed', { detail: { slug } }));
+      }
+    }).catch(() => {});
+  }
 }
 
-/* ==== Página ==== */
+/** Intento síncrono: devuelve lo que haya en caché y dispara la precarga */
+function tryGetProgramJson(slug: string): any | null {
+  const j = programJsonCache[slug] ?? null;
+  if (!j) primeProgramJson(slug);
+  return j;
+}
+
+// === Mismo dayStatus que en Resumen (con fallback si aún no hay JSON) ===
+function getDayStatus(date: Date): 'none'|'some'|'all'|'missed' {
+  const map = loadActive();
+  let planned = 0, done = 0;
+
+  for (const [slug, prog] of Object.entries(map)) {
+    const lp = prog as LocalProgram & { progress?: Record<number, Record<string, boolean>>; startedAt?: number };
+    if (!lp?.startedAt) continue;
+
+    const json = tryGetProgramJson(slug);
+    const totalDays: number = json?.days?.length ?? json?.durationDays ?? 0;
+    if (!totalDays) continue; // si aún no hay JSON, no contamos ese día
+
+    const dNum = dayIdxSince(lp.startedAt!, date);
+    if (dNum < 1 || dNum > totalDays) continue;
+
+    const dayDef = json?.days?.find((x: any) => x.day === dNum) ?? json?.days?.[dNum - 1];
+    planned += Math.max(0, dayDef?.tasks?.length ?? 0);
+
+    const doneMap = (lp.progress?.[dNum] as Record<string, boolean> | undefined) ?? {};
+    done += Object.values(doneMap).filter(Boolean).length;
+  }
+
+  if (planned === 0) return 'none';
+  if (done === 0) {
+    const isPast = startOfDay(date).getTime() < startOfDay(new Date()).getTime();
+    return isPast ? 'missed' : 'none';
+  }
+  if (done < planned) return 'some';
+  return 'all';
+}
+
+/* ========= Pequeño chart SVG (líneas) ========= */
+function Chart({ labels, goal, actual }: { labels: string[]; goal: number[]; actual: number[] }) {
+  const width = 640, height = 220, padL = 28, padR = 16, padT = 20, padB = 28;
+  const n = labels.length;
+  const xs = (i: number) => padL + (i * (width - padL - padR)) / Math.max(1, n - 1);
+  const maxY = Math.max(5, ...goal, ...actual);
+  const niceMax = Math.max(5, Math.ceil(maxY / 5) * 5);
+  const ys = (v: number) => padT + (height - padT - padB) * (1 - v / (niceMax || 1));
+  const pathFor = (arr: number[]) => arr.map((v, i) => `${i === 0 ? 'M' : 'L'} ${xs(i)} ${ys(v)}`).join(' ');
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto">
+      <rect x="0" y="0" width={width} height={height} fill="white" />
+      {[0,1,2,3,4].map(i=>{
+        const y = padT + ((height-padT-padB)*i)/4;
+        return <line key={i} x1={padL} x2={width-padR} y1={y} y2={y} stroke="#e5e7eb" strokeWidth="1" />
+      })}
+      <path d={pathFor(goal)} fill="none" stroke="#d1d5db" strokeWidth="2" />
+      <path d={pathFor(actual)} fill="none" stroke="#3b82f6" strokeWidth="2" />
+      {goal.map((v,i)=><circle key={`g${i}`} cx={xs(i)} cy={ys(v)} r="4" fill="white" stroke="#d1d5db" strokeWidth="2" />)}
+      {actual.map((v,i)=><circle key={`a${i}`} cx={xs(i)} cy={ys(v)} r="4" fill="white" stroke="#3b82f6" strokeWidth="2" />)}
+      {labels.map((l,i)=><text key={`l${i}`} x={xs(i)} y={height-padB+16} textAnchor="middle" fontSize="11" fill="#6b7280">{l}</text>)}
+      <text x={width-4} y={padT-6} textAnchor="end" fontSize="12" fill="#6b7280">Checks</text>
+    </svg>
+  );
+}
+
 export default function MiActividadStats() {
   const { historicalPoints, weeklySeries } = useTodayActivity();
 
-  /* Estado local de programas activos + JSONs */
-  const [activeMap, setActiveMap] = useState<Record<string, LocalProgram>>({});
-  const [jsonBySlug, setJsonBySlug] = useState<Record<string, ProgramJson>>({});
-
-  /* Hidrata programas activos del localStore al montar/visibilidad */
-  useEffect(() => {
-    const read = () => setActiveMap(loadActive() as Record<string, LocalProgram>);
-    read();
-    const onVis = () => { if (document.visibilityState === 'visible') read(); };
-    document.addEventListener('visibilitychange', onVis);
-    return () => document.removeEventListener('visibilitychange', onVis);
-  }, []);
-
-  /* Carga JSON fresco para los slugs activos (y rellena memo síncrono) */
-  useEffect(() => {
-    const slugs = Object.keys(activeMap).filter((s) => !!activeMap[s]?.startedAt);
-    if (!slugs.length) return;
-
-    const controller = new AbortController();
-    let cancelled = false;
-    (async () => {
-      try {
-        const pairs = await Promise.all(slugs.map(async (slug) => {
-          try {
-            const fresh = await fetchProgramJsonFresh(slug, controller.signal);
-            return [slug, fresh] as const;
-          } catch {
-            try {
-              const fb = await loadProgramJson(slug);
-              return [slug, fb] as const;
-            } catch {
-              return null;
-            }
-          }
-        }));
-        if (cancelled) return;
-        const next: Record<string, ProgramJson> = { ...jsonBySlug };
-        for (const p of pairs) {
-          if (!p) continue;
-          const [slug, json] = p;
-          next[slug] = json;
-          PROGRAM_JSON_MEMO.set(slug, json);
-        }
-        setJsonBySlug(next);
-      } catch {/* noop */}
-    })();
-
-    return () => { cancelled = true; controller.abort(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [Object.keys(activeMap).sort().join('|'), V]);
-
-  /* ===== Puntuación por RPC (con fallback) ===== */
+  // ===== Puntuación por RPC (con fallback) =====
   const [totals, setTotals] = useState<ProgramPointsTotals | null>(null);
   useEffect(() => {
     let mounted = true;
@@ -112,9 +132,10 @@ export default function MiActividadStats() {
     })();
     return () => { mounted = false; };
   }, []);
+
   const score = totals?.total_points ?? historicalPoints ?? 0;
 
-  /* ===== Select de semanas (useTodayActivity) ===== */
+  // ===== Semanas (select) =====
   const series4 = (weeklySeries ?? []).slice(0, 4);
   const [weekIdx, setWeekIdx] = useState(0);
   const current = useMemo(
@@ -129,53 +150,19 @@ export default function MiActividadStats() {
     [series4, weekIdx]
   );
 
-  /* ===== dayStatus (clausura sobre jsonBySlug + activeMap) ===== */
-  const getDayStatus = useMemo(() => {
-    return (date: Date): 'none'|'some'|'all'|'missed' => {
-      const map = activeMap;
-      let planned = 0, done = 0;
-
-      for (const [slug, lpRaw] of Object.entries(map)) {
-        const lp = lpRaw as LocalProgram & { progress?: Record<number, Record<string, boolean>>; startedAt?: number };
-        if (!lp?.startedAt) continue;
-
-        const json = jsonBySlug[slug] || getProgramJsonCachedSync(slug);
-        const totalDays: number = json?.days?.length ?? json?.durationDays ?? 0;
-        if (!totalDays) continue;
-
-        const dNum = dayIdxSince(lp.startedAt!, date);
-        if (dNum < 1 || dNum > totalDays) continue;
-
-        const dayDef = json?.days?.find((x: any) => x.day === dNum) ?? json?.days?.[dNum - 1];
-        planned += Math.max(0, dayDef?.tasks?.length ?? 0);
-
-        const doneMap = (lp.progress?.[dNum] as Record<string, boolean> | undefined) ?? {};
-        done += Object.values(doneMap).filter(Boolean).length;
-      }
-
-      if (planned === 0) return 'none';
-      if (done === 0) {
-        const isPast = startOfDay(date).getTime() < startOfDay(new Date()).getTime();
-        return isPast ? 'missed' : 'none';
-      }
-      if (done < planned) return 'some';
-      return 'all';
-    };
-  }, [activeMap, jsonBySlug]);
-
-  /* ===== % último mes (28 días) ===== */
+  // ===== % último mes (28 días) =====
   const pctLastMonth = useMemo(() => {
-    const map = activeMap;
+    const map = loadActive();
     const today = startOfDay(new Date()).getTime();
     let planned = 0, done = 0;
 
     for (let i = 0; i < 28; i++) {
       const d = new Date(today - i * 86_400_000);
-      for (const [slug, lpRaw] of Object.entries(map)) {
-        const lp = lpRaw as LocalProgram & { progress?: Record<number, Record<string, boolean>>; startedAt?: number };
+      for (const [slug, prog] of Object.entries(map)) {
+        const lp = prog as LocalProgram & { progress?: Record<number, Record<string, boolean>>; startedAt?: number };
         if (!lp?.startedAt) continue;
 
-        const json = jsonBySlug[slug] || getProgramJsonCachedSync(slug);
+        const json = tryGetProgramJson(slug);
         const totalDays: number = json?.days?.length ?? json?.durationDays ?? 0;
         if (!totalDays) continue;
 
@@ -191,7 +178,7 @@ export default function MiActividadStats() {
     }
     if (planned <= 0) return 0;
     return Math.round((done / planned) * 100);
-  }, [activeMap, jsonBySlug]);
+  }, []);
 
   return (
     <div className="py-6 space-y-8">

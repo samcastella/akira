@@ -801,12 +801,20 @@ export default function MiActividadChecks() {
 }
 
 /* ===== Colores por slug (usa ProgramDefs y fallbacks) ===== */
+/* ===== Colores por slug (usa ProgramDefs y fallbacks) ===== */
 function colorFor(slug: string) {
   try {
-    const def = resolveProgramDef(slug);
-    if (def?.themeColor) return def.themeColor as string;
-    if ((def as any)?.color) return (def as any).color as string; // compat si algunas defs aún usan "color"
+    // Puede ser síncrono o una Promise: lo tratamos como any para evitar error de tipos
+    const maybe: any = (resolveProgramDef as any)(slug);
+
+    // Si es Promise, no podemos await aquí; ignoramos y seguimos con fallbacks
+    const isPromise = !!(maybe && typeof maybe.then === 'function');
+    const def: any = isPromise ? undefined : maybe;
+
+    if (def?.themeColor) return String(def.themeColor);
+    if (def?.color) return String(def.color); // compat antiguo
   } catch {}
+
   // Fall-backs por si llega un slug legacy o un comunitario sin color definido
   const FALLBACK: Record<string, string> = {
     'lectura': '#E0E7FF',
@@ -820,6 +828,7 @@ function colorFor(slug: string) {
   }
   return '#F8E68A';
 }
+
 
 /** Pequeño helper para tener AbortController tipado en TS sin DOM libs diferentes */
 class AbortSignalController {
