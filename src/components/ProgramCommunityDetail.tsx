@@ -1,7 +1,7 @@
 // src/components/ProgramCommunityDetail.tsx
 'use client';
 
-import type { FC, ReactNode, CSSProperties } from 'react';
+import type { FC, ReactNode } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -11,7 +11,9 @@ import {
 
 import { supabase } from '@/lib/supabaseClient';
 import { useAuthUserId } from '@/lib/user';
-import { getBySlug as getProgramMeta } from '@/lib/programRegistry';
+
+/** IMPORTANTE: usar el mismo registro que en Checks para colores */
+import { resolveProgramDef } from '@/lib/programRegistry';
 
 import CreateHabitBar from '@/components/habits/CreateHabitBar';
 
@@ -35,22 +37,16 @@ import {
 import { pushStartProgram, pushResetProgram, pullUserPrograms } from '@/lib/programSync';
 
 /* =========================================================================================
-   Carga de ProgramJson desde /public/data/programs/[slug].json?v=BUILD_V (client-side)
+   Carga ProgramJson desde /public/data/programs/[slug].json?v=BUILD_V (client-side)
    ========================================================================================= */
 
 const BUILD_V = process.env.NEXT_PUBLIC_BUILD_VERSION ?? 'dev';
 const PROGRAM_CACHE_KEY = (slug: string) => `akira_program_json_v2:${slug}`;
 const PROGRAM_CACHE_TTL_MS = 5 * 60 * 1000;
 
-/** Guarda en cache local con timestamp */
 function writeProgramCache(slug: string, data: unknown) {
-  try {
-    const payload = { ts: Date.now(), data };
-    localStorage.setItem(PROGRAM_CACHE_KEY(slug), JSON.stringify(payload));
-  } catch {}
+  try { localStorage.setItem(PROGRAM_CACHE_KEY(slug), JSON.stringify({ ts: Date.now(), data })); } catch {}
 }
-
-/** Lee cache local si no está expirado */
 function readProgramCache<T = unknown>(slug: string, ttlMs = PROGRAM_CACHE_TTL_MS): T | null {
   try {
     const raw = localStorage.getItem(PROGRAM_CACHE_KEY(slug));
@@ -61,15 +57,10 @@ function readProgramCache<T = unknown>(slug: string, ttlMs = PROGRAM_CACHE_TTL_M
     return parsed.data;
   } catch { return null; }
 }
-
-/** Carga desde /data/programs/[slug].json?v=BUILD_V con abort y control de errores */
 async function fetchProgramJsonRemote<T>(slug: string, signal?: AbortSignal): Promise<T> {
   const url = `/data/programs/${encodeURIComponent(slug)}.json?v=${encodeURIComponent(BUILD_V)}`;
   const res = await fetch(url, { method: 'GET', cache: 'no-store', signal });
-  if (!res.ok) {
-    const txt = await res.text().catch(() => '');
-    throw new Error(`Error ${res.status} al cargar ${url}: ${txt || res.statusText}`);
-  }
+  if (!res.ok) throw new Error(`Error ${res.status} al cargar ${url}`);
   return (await res.json()) as T;
 }
 
@@ -77,7 +68,7 @@ async function fetchProgramJsonRemote<T>(slug: string, signal?: AbortSignal): Pr
 const TABS = ['Resumen', 'Check del día', 'Estadísticas', 'Ranking'] as const;
 type Tab = typeof TABS[number];
 
-/* ====== Tipos de datos (ProgramDef-lite) ====== */
+/* ====== Tipos de datos (ProgramJson) ====== */
 type JsonTask = { id?: string; label: string; detail?: string; tags?: string[] };
 type JsonDay = { day: number; tasks: JsonTask[] };
 export type ProgramJson = {
@@ -122,6 +113,7 @@ function InlineMarkdown({ text }: { text: string }) {
   let i = 0; let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
     if (m.index > i) parts.push(text.slice(i, m.index));
+    parts.push(<strong key={m.index} className="font-semibold">{m[1]}</strong>);
     i = m.index + m[0].length;
   }
   if (i < text.length) parts.push(text.slice(i));
@@ -169,6 +161,45 @@ function daysBetweenFromMs(startMs: number, endISOyyyyMmDd: string) {
 function addDays(ms: number, days: number) { return startOfDayMs(new Date(ms + days * 86_400_000)); }
 function weekdayLabel(dateMs: number) { const map = ['D','L','M','X','J','V','S'] as const; return map[new Date(dateMs).getDay()]; }
 
+/* ===== Color helpers (mismo criterio que en Checks) ===== */
+function isHexDark(hex?: string | null) {
+  if (!hex || !/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(hex)) return false;
+  let h = hex.slice(1);
+  if (h.length === 3) h = h.split('').map(c=>c+c).join('');
+  const r = parseInt(h.slice(0,2),16), g = parseInt(h.slice(2,4),16), b = parseInt(h.slice(4,6),16);
+  const lum = 0.2126*(r/255) + 0.7152*(g/255) + 0.0722*(b/255);
+  return lum < 0.5;
+}
+const FALLBACK_COLOR: Record<string, string> = {
+  'lectura': '#E0E7FF',
+  'lectura-30': '#E0E7FF',
+  'detox-tecnologico': '#FCD34D',
+  'detox-tecnologico-30': '#FCD34D',
+  'san-silvestre-60': '#FCA5A5',
+};
+function colorForSlug(slug: string, program?: ProgramJson): string {
+  // 1) JSON del programa
+  const jsonColor = program?.themeColor;
+  if (jsonColor && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(jsonColor)) return jsonColor;
+
+  // 2) Registry (resolveProgramDef) como en Checks
+  try {
+    const maybe: any = (resolveProgramDef as any)(slug);
+    const isPromise = !!(maybe && typeof maybe.then === 'function');
+    const def: any = isPromise ? undefined : maybe;
+    const regColor = def?.themeColor || def?.color;
+    if (regColor && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(regColor) && !isHexDark(regColor)) {
+      return regColor;
+    }
+  } catch {}
+
+  // 3) Fallback por slug
+  for (const key in FALLBACK_COLOR) {
+    if (slug.includes(key)) return FALLBACK_COLOR[key];
+  }
+  return '#F5F5F5';
+}
+
 /* ==== Mini chart weekly ==== */
 const WeeklyStatsChart: FC<{ labels: string[]; goal: number[]; actual: number[] }> = ({ labels, goal, actual }) => {
   const width = 640, height = 220, padL = 28, padR = 16, padT = 20, padB = 28;
@@ -213,47 +244,14 @@ const WeeklyStatsChart: FC<{ labels: string[]; goal: number[]; actual: number[] 
 type Props = {
   slug: string;
   imageSrc?: string;
-  title: string;
-  // ⛔️ Eliminado: program: ProgramJson; -> se carga desde /public/data/programs
+  title: string; // puede venir “no normalizado”
 };
-
-/* =======================
-   Helpers de color (CSS)
-   ======================= */
-function hexToRgb(hex: string) {
-  const m = hex.trim().match(/^#?([0-9a-f]{6}|[0-9a-f]{3})$/i);
-  if (!m) return { r: 0, g: 0, b: 0 };
-  let h = m[1];
-  if (h.length === 3) h = h.split('').map(c => c + c).join('');
-  const num = parseInt(h, 16);
-  return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255 };
-}
-function rgbToHex(r: number, g: number, b: number) {
-  const to = (v: number) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0');
-  return `#${to(r)}${to(g)}${to(b)}`;
-}
-function darkenHex(hex: string, pct = 12) {
-  const { r, g, b } = hexToRgb(hex);
-  const f = 1 - pct / 100;
-  return rgbToHex(r * f, g * f, b * f);
-}
-/** CSS vars que suelen leer nuestras barras; inofensivas si el comp no las usa */
-function buildBarVars(hex?: string | null): CSSProperties {
-  if (!hex) return {};
-  const end = darkenHex(hex, 12);
-  return {
-    ['--bar-start' as any]: hex,
-    ['--bar-end' as any]: end,
-    ['--bar-ring' as any]: end,
-    ['--bar-color' as any]: hex,
-  };
-}
 
 export default function ProgramCommunityDetail({ slug, imageSrc, title }: Props) {
   const router = useRouter();
   const uid = useAuthUserId();
 
-  /* ====== Estado del ProgramJson cargado dinámicamente ====== */
+  /* ====== ProgramJson dinámico ====== */
   const [program, setProgram] = useState<ProgramJson | null>(null);
   const [progLoading, setProgLoading] = useState<boolean>(true);
   const [progError, setProgError] = useState<string | null>(null);
@@ -275,9 +273,7 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title }: Props)
       try {
         const fresh = await fetchProgramJsonRemote<ProgramJson>(slug, ac.signal);
         if (!mounted) return;
-        if (!fresh || !Array.isArray(fresh.days)) {
-          throw new Error('JSON inválido: falta days[]');
-        }
+        if (!fresh || !Array.isArray(fresh.days)) throw new Error('JSON inválido: falta days[]');
         setProgram(fresh);
         writeProgramCache(slug, fresh);
       } catch (e: any) {
@@ -290,6 +286,7 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title }: Props)
     return () => { mounted = false; ac.abort(); };
   }, [slug]);
 
+  /* ====== Estado local / pestañas ====== */
   const [activeMap, setActiveMap] = useState<LocalStore>({});
   const [activeTab, setActiveTab] = useState<Tab>('Resumen');
 
@@ -308,52 +305,17 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title }: Props)
   const [leaderImgOk, setLeaderImgOk] = useState<Record<string, boolean>>({});
   const [membersCount, setMembersCount] = useState<number>(0);
 
-  /* ====== Tema coherente con Checks ====== */
-  function sanitizeHex(c?: string | null) {
-    if (!c) return null;
-    const m = c.trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
-    return m ? c : null;
-  }
-  const FALLBACK_COLOR: Record<string, string> = {
-    'lectura': '#E0E7FF',
-    'lectura-30': '#E0E7FF',
-    'detox-tecnologico': '#FCD34D',
-    'detox-tecnologico-30': '#FCD34D',
-    'san-silvestre-60': '#FCA5A5',
-  };
+  /* ====== Color unificado (como Checks) ====== */
+  const themeColor = useMemo(() => colorForSlug(slug, program || undefined), [slug, program]);
 
-  const metaColor = useMemo(() => {
-    try {
-      const meta = getProgramMeta(slug);
-      const raw =
-        (meta as any)?.themeColor ??
-        (meta as any)?.color ??
-        undefined;
-      return sanitizeHex(typeof raw === 'string' ? raw : undefined);
-    } catch {
-      return null;
-    }
-  }, [slug]);
-
-  const themeColor = useMemo(() => {
-    const fromProgram = sanitizeHex((program as any)?.themeColor);
-    if (fromProgram) return fromProgram;
-    if (metaColor) return metaColor;
-
-    for (const key in FALLBACK_COLOR) {
-      if (slug.includes(key)) return FALLBACK_COLOR[key];
-    }
-    return '#F5F5F5';
-  }, [program?.themeColor, metaColor, slug]);
-
-  /* ====== Modal de detalles ====== */
+  /* ====== Modal detalles ====== */
   const [infoOpen, setInfoOpen] = useState(false);
   const [infoTitle, setInfoTitle] = useState('');
   const [infoDetail, setInfoDetail] = useState<string | undefined>(undefined);
-  const openInfo = (title: string, detail?: string) => { setInfoTitle(title); setInfoDetail(detail); setInfoOpen(true); };
+  const openInfo = (t: string, d?: string) => { setInfoTitle(t); setInfoDetail(d); setInfoOpen(true); };
   const closeInfo = () => setInfoOpen(false);
 
-  /* ====== hidratar progreso local ====== */
+  /* ====== Progreso local ====== */
   useEffect(() => {
     migrateCompat();
     setActiveMap(loadActive());
@@ -366,7 +328,7 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title }: Props)
     };
   }, []);
 
-  /* ====== Pull remoto al montar y al recuperar foco ====== */
+  /* ====== Pull remoto ====== */
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -389,7 +351,7 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title }: Props)
     };
   }, [uid]);
 
-  /* ====== Helpers recarga ranking/miembros ====== */
+  /* ====== Rank/Miembros ====== */
   const reloadLeadersAndMembers = async () => {
     const [lb, count] = await Promise.all([ loadProgramLeaders(slug), loadProgramMembersCount(slug) ]);
     setLeaders(lb);
@@ -398,10 +360,8 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title }: Props)
     const map = await loadAvatarsFor(ids);
     setLeaderPhotos(map);
   };
-
   useEffect(() => { void reloadLeadersAndMembers(); }, [slug, pointsTick]);
 
-  /* ====== Realtime miembros ====== */
   useEffect(() => {
     const channel = supabase
       .channel(`prog-members-${slug}`)
@@ -412,7 +372,6 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title }: Props)
       )
       .subscribe();
     return () => { try { supabase.removeChannel(channel); } catch {} };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug]);
 
   const active: LocalProgram | null = activeMap[slug] ?? null;
@@ -574,9 +533,15 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title }: Props)
     return { labels, goal, actual };
   }, [started, program, active?.startedAt, activeMap, slug, currentDay]);
 
-  /* ===== UI ===== */
-  const displayTitle = (program?.title ?? title)?.trim();
+  /* ===== Normalización de título ===== */
+  function normalizeTitle(raw: string) {
+    // Caso específico pedido: “San Silvestre: de 0 a 10 km”
+    if (slug.includes('san-silvestre')) return 'San Silvestre: de 0 a 10 km';
+    return raw;
+  }
+  const displayTitle = normalizeTitle(program?.title ?? title);
 
+  /* ===== UI ===== */
   return (
     <div className="px-2 pb-24 bg-white">
       {/* HERO */}
@@ -585,8 +550,6 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title }: Props)
           <div className="relative w-full aspect-[16/9]">
             <Image src={imageSrc} alt={displayTitle} fill className="object-cover" priority />
           </div>
-
-          {/* Botón Volver */}
           <div className="absolute top-3 right-3">
             <button
               onClick={() => { try { router.back(); } catch { location.href = '/programas'; } }}
@@ -599,7 +562,7 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title }: Props)
         </div>
       )}
 
-      {/* Título + participantes (sin duplicados) */}
+      {/* Título + participantes (sin duplicar) */}
       <div className="mb-3">
         <h1 className="text-2xl font-semibold text-neutral-900">{displayTitle}</h1>
         <div className="mt-1 text-[13px] text-neutral-500">👥 {membersCount} participantes</div>
@@ -734,8 +697,7 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title }: Props)
               <strong>Tus retos de hoy</strong>. Márcalos cuando los completes.
             </p>
 
-            {/* Inyectamos CSS vars basadas en themeColor para evitar fallback negro */}
-            <div className="mt-5 space-y-2" style={buildBarVars(themeColor)}>
+            <div className="mt-5 space-y-2">
               {(program.days.find(d => d.day === currentDay)?.tasks ?? []).map((t, i) => {
                 const id = t.id ?? `task_${i}`;
                 const done = Boolean((activeMap[slug]?.progress?.[currentDay] as any)?.[id]);
@@ -792,7 +754,7 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title }: Props)
                         La obtienes al completar el reto (≥ <b>90%</b> de los días).
                       </p>
                     </div>
-                    <div className="w-24 h-24 relative rounded-XL overflow-hidden border border-neutral-200 bg-neutral-50">
+                    <div className="w-24 h-24 relative rounded-xl overflow-hidden border border-neutral-200 bg-neutral-50">
                       {program.badgeImage ? (
                         <Image src={program.badgeImage} alt={`Insignia: ${program.badgeName ?? ''}`} fill className="object-cover" />
                       ) : (
