@@ -21,7 +21,7 @@ type TaskVariant = BaseProps & {
   color?: string;
   onToggle: () => void;
   onInfo?: () => void;
-  showInfoButton?: boolean;   // ✅ esta línea DEBE estar aquí
+  showInfoButton?: boolean;
   rightSlot?: React.ReactNode;
 };
 
@@ -34,7 +34,7 @@ function cn(...parts: Array<string | undefined | false | null>) {
 
 function addAlpha(hexOrCss: string, alpha: number) {
   if (!/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(hexOrCss)) {
-    return 'rgba(17,17,17,0.25)';
+    return 'rgba(17,17,17,0.08)'; // fallback suave
   }
   const hex = hexOrCss.replace('#', '');
   const full = hex.length === 3 ? hex.split('').map((c) => c + c).join('') : hex;
@@ -44,7 +44,6 @@ function addAlpha(hexOrCss: string, alpha: number) {
   return `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, alpha))})`;
 }
 
-// Determina si un color hex es “oscuro” (para poner texto blanco encima)
 function isDark(hex: string): boolean {
   if (!/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(hex)) return false;
   const h = hex.replace('#', '');
@@ -52,7 +51,6 @@ function isDark(hex: string): boolean {
   const r = parseInt(full.slice(0, 2), 16);
   const g = parseInt(full.slice(2, 4), 16);
   const b = parseInt(full.slice(4, 6), 16);
-  // luminancia relativa perceptual aprox
   const lum = 0.2126 * (r / 255) + 0.7152 * (g / 255) + 0.0722 * (b / 255);
   return lum < 0.5;
 }
@@ -140,11 +138,10 @@ export default function CreateHabitBar(props: Props) {
     const { checked, onToggle, onInfo, color, showInfoButton, rightSlot } = props;
     const theme = color || '#F5F5F5';
 
-    // Fondo & texto: cuando está marcado, fondo = color del programa
-    const bg = checked ? theme : '#fff';
-    const text = checked ? (isDark(theme) ? '#fff' : '#111') : '#111';
-    // Borde suave: si marcado, borde con alpha del propio color; si no, alpha suave del color
-    const border = checked ? addAlpha(theme, 0.55) : addAlpha(theme, 0.4);
+    // Fondo SIEMPRE tintado con el color del programa (compacto y legible)
+    const bg = addAlpha(theme, 0.14);
+    const border = addAlpha(theme, 0.45);
+    const text = '#111';
 
     const lastXY = useRef<{ x?: number; y?: number }>({});
     const prev = useRef<boolean>(checked);
@@ -165,14 +162,16 @@ export default function CreateHabitBar(props: Props) {
     return (
       <div
         className={cn(
-          'flex w-full items-center gap-3 px-4 py-3 transition rounded-full',
+          // ⬇️ Compacto (~65% altura): menos padding, icono 32px, tipografía text-sm
+          'flex w-full items-center gap-2.5 px-3 py-2 transition rounded-full',
+          'focus-within:ring-2 focus-within:ring-black focus-within:ring-offset-2 focus-within:ring-offset-white',
           className
         )}
         style={{ background: bg, color: text, border: `1px solid ${border}` }}
         role="group"
         aria-label={ariaLabel}
       >
-        {/* Check */}
+        {/* Círculo de check: verde si marcado (el fondo general NO cambia) */}
         <button
           onMouseDown={(e) => {
             lastXY.current = { x: e.clientX, y: e.clientY };
@@ -193,7 +192,7 @@ export default function CreateHabitBar(props: Props) {
             }
           }}
           className={cn(
-            'grid h-9 w-9 place-items-center rounded-full border shrink-0 transition active:scale-95',
+            'grid h-8 w-8 place-items-center rounded-full border shrink-0 transition active:scale-95 focus-visible:outline-none',
             checked
               ? 'bg-green-500 border-green-600 text-white'
               : 'bg-white border-neutral-300 text-neutral-600 hover:bg-neutral-50'
@@ -202,12 +201,12 @@ export default function CreateHabitBar(props: Props) {
           aria-label={checked ? `Desmarcar ${label}` : `Marcar ${label}`}
           aria-pressed={checked}
         >
-          {checked && <Check size={16} />}
+          {checked && <Check size={16} aria-hidden />}
         </button>
 
-        {/* Texto */}
+        {/* Texto: asegurar que SIEMPRE cabe dentro (truncate) */}
         <div className="min-w-0 flex-1">
-          <div className="truncate text-base font-medium leading-tight">
+          <div className="truncate text-sm font-medium leading-snug">
             {renderInlineMarkdown(label)}
           </div>
         </div>
@@ -216,16 +215,16 @@ export default function CreateHabitBar(props: Props) {
         {shouldShowInfo && (
           <button
             onClick={onInfo}
-            className="grid h-9 w-9 place-items-center rounded-full border shrink-0 transition hover:bg-neutral-50 active:scale-95"
+            className="grid h-8 w-8 place-items-center rounded-full border shrink-0 transition hover:bg-white active:scale-95 focus-visible:outline-none"
             title="Ver detalles"
             aria-label={`Ver detalles de ${label}`}
-            style={{ background: 'white', borderColor: '#11111140' }}
+            style={{ background: 'white', borderColor: '#11111133' }}
           >
-            <Plus size={16} />
+            <Plus size={16} aria-hidden />
           </button>
         )}
 
-        {/* Slot derecho */}
+        {/* Slot derecho (por ejemplo, botón de subir foto en Retos) */}
         {rightSlot && <div className="shrink-0">{rightSlot}</div>}
       </div>
     );
@@ -238,17 +237,17 @@ export default function CreateHabitBar(props: Props) {
       onClick={onClick}
       aria-label={ariaLabel}
       className={cn(
-        'group flex w-full items-center gap-3 rounded-2xl border border-black/20 bg-white px-4 py-3 text-left transition hover:shadow-sm active:scale-[0.99]',
+        'group flex w-full items-center gap-2.5 rounded-2xl border border-black/15 bg-white px-3 py-2 text-left transition hover:shadow-sm active:scale-[0.99]',
         className
       )}
     >
       <span
         aria-hidden
-        className="grid h-9 w-9 place-items-center rounded-full bg-black text-white transition group-hover:scale-[1.03]"
+        className="grid h-8 w-8 place-items-center rounded-full bg-black text-white transition group-hover:scale-[1.03]"
       >
         <Plus size={16} />
       </span>
-      <span className="text-base font-medium">
+      <span className="text-sm font-medium leading-snug truncate">
         {renderInlineMarkdown(label)}
       </span>
     </button>

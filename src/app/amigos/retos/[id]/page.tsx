@@ -407,6 +407,7 @@ export default function RetoDetallePage() {
 
     setShowVoteOk(true);
     await loadQueues();
+    broadcastActivityAndPoints();
   }
 
   async function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -750,80 +751,127 @@ export default function RetoDetallePage() {
           </div>
         )}
 
-        {/* CHECK DEL DÍA */}
-        {activeTab === 'Check del día' && (
-          <div className="space-y-4">
-            <div className="mt-1">
-              <CreateHabitBar
-                variant="task"
-                checked={!!myTodayCheck && (myTodayCheck.status === 'valid' || myTodayCheck.status === 'auto_valid')}
-                label={`Día ${todayIdx ?? '-'} – ${getDayLabel(todayIdx)}`}
-                onToggle={() => {}}
-                onInfo={() => {
-                  document.getElementById('my-today-check')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                }}
-                color="#F8E68A"
-                className="habitbar-hide-plus"
-                rightSlot={
-                  <>
-                    <input
-                      ref={fileRef}
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      className="hidden"
-                      onChange={onPickFile}
-                    />
-                    <button
-                      onClick={() => fileRef.current?.click()}
-                      disabled={uploading}
-                      className="btn-pill-black px-4 py-2 text-xs font-semibold inline-flex items-center gap-2 active:scale-95 disabled:opacity-60"
-                    >
-                      {uploading ? (
-                        <>
-                          <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white/60 border-t-transparent" />
-                          Subiendo…
-                        </>
-                      ) : (
-                        <>
-                          <Camera className="h-3 w-3" />
-                          {myTodayCheck ? 'Subido' : 'Subir foto'}
-                        </>
-                      )}
-                    </button>
-                  </>
-                }
-              />
-            </div>
+{/* CHECK DEL DÍA */}
+{activeTab === 'Check del día' && (
+  <div className="space-y-4">
+    <div className="mt-1">
+      <CreateHabitBar
+        variant="task"
+        checked={!!myTodayCheck && (myTodayCheck.status === 'valid' || myTodayCheck.status === 'auto_valid')}
+        label={`Día ${todayIdx ?? '-'} – ${getDayLabel(todayIdx)}`}
+        onToggle={() => {}}
+        onInfo={() => {
+          document
+            .getElementById('my-today-check')
+            ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }}
+        color="#F8E68A"
+        className="habitbar-hide-plus"
+        rightSlot={
+          <>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={onPickFile}
+            />
 
-            <div className="flex items-center gap-2 text-sm">
-              {statusIcon ? <div className="shrink-0">{statusIcon}</div> : null}
-              <div>
-                Día <b>{todayIdx ?? '-'}</b> / {summary?.total_days || totalDays}
-              </div>
-            </div>
+            {(() => {
+              const st = myTodayCheck?.status as
+                | undefined
+                | 'pending'
+                | 'valid'
+                | 'invalid'
+                | 'auto_valid';
 
-            {myTodayCheck ? (
-              <div id="my-today-check" className="rounded-2xl overflow-hidden border" style={{ borderColor: 'var(--line)' }}>
-                {myTodayCheck.signed_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={myTodayCheck.signed_url} alt="Mi check" className="w-full object-cover max-h-[360px]" />
-                ) : (
-                  <div className="h-40 grid place-items-center text-neutral-400">Sin imagen</div>
-                )}
-                <div className="p-3 text-sm flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    {statusIcon}
-                    <span>{statusText}</span>
-                  </div>
-                  <div className="text-xs text-neutral-500">{fmtDate(myTodayCheck.created_at)}</div>
-                </div>
-              </div>
-            ) : (
-              <p className="text-sm text-neutral-600">{statusText}</p>
-            )}
+              const isPending = st === 'pending';
+              const isValid = st === 'valid' || st === 'auto_valid';
+              const isInvalid = st === 'invalid';
+
+              const label = uploading
+                ? 'Subiendo…'
+                : isPending
+                ? 'Pendiente'
+                : isValid
+                ? 'Validado'
+                : myTodayCheck && isInvalid
+                ? 'Reintentar'
+                : 'Subir foto';
+
+              const disabled = uploading || isPending || isValid;
+
+              return (
+                <button
+                  onClick={() => {
+                    if (!disabled) fileRef.current?.click();
+                  }}
+                  disabled={disabled}
+                  className={`px-4 py-2 text-xs font-semibold inline-flex items-center gap-2 rounded-full
+                              bg-black text-white active:scale-95 transition
+                              ${disabled ? 'opacity-60 cursor-default' : 'hover:opacity-90'}`}
+                >
+                  {uploading ? (
+                    <>
+                      <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white/60 border-t-transparent" />
+                      Subiendo…
+                    </>
+                  ) : (
+                    <>
+                      {!disabled && <Camera className="h-3 w-3" aria-hidden />}
+                      {label}
+                    </>
+                  )}
+                </button>
+              );
+            })()}
+          </>
+        }
+      />
+    </div>
+
+    <div className="flex items-center gap-2 text-sm">
+      {statusIcon ? <div className="shrink-0">{statusIcon}</div> : null}
+      <div>
+        Día <b>{todayIdx ?? '-'}</b> / {summary?.total_days || totalDays}
+      </div>
+    </div>
+
+    {myTodayCheck ? (
+      <div
+        id="my-today-check"
+        className="rounded-2xl overflow-hidden border"
+        style={{ borderColor: 'var(--line)' }}
+      >
+        {myTodayCheck.signed_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={myTodayCheck.signed_url}
+            alt="Mi check"
+            className="w-full object-cover max-h-[360px]"
+          />
+        ) : (
+          <div className="h-40 grid place-items-center text-neutral-400">
+            Sin imagen
           </div>
         )}
+        <div className="p-3 text-sm flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            {statusIcon}
+            <span>{statusText}</span>
+          </div>
+          <div className="text-xs text-neutral-500">
+            {fmtDate(myTodayCheck.created_at)}
+          </div>
+        </div>
+      </div>
+    ) : (
+      <p className="text-sm text-neutral-600">{statusText}</p>
+    )}
+  </div>
+)}
+
 
         {/* VALIDACIONES */}
         {activeTab === 'Validaciones' && (
