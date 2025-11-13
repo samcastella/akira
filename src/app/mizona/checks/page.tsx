@@ -15,6 +15,7 @@ import {
 import { useAuthUserId } from '@/lib/user';
 import { supabase } from '@/lib/supabaseClient';
 import { pullUserPrograms } from '@/lib/programSync';
+import { Camera } from 'lucide-react';
 import { loadProgramJson, type ProgramJson } from '@/lib/programJson';
 
 /* ===== Colores desde ProgramDefs (solo para color de las barras) ===== */
@@ -718,56 +719,109 @@ export default function MiActividadChecks() {
         </section>
       )}
 
-      {/* ===== Retos con amigos ===== */}
-      <section className="space-y-3 rounded-2xl border border-neutral-200 bg-white p-4">
-        <h3 className="text-lg font-semibold">Retos con amigos</h3>
-        {!hasFriendChallenges && <p className="text-sm text-neutral-500">Todavía no hay nada creado</p>}
+{/* ===== Retos con amigos ===== */}
+<section className="space-y-3 rounded-2xl border border-neutral-200 bg-white p-4">
+  <h3 className="text-lg font-semibold">Retos con amigos</h3>
+  {!hasFriendChallenges && (
+    <p className="text-sm text-neutral-500">Todavía no hay nada creado</p>
+  )}
 
-        {hasFriendChallenges && friendChallenges.map((ch) => {
-          const status = friendChecks[ch.id];
-          const checked = status === 'valid' || status === 'auto_valid';
-          const busy = !!uploading[ch.id];
-          const label = `Día ${ch.todayIdx}/${ch.totalDays} – ${mdInlineToPlain(ch.title)}`;
-          return (
-            <div key={ch.id} className="space-y-2">
-              <CreateHabitBar
-                variant="task"
-                label={label}
-                checked={checked}
-                color="#F8E68A"
-                onToggle={() => {}}
-                showInfoButton={false}
-                rightSlot={
-                  <>
-                    <input
-                      id={`challenge-file-${ch.id}`}
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      className="hidden"
-                      onChange={(e) => onPickChallengeFile(ch, e)}
-                    />
+  {hasFriendChallenges &&
+    friendChallenges.map((ch) => {
+      const status = friendChecks[ch.id] as
+        | undefined
+        | 'pending'
+        | 'valid'
+        | 'invalid'
+        | 'auto_valid';
+      const checked = status === 'valid' || status === 'auto_valid';
+      const busy = !!uploading[ch.id];
+
+      const label = `Día ${ch.todayIdx}/${ch.totalDays} – ${mdInlineToPlain(ch.title)}`;
+
+      return (
+        <div key={ch.id} className="space-y-2">
+          <CreateHabitBar
+            variant="task"
+            label={label}
+            checked={checked}
+            color="#F8E68A"
+            onToggle={() => {}}
+            showInfoButton={false}
+            rightSlot={
+              <>
+                <input
+                  id={`challenge-file-${ch.id}`}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={(e) => onPickChallengeFile(ch, e)}
+                />
+
+                {(() => {
+                  const isPending = status === 'pending';
+                  const isValid = status === 'valid' || status === 'auto_valid';
+                  const isInvalid = status === 'invalid';
+
+                  const btnLabel = busy
+                    ? 'Subiendo…'
+                    : isPending
+                    ? 'Pendiente'
+                    : isValid
+                    ? 'Validado'
+                    : status && isInvalid
+                    ? 'Reintentar'
+                    : 'Subir foto';
+
+                  // Deshabilitamos en subida, pendiente o validado
+                  const disabled = busy || isPending || isValid;
+
+                  return (
                     <button
-                      onClick={() => onUploadChallengePhoto(ch.id)}
-                      disabled={busy || checked}
-                      className="btn-pill-black px-4 py-2 text-xs font-semibold inline-flex items-center gap-2 active:scale-95 disabled:opacity-60"
+                      onClick={() => {
+                        if (!disabled) onUploadChallengePhoto(ch.id);
+                      }}
+                      disabled={disabled}
+                      className={`px-4 py-2 text-xs font-semibold inline-flex items-center gap-2 rounded-full
+                                  bg-black text-white active:scale-95 transition
+                                  ${disabled ? 'opacity-60 cursor-default' : 'hover:opacity-90'}`}
                     >
-                      {busy ? 'Subiendo…' : (status ? 'Actualizado' : 'Subir foto')}
+                      {busy ? (
+                        <>
+                          <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white/60 border-t-transparent" />
+                          Subiendo…
+                        </>
+                      ) : (
+                        <>
+                          {!disabled && <Camera className="h-3 w-3" aria-hidden />}
+                          {btnLabel}
+                        </>
+                      )}
                     </button>
-                  </>
-                }
-              />
-              {status && (
-                <p className="text-xs text-neutral-500">
-                  Estado: {status === 'pending' ? 'Pendiente de validación' :
-                    status === 'valid' ? 'Validado' :
-                    status === 'auto_valid' ? 'Validado (auto)' : 'No válido'}
-                </p>
-              )}
-            </div>
-          );
-        })}
-      </section>
+                  );
+                })()}
+              </>
+            }
+          />
+
+          {status && (
+            <p className="text-xs text-neutral-500">
+              Estado:{' '}
+              {status === 'pending'
+                ? 'Pendiente de validación'
+                : status === 'valid'
+                ? 'Validado'
+                : status === 'auto_valid'
+                ? 'Validado (auto)'
+                : 'No válido'}
+            </p>
+          )}
+        </div>
+      );
+    })}
+</section>
+
 
       {/* ===== Hábitos personalizados ===== */}
       <section className="space-y-3 rounded-2xl border border-neutral-200 bg-white p-4">
