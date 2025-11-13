@@ -5,7 +5,13 @@ import type { FC } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { loadProgramJson, type ProgramJson, type ProgramTask } from '@/lib/programLoader';
+
+import {
+  loadProgramJson,
+  type ProgramJson,
+  type ProgramTask,
+} from '@/lib/programJson';
+
 import {
   RotateCcw,
   CheckCircle2,
@@ -18,6 +24,14 @@ import {
   X,
   Play,
 } from 'lucide-react';
+
+/* === Compromiso (local) === */
+import CommitmentModal from '@/components/commitment/CommitmentModal';
+import {
+  hasValidCommitment,
+  setCommitment,
+  COMMITMENT_VERSION,
+} from '@/lib/commitments';
 
 /* === Local store programas === */
 import {
@@ -53,10 +67,15 @@ type JsonTask = ProgramTask;
 
 /* === helpers fecha === */
 function todayKeyTZ(tz = 'Europe/Madrid') {
-   const parts = new Intl.DateTimeFormat('es-ES', { timeZone: tz, year:'numeric', month:'2-digit', day:'2-digit' }).formatToParts(new Date());
-   const g = (t:string) => parts.find(p=>p.type===t)?.value!;
-   return `${g('year')}-${g('month')}-${g('day')}`;
- }
+  const parts = new Intl.DateTimeFormat('es-ES', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const g = (t: string) => parts.find((p) => p.type === t)?.value!;
+  return `${g('year')}-${g('month')}-${g('day')}`;
+}
 function startOfDayMs(date: Date) {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
@@ -79,15 +98,18 @@ function weekdayLabel(dateMs: number) {
 function mdInlineToPlain(s: string) {
   if (!s) return s;
   return s
-    .replace(/\*\*(.+?)\*\*/g, '$1') // **negrita**
-    .replace(/\*(.+?)\*/g, '$1');    // *cursiva*
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/\*(.+?)\*/g, '$1');
 }
 
 function dateKeyTZ(d = new Date(), tz = 'Europe/Madrid') {
   const parts = new Intl.DateTimeFormat('es-ES', {
-    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit'
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
   }).formatToParts(d);
-  const g = (t: string) => parts.find(p => p.type === t)?.value!;
+  const g = (t: string) => parts.find((p) => p.type === t)?.value!;
   return `${g('year')}-${g('month')}-${g('day')}`;
 }
 
@@ -115,7 +137,6 @@ function pickBadge(slug: string, data?: Badgeish | null) {
   return { img, title };
 }
 
-
 /* ---------- Mini Markdown ---------- */
 function escapeHtml(s: string) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -127,13 +148,19 @@ function renderLightMarkdown(input: string) {
   html = html.replace(/\n/g, '<br/>');
   return html;
 }
-const MD: FC<{ children: string; className?: string }> = ({ children, className }) => (
-  <span className={className} dangerouslySetInnerHTML={{ __html: renderLightMarkdown(children) }} />
+const MD: FC<{ children: string; className?: string }> = ({
+  children,
+  className,
+}) => (
+  <span
+    className={className}
+    dangerouslySetInnerHTML={{ __html: renderLightMarkdown(children) }}
+  />
 );
 
 /* ===== Tabs (renombrado Puntuación → Estadísticas) ===== */
 const TABS = ['Resumen', 'Check del día', 'Estadísticas'] as const;
-type Tab = typeof TABS[number];
+type Tab = (typeof TABS)[number];
 
 /* ===== Colores ===== */
 const PROGRAM_COLORS: Record<string, string> = {
@@ -145,12 +172,12 @@ const PROGRAM_COLORS: Record<string, string> = {
 const BADGE_FILES: Record<string, string> = {
   'lectura-30': '/images/badges/superlector.png',
   'detox-tecnologico-30': '/images/badges/detox-tecnologico.png',
-  'san-silvestre-60': '/images/badges/san-silvestre.png', // crea este asset si aún no existe
+  'san-silvestre-60': '/images/badges/san-silvestre.png',
 };
 const BADGE_TITLES: Record<string, string> = {
   'lectura-30': 'Superlector',
   'detox-tecnologico-30': 'Domador del Scroll',
-  'san-silvestre-60': '10K Finisher', // cambia el nombre si prefieres otro
+  'san-silvestre-60': '10K Finisher',
 };
 
 type Props = {
@@ -160,7 +187,6 @@ type Props = {
   shortDescription: string;
   howItWorks: string;
 };
-
 export default function ProgramDetail({
   slug,
   imageSrc,
@@ -177,7 +203,8 @@ export default function ProgramDetail({
   const [activeMap, setActiveMap] = useState<LocalStore>({});
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const [taskInfoOpen, setTaskInfoOpen] = useState<null | { label: string; detail?: string }>(null);
+  const [taskInfoOpen, setTaskInfoOpen] =
+    useState<null | { label: string; detail?: string }>(null);
 
   const [openAcc, setOpenAcc] = useState<{ do: boolean; get: boolean; use: boolean }>({
     do: false,
@@ -192,12 +219,16 @@ export default function ProgramDetail({
   const [activeTab, setActiveTab] = useState<Tab>('Resumen');
 
   // Puntuación
-  const [pointsTotals, setPointsTotals] = useState<ProgramPointsTotals | null>(null);
+  const [pointsTotals, setPointsTotals] =
+    useState<ProgramPointsTotals | null>(null);
   const [pointsByDay, setPointsByDay] = useState<ProgramPointsByDayRow[]>([]);
   const [loadingPoints, setLoadingPoints] = useState(false);
-  const [pointsTick, setPointsTick] = useState(0); // refresco tras cada check
+  const [pointsTick, setPointsTick] = useState(0);
 
-  /* cargar desde el registro central (fresh-first con fallback a bundle) */
+  // Compromiso
+  const [showCommitment, setShowCommitment] = useState(false);
+
+  /* cargar JSON de programa */
   useEffect(() => {
     let alive = true;
     setLoadingData(true);
@@ -213,7 +244,9 @@ export default function ProgramDetail({
         console.warn('[ProgramDetail] loadProgramJson error', err);
         if (!alive) return;
         setData(null);
-        setErrorMsg('No se pudo cargar el programa. Revisa tu conexión e inténtalo de nuevo.');
+        setErrorMsg(
+          'No se pudo cargar el programa. Revisa tu conexión e inténtalo de nuevo.'
+        );
       })
       .finally(() => {
         if (alive) setLoadingData(false);
@@ -231,10 +264,16 @@ export default function ProgramDetail({
 
     const onProgramsUpdated = () => setActiveMap(loadActive());
     window.addEventListener('storage', onProgramsUpdated);
-    window.addEventListener('akira:programs-updated', onProgramsUpdated as EventListener);
+    window.addEventListener(
+      'akira:programs-updated',
+      onProgramsUpdated as EventListener
+    );
     return () => {
       window.removeEventListener('storage', onProgramsUpdated);
-      window.removeEventListener('akira:programs-updated', onProgramsUpdated as EventListener);
+      window.removeEventListener(
+        'akira:programs-updated',
+        onProgramsUpdated as EventListener
+      );
     };
   }, []);
 
@@ -295,7 +334,9 @@ export default function ProgramDetail({
         },
         async (payload: any) => {
           try {
-            const row = (payload?.new ?? payload?.old) as { program_slug?: string } | undefined;
+            const row = (payload?.new ?? payload?.old) as
+              | { program_slug?: string }
+              | undefined;
             if (!row || row.program_slug !== slug) return;
             await pullUserPrograms();
             if (!cancelled) setActiveMap(loadActive());
@@ -320,7 +361,10 @@ export default function ProgramDetail({
     setActiveTab(started ? 'Check del día' : 'Resumen');
   }, [started]);
 
-  const totalDays = useMemo(() => data?.durationDays ?? data?.days?.length ?? 0, [data]);
+  const totalDays = useMemo(
+    () => data?.durationDays ?? data?.days?.length ?? 0,
+    [data]
+  );
 
   const currentDay = useMemo(() => {
     if (!active?.startedAt || totalDays <= 0) return 1;
@@ -330,7 +374,11 @@ export default function ProgramDetail({
 
   const dayData = useMemo(() => {
     if (!data || totalDays === 0) return null;
-    return data.days.find((d) => d.day === currentDay) ?? data.days[currentDay - 1] ?? null;
+    return (
+      data.days.find((d) => d.day === currentDay) ??
+      data.days[currentDay - 1] ??
+      null
+    );
   }, [data, currentDay, totalDays]);
 
   const tasks: JsonTask[] = dayData?.tasks ?? [];
@@ -339,20 +387,27 @@ export default function ProgramDetail({
     const entry = activeMap[slug];
     if (!entry) return {};
     const raw = (entry.progress ?? {})[dayNum] as any;
-    return raw && !Array.isArray(raw) ? (raw as Record<string, boolean>) : {};
+    return raw && !Array.isArray(raw)
+      ? (raw as Record<string, boolean>)
+      : {};
   }
 
   const progressPct = useMemo(() => {
     if (!active?.startedAt || totalDays === 0) return 0;
     const passed = Math.min(
-   totalDays,
-   Math.max(0, daysBetweenFromMs(active.startedAt, dateKeyTZ()) + 1)
- );
+      totalDays,
+      Math.max(0, daysBetweenFromMs(active.startedAt, dateKeyTZ()) + 1)
+    );
     return Math.round((passed / totalDays) * 100);
   }, [active?.startedAt, totalDays]);
 
   /* ========== Sembrar filas del día antes del primer toggle ========== */
-  async function ensureDayRows(uid: string, slug: string, dayNum: number, taskIds: string[]) {
+  async function ensureDayRows(
+    uid: string,
+    slug: string,
+    dayNum: number,
+    taskIds: string[]
+  ) {
     if (!taskIds.length) return;
 
     const { data: existing, error: selErr } = await supabase
@@ -384,13 +439,15 @@ export default function ProgramDetail({
 
     const { error: upErr } = await supabase
       .from('user_program_tasks')
-      .upsert(seedRows as any, { onConflict: 'user_id,program_slug,day,task_id' as any });
+      .upsert(seedRows as any, {
+        onConflict: 'user_id,program_slug,day,task_id' as any,
+      });
 
     if (upErr) console.warn('[ensureDayRows] upsert error', upErr);
   }
 
   /* ======== Acciones ======== */
-  async function handleStartProgram() {
+  async function startProgramNow() {
     setErrorMsg(null);
     setStarting(true);
     try {
@@ -403,6 +460,15 @@ export default function ProgramDetail({
     } finally {
       setStarting(false);
     }
+  }
+
+  function onStartClick() {
+    if (!uid) return;
+    if (hasValidCommitment(uid, slug)) {
+      void startProgramNow();
+      return;
+    }
+    setShowCommitment(true);
   }
 
   function requestReset() {
@@ -450,37 +516,36 @@ export default function ProgramDetail({
     setActiveMap(newStore);
 
     if (next) {
-      try { window.dispatchEvent(new CustomEvent('akira:celebrate')); } catch {}
+      try {
+        window.dispatchEvent(new CustomEvent('akira:celebrate'));
+      } catch {}
     }
 
     try {
       if (!uid) return;
 
-      // Sembrar todas las filas del día antes del toggle
-      const dayTasks = (data?.days.find(d => d.day === dayNum)?.tasks ?? []).map((t, i) => t.id ?? `task_${i}`);
+      const dayTasks = (
+        data?.days.find((d) => d.day === dayNum)?.tasks ?? []
+      ).map((t, i) => t.id ?? `task_${i}`);
+
       await ensureDayRows(uid, slug, dayNum, dayTasks);
 
-      // Upsert del toggle real
-      await supabase
-        .from('user_program_tasks')
-        .upsert(
-          {
-            user_id: uid,
-            program_slug: slug,
-            day: dayNum,
-            task_id: taskId,
-            completed: next,
-            completed_at: next ? new Date().toISOString() : null,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'user_id,program_slug,day,task_id' as any }
-        );
+      await supabase.from('user_program_tasks').upsert(
+        {
+          user_id: uid,
+          program_slug: slug,
+          day: dayNum,
+          task_id: taskId,
+          completed: next,
+          completed_at: next ? new Date().toISOString() : null,
+          updated_at: new Date().toISOString(),
+        } as any,
+        { onConflict: 'user_id,program_slug,day,task_id' as any }
+      );
 
-      // Pull inmediato para que quede persistido en local (sobre todo tras logout/login)
       await pullUserPrograms();
       setActiveMap(loadActive());
 
-      // Refrescar puntos/estadísticas (si estás en la pestaña)
       setPointsTick((n) => n + 1);
     } catch (e) {
       console.error('[UPT upsert EXCEPTION]', e);
@@ -515,13 +580,19 @@ export default function ProgramDetail({
         if (alive) setLoadingPoints(false);
       }
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [uid, slug, started, pointsTick, activeTab]);
 
   /* ===== Estadísticas (semana móvil real con etiquetas correctas) ===== */
   const weeklyStats = useMemo(() => {
     if (!started || !data || !active?.startedAt) {
-      return { labels: ['L','M','X','J','V','S','D'], goal: Array(7).fill(0), actual: Array(7).fill(0) };
+      return {
+        labels: ['L', 'M', 'X', 'J', 'V', 'S', 'D'],
+        goal: Array(7).fill(0),
+        actual: Array(7).fill(0),
+      };
     }
     const end = currentDay;
     const start = Math.max(1, end - 6);
@@ -538,13 +609,15 @@ export default function ProgramDetail({
 
     const goal: number[] = idxs.map((d) => {
       if (d <= 0) return 0;
-      const day = data!.days.find(x => x.day === d) ?? data!.days[d - 1];
+      const day = data!.days.find((x) => x.day === d) ?? data!.days[d - 1];
       return Math.max(0, day?.tasks?.length ?? 0);
     });
 
     const actual: number[] = idxs.map((d) => {
       if (d <= 0) return 0;
-      const map = (activeMap[slug]?.progress ?? {})[d] as Record<string, boolean> | undefined;
+      const map = (activeMap[slug]?.progress ?? {})[
+        d
+      ] as Record<string, boolean> | undefined;
       return map ? Object.values(map).filter(Boolean).length : 0;
     });
 
@@ -562,8 +635,9 @@ export default function ProgramDetail({
     );
   }
 
-const programColor = data?.themeColor ?? (PROGRAM_COLORS[slug] ?? '#111111');
-const { img: badgeSrc, title: badgeTitle } = pickBadge(slug, data as any);
+  const programColor =
+    data?.themeColor ?? (PROGRAM_COLORS[slug] ?? '#111111');
+  const { img: badgeSrc, title: badgeTitle } = pickBadge(slug, data as any);
 
   return (
     <div className="px-4 pb-24 bg-white">
@@ -571,11 +645,23 @@ const { img: badgeSrc, title: badgeTitle } = pickBadge(slug, data as any);
       {imageSrc && (
         <div className="-mx-4 mb-5 relative">
           <div className="relative w-full aspect-[16/9]">
-            <Image src={imageSrc} alt={title} fill className="object-cover" priority />
+            <Image
+              src={imageSrc}
+              alt={title}
+              fill
+              className="object-cover"
+              priority
+            />
           </div>
           <div className="absolute top-3 right-3">
             <button
-              onClick={() => { try { router.back(); } catch { location.href = '/habitos'; } }}
+              onClick={() => {
+                try {
+                  router.back();
+                } catch {
+                  location.href = '/habitos';
+                }
+              }}
               className="inline-flex items-center gap-1.5 text-[13px] font-medium px-3.5 py-2 rounded-full border border-neutral-300 bg-white/85 backdrop-blur-md shadow-md hover:bg-white active:scale-[0.98]"
             >
               <ChevronLeft className="w-4 h-4" />
@@ -586,7 +672,6 @@ const { img: badgeSrc, title: badgeTitle } = pickBadge(slug, data as any);
       )}
 
       {/* Título */}
-      {/* Título y duración (JSON primero; fallback a props) */}
       <h1 className="text-2xl font-semibold text-neutral-900">
         {data?.title ?? title}
       </h1>
@@ -611,7 +696,7 @@ const { img: badgeSrc, title: badgeTitle } = pickBadge(slug, data as any);
           <div className="mt-2 flex items-center gap-2">
             {!started ? (
               <button
-                onClick={handleStartProgram}
+                onClick={onStartClick}
                 disabled={starting || loadingData || !uid}
                 className="inline-flex items-center gap-2 rounded-2xl px-5 py-3.5 text-[15px] font-semibold bg-black text-white shadow-md active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
               >
@@ -632,7 +717,6 @@ const { img: badgeSrc, title: badgeTitle } = pickBadge(slug, data as any);
           </div>
         )}
 
-        {/* Enlace a la comunidad del programa San Silvestre */}
         {slug === 'san-silvestre-60' && (
           <a
             href="/programas/san-silvestre-60/comunidad"
@@ -648,22 +732,31 @@ const { img: badgeSrc, title: badgeTitle } = pickBadge(slug, data as any);
       <nav className="border-b bg-white sticky top-[48px] z-10 -mt-px mt-6">
         <div className="container mx-auto flex justify-between px-0 overflow-x-auto">
           {TABS.map((tab) => {
-            const locked = (tab === 'Check del día' || tab === 'Estadísticas') && !started;
+            const locked =
+              (tab === 'Check del día' || tab === 'Estadísticas') && !started;
             const isActive = activeTab === tab;
             return (
               <button
                 key={tab}
-                onClick={() => { if (!locked) setActiveTab(tab); }}
- disabled={locked}
+                onClick={() => {
+                  if (!locked) setActiveTab(tab);
+                }}
+                disabled={locked}
                 className={`relative py-3 px-3 text-sm whitespace-nowrap transition ${
                   isActive
                     ? 'font-semibold text-black after:absolute after:left-0 after:right-0 after:-bottom-[1px] after:h-[2px] after:bg-black'
                     : 'text-neutral-500 hover:text-black'
                 } ${locked ? 'opacity-60' : ''}`}
-                title={locked ? 'Bloqueado hasta que empieces el programa' : tab}
+                title={
+                  locked
+                    ? 'Bloqueado hasta que empieces el programa'
+                    : tab
+                }
               >
                 {tab}
-                {locked && <Lock className="inline ml-1 h-4 w-4 align-text-bottom" />}
+                {locked && (
+                  <Lock className="inline ml-1 h-4 w-4 align-text-bottom" />
+                )}
               </button>
             );
           })}
@@ -690,13 +783,17 @@ const { img: badgeSrc, title: badgeTitle } = pickBadge(slug, data as any);
                     <ARow
                       label="¿Qué vas a hacer?"
                       open={openAcc.do}
-                      onClick={() => setOpenAcc((s) => ({ ...s, do: !s.do }))}
+                      onClick={() =>
+                        setOpenAcc((s) => ({ ...s, do: !s.do }))
+                      }
                     />
                     {openAcc.do && (
                       <ul className="pl-4 list-disc text-[13px] text-neutral-800 space-y-1 mt-1">
                         {data!.accordions!.whatYouWillDo!.map((li, i) => (
                           <li key={`do_${i}`}>
-                            <MD className="text-[13px] leading-relaxed">{li}</MD>
+                            <MD className="text-[13px] leading-relaxed">
+                              {li}
+                            </MD>
                           </li>
                         ))}
                       </ul>
@@ -709,13 +806,17 @@ const { img: badgeSrc, title: badgeTitle } = pickBadge(slug, data as any);
                     <ARow
                       label="¿Qué vas a conseguir?"
                       open={openAcc.get}
-                      onClick={() => setOpenAcc((s) => ({ ...s, get: !s.get }))}
+                      onClick={() =>
+                        setOpenAcc((s) => ({ ...s, get: !s.get }))
+                      }
                     />
                     {openAcc.get && (
                       <ul className="pl-4 list-disc text-[14px] text-neutral-900 space-y-1 mt-1">
                         {data!.accordions!.whatYouWillGet!.map((li, i) => (
                           <li key={`get_${i}`}>
-                            <MD className="text-[14px] leading-relaxed">{li}</MD>
+                            <MD className="text-[14px] leading-relaxed">
+                              {li}
+                            </MD>
                           </li>
                         ))}
                       </ul>
@@ -728,13 +829,17 @@ const { img: badgeSrc, title: badgeTitle } = pickBadge(slug, data as any);
                     <ARow
                       label="¿Cómo se usa?"
                       open={openAcc.use}
-                      onClick={() => setOpenAcc((s) => ({ ...s, use: !s.use }))}
+                      onClick={() =>
+                        setOpenAcc((s) => ({ ...s, use: !s.use }))
+                      }
                     />
                     {openAcc.use && (
                       <ul className="pl-4 list-disc text-[13px] text-neutral-800 space-y-1 mt-1">
                         {data!.accordions!.howToUse!.map((li, i) => (
                           <li key={`use_${i}`}>
-                            <MD className="text-[13px] leading-relaxed">{li}</MD>
+                            <MD className="text-[13px] leading-relaxed">
+                              {li}
+                            </MD>
                           </li>
                         ))}
                       </ul>
@@ -748,18 +853,25 @@ const { img: badgeSrc, title: badgeTitle } = pickBadge(slug, data as any);
               <div className="mt-2">
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-sm font-medium">
-                    Progreso: Día {Math.min(currentDay, totalDays)} / {totalDays}
+                    Progreso: Día {Math.min(currentDay, totalDays)} /{' '}
+                    {totalDays}
                   </div>
-                  <div className="text-sm text-neutral-500">{progressPct}%</div>
+                  <div className="text-sm text-neutral-500">
+                    {progressPct}%
+                  </div>
                 </div>
                 <div className="h-2 w-full rounded-full bg-neutral-200 overflow-hidden">
-                  <div className="h-full bg-black transition-all" style={{ width: `${progressPct}%` }} />
+                  <div
+                    className="h-full bg-black transition-all"
+                    style={{ width: `${progressPct}%` }}
+                  />
                 </div>
               </div>
             )}
 
             <p className="text-xs text-neutral-500">
-              * El plan se revela día a día. Los checks se realizan en <strong>Mi Zona</strong>.
+              * El plan se revela día a día. Los checks se realizan en{' '}
+              <strong>Mi Zona</strong>.
             </p>
           </div>
         )}
@@ -768,12 +880,18 @@ const { img: badgeSrc, title: badgeTitle } = pickBadge(slug, data as any);
         {activeTab === 'Check del día' && (
           <>
             {!started && (
-              <div className="rounded-2xl border p-4 bg-neutral-50 text-neutral-600" style={{ borderColor: 'var(--line)' }}>
+              <div
+                className="rounded-2xl border p-4 bg-neutral-50 text-neutral-600"
+                style={{ borderColor: 'var(--line)' }}
+              >
                 <div className="flex items-center gap-2 font-medium mb-2">
                   <Lock className="h-4 w-4" />
                   Bloqueado hasta empezar el programa
                 </div>
-                <p className="text-sm mb-3">Puedes ver un ejemplo del <strong>Día 1</strong> (lectura en gris):</p>
+                <p className="text-sm mb-3">
+                  Puedes ver un ejemplo del <strong>Día 1</strong> (lectura en
+                  gris):
+                </p>
                 <div className="opacity-60 pointer-events-none">
                   <PreviewDayOne data={data} />
                 </div>
@@ -783,33 +901,52 @@ const { img: badgeSrc, title: badgeTitle } = pickBadge(slug, data as any);
             {started && data && totalDays > 0 && (
               <>
                 <p className="text-sm text-neutral-700">
-                  <strong>Estos son los retos que tienes que completar hoy</strong>, cuando los hayas hecho márcalos para ver tu progreso en este programa.
+                  <strong>
+                    Estos son los retos que tienes que completar hoy
+                  </strong>
+                  , cuando los hayas hecho márcalos para ver tu progreso en este
+                  programa.
                 </p>
 
                 <div className="mt-3">
                   <div className="h-2 w-full rounded-full bg-neutral-200 overflow-hidden">
-                    <div className="h-full bg-black transition-all" style={{ width: `${progressPct}%` }} />
+                    <div
+                      className="h-full bg-black transition-all"
+                      style={{ width: `${progressPct}%` }}
+                    />
                   </div>
                 </div>
 
                 <div className="mt-5 space-y-2">
-                  {(data.days.find(d => d.day === currentDay)?.tasks ?? []).map((t, i) => {
-                    const id = t.id ?? `task_${i}`;
-                    const done = Boolean((activeMap[slug]?.progress?.[currentDay] as any)?.[id]);
-                    const hasDetail = Boolean(t.detail);
-                    return (
-                      <CreateHabitBar
-                        key={`t_${id}`}
-                        variant="task"
-                        label={mdInlineToPlain(t.label)}
-                        checked={done}
-                        color={programColor}
-                        onToggle={() => toggleTaskDone(currentDay, id)}
-                        showInfoButton={hasDetail}
-                        onInfo={hasDetail ? () => setTaskInfoOpen({ label: t.label, detail: t.detail }) : undefined}
-                      />
-                    );
-                  })}
+                  {(data.days.find((d) => d.day === currentDay)?.tasks ?? []).map(
+                    (t, i) => {
+                      const id = t.id ?? `task_${i}`;
+                      const done = Boolean(
+                        (activeMap[slug]?.progress?.[currentDay] as any)?.[id]
+                      );
+                      const hasDetail = Boolean(t.detail);
+                      return (
+                        <CreateHabitBar
+                          key={`t_${id}`}
+                          variant="task"
+                          label={mdInlineToPlain(t.label)}
+                          checked={done}
+                          color={programColor}
+                          onToggle={() => toggleTaskDone(currentDay, id)}
+                          showInfoButton={hasDetail}
+                          onInfo={
+                            hasDetail
+                              ? () =>
+                                  setTaskInfoOpen({
+                                    label: t.label,
+                                    detail: t.detail,
+                                  })
+                              : undefined
+                          }
+                        />
+                      );
+                    }
+                  )}
                 </div>
               </>
             )}
@@ -820,12 +957,18 @@ const { img: badgeSrc, title: badgeTitle } = pickBadge(slug, data as any);
         {activeTab === 'Estadísticas' && (
           <>
             {!started && (
-              <div className="rounded-2xl border p-4 bg-neutral-50 text-neutral-600" style={{ borderColor: 'var(--line)' }}>
+              <div
+                className="rounded-2xl border p-4 bg-neutral-50 text-neutral-600"
+                style={{ borderColor: 'var(--line)' }}
+              >
                 <div className="flex items-center gap-2 font-medium">
                   <Lock className="h-4 w-4" />
                   Bloqueado hasta empezar el programa
                 </div>
-                <p className="text-sm mt-2">Cuando inicies, verás tus puntos: <b>+5</b> por check y <b>+10</b> por día completo.</p>
+                <p className="text-sm mt-2">
+                  Cuando inicies, verás tus puntos: <b>+5</b> por check y{' '}
+                  <b>+10</b> por día completo.
+                </p>
               </div>
             )}
 
@@ -833,24 +976,44 @@ const { img: badgeSrc, title: badgeTitle } = pickBadge(slug, data as any);
               <div className="space-y-6">
                 <div className="text-center">
                   <div className="text-[56px] leading-none font-extrabold tabular-nums">
-                    {loadingPoints ? 'Cargando…' : (pointsTotals?.total_points ?? 0)}
+                    {loadingPoints
+                      ? 'Cargando…'
+                      : pointsTotals?.total_points ?? 0}
                   </div>
-                  <div className="text-sm text-neutral-600 mt-1">Puntos ganados con este programa</div>
+                  <div className="text-sm text-neutral-600 mt-1">
+                    Puntos ganados con este programa
+                  </div>
                   <div className="mt-4 text-lg font-semibold">
-                    {loadingPoints ? '—' : (pointsTotals?.days_completed ?? 0)} días completando tus retos
+                    {loadingPoints ? '—' : pointsTotals?.days_completed ?? 0} días
+                    completando tus retos
                   </div>
                 </div>
 
-                <div className="rounded-2xl border p-4 bg-white" style={{ borderColor: 'var(--line)' }}>
-                  <div className="text-sm font-semibold mb-2">Reglas de puntuación</div>
+                <div
+                  className="rounded-2xl border p-4 bg-white"
+                  style={{ borderColor: 'var(--line)' }}
+                >
+                  <div className="text-sm font-semibold mb-2">
+                    Reglas de puntuación
+                  </div>
                   <ul className="text-sm text-neutral-700 list-disc pl-5 space-y-1">
-                    <li><b>+5</b> puntos por cada check completado.</li>
-                    <li><b>+10</b> puntos por completar <i>todas</i> las tareas del día.</li>
+                    <li>
+                      <b>+5</b> puntos por cada check completado.
+                    </li>
+                    <li>
+                      <b>+10</b> puntos por completar <i>todas</i> las tareas
+                      del día.
+                    </li>
                   </ul>
                 </div>
 
-                <div className="rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--line)' }}>
-                  <div className="px-4 py-3 text-sm font-semibold bg-neutral-50">Estadísticas</div>
+                <div
+                  className="rounded-2xl border overflow-hidden"
+                  style={{ borderColor: 'var(--line)' }}
+                >
+                  <div className="px-4 py-3 text-sm font-semibold bg-neutral-50">
+                    Estadísticas
+                  </div>
                   <div className="p-4">
                     <WeeklyStatsChart
                       labels={weeklyStats.labels}
@@ -859,10 +1022,15 @@ const { img: badgeSrc, title: badgeTitle } = pickBadge(slug, data as any);
                     />
                     <div className="mt-3 flex items-center gap-4 text-xs text-neutral-600">
                       <div className="flex items-center gap-2">
-                        <span className="inline-block w-4 h-[2px] bg-neutral-300" /> Objetivo
+                        <span className="inline-block w-4 h-[2px] bg-neutral-300" />{' '}
+                        Objetivo
                       </div>
                       <div className="flex items-center gap-2">
-                         <span className="inline-block w-4 h-[2px]" style={{ background: '#3b82f6' }} />
+                        <span
+                          className="inline-block w-4 h-[2px]"
+                          style={{ background: '#3b82f6' }}
+                        />{' '}
+                        Real
                       </div>
                     </div>
                   </div>
@@ -870,16 +1038,27 @@ const { img: badgeSrc, title: badgeTitle } = pickBadge(slug, data as any);
 
                 <hr className="border-neutral-200" />
 
-                <div className="rounded-2xl border p-4 bg-white flex items-center gap-4" style={{ borderColor: 'var(--line)' }}>
+                <div
+                  className="rounded-2xl border p-4 bg-white flex items-center gap-4"
+                  style={{ borderColor: 'var(--line)' }}
+                >
                   <div className="flex-1">
                     <div className="text-[15px] font-semibold">Insignia</div>
                     <p className="text-sm text-neutral-600">
-                      Consigue esta insignia al completar el reto (deberás haber completado el <b>90%</b> de los retos).
+                      Consigue esta insignia al completar el reto (deberás haber
+                      completado el <b>90%</b> de los retos).
                     </p>
-                    <div className="mt-1 text-sm font-medium text-neutral-900">{badgeTitle}</div>
+                    <div className="mt-1 text-sm font-medium text-neutral-900">
+                      {badgeTitle}
+                    </div>
                   </div>
                   <div className="w-24 h-24 relative rounded-xl overflow-hidden border border-neutral-200 bg-neutral-50">
-                    <Image src={badgeSrc} alt={`Insignia: ${badgeTitle}`} fill className="object-cover" />
+                    <Image
+                      src={badgeSrc}
+                      alt={`Insignia: ${badgeTitle}`}
+                      fill
+                      className="object-cover"
+                    />
                   </div>
                 </div>
               </div>
@@ -893,9 +1072,14 @@ const { img: badgeSrc, title: badgeTitle } = pickBadge(slug, data as any);
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-2xl p-5 w-[90%] max-w-md shadow-lg">
             <h3 className="text-lg font-semibold">¿Estás seguro?</h3>
-            <p className="text-sm text-neutral-600 mt-2">Esto dejará el programa como no iniciado.</p>
+            <p className="text-sm text-neutral-600 mt-2">
+              Esto dejará el programa como no iniciado.
+            </p>
             <div className="mt-4 grid grid-cols-2 gap-2">
-              <button onClick={cancelReset} className="rounded-xl border border-neutral-200 py-2 text-sm font-medium hover:bg-neutral-50">
+              <button
+                onClick={cancelReset}
+                className="rounded-xl border border-neutral-200 py-2 text-sm font-medium hover:bg-neutral-50"
+              >
                 Cancelar
               </button>
               <button
@@ -910,6 +1094,28 @@ const { img: badgeSrc, title: badgeTitle } = pickBadge(slug, data as any);
         </div>
       )}
 
+      {/* Modal: Formulario de compromiso */}
+      <CommitmentModal
+        open={showCommitment}
+        onClose={() => setShowCommitment(false)}
+        programTitle={data?.title ?? title}
+        defaultName={''}
+        context="program"
+        version={COMMITMENT_VERSION}
+        onAccept={(payload) => {
+          if (!uid) return;
+          setCommitment(uid, slug, {
+            name: payload.name,
+            checks: payload.checks,
+            context: 'program',
+            version: payload.version,
+            acceptedAt: payload.acceptedAt,
+          });
+          setShowCommitment(false);
+          void startProgramNow();
+        }}
+      />
+
       {/* Pop-up detalle */}
       {taskInfoOpen && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40">
@@ -922,11 +1128,17 @@ const { img: badgeSrc, title: badgeTitle } = pickBadge(slug, data as any);
             >
               <X className="w-4 h-4" />
             </button>
-            <h4 className="text-[15px] font-semibold text-neutral-900">{taskInfoOpen.label}</h4>
+            <h4 className="text-[15px] font-semibold text-neutral-900">
+              {taskInfoOpen.label}
+            </h4>
             {taskInfoOpen.detail ? (
-              <MD className="block mt-2 text-[13px] text-neutral-700">{taskInfoOpen.detail}</MD>
+              <MD className="block mt-2 text-[13px] text-neutral-700">
+                {taskInfoOpen.detail}
+              </MD>
             ) : (
-              <p className="mt-2 text-[13px] text-neutral-600">Sin descripción adicional.</p>
+              <p className="mt-2 text-[13px] text-neutral-600">
+                Sin descripción adicional.
+              </p>
             )}
             <p className="mt-4 text-xs text-neutral-500">
               * Los checks se hacen en <strong>Mi Zona</strong>.
@@ -937,7 +1149,6 @@ const { img: badgeSrc, title: badgeTitle } = pickBadge(slug, data as any);
     </div>
   );
 }
-
 /* ===== Subcomponentes ===== */
 
 function PreviewDayOne({ data }: { data: ProgramJson | null }) {
@@ -1013,7 +1224,9 @@ function DayTasksList({
               </div>
               {t.detail && isOpen && (
                 <div id={detailId} className="mt-2 ml-9 pr-2">
-                  <MD className="text-[13px] text-neutral-700">{t.detail}</MD>
+                  <MD className="text-[13px] text-neutral-700">
+                    {t.detail}
+                  </MD>
                 </div>
               )}
             </div>
@@ -1024,23 +1237,54 @@ function DayTasksList({
   );
 }
 
-const ARow: FC<{ label: string; open: boolean; onClick: () => void }> = ({ label, open, onClick }) => (
-  <button onClick={onClick} className="w-full flex items-center justify-between py-3" aria-expanded={open}>
-    <span className="text-[15px] font-semibold text-neutral-900">{label}</span>
-    {open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+const ARow: FC<{ label: string; open: boolean; onClick: () => void }> = ({
+  label,
+  open,
+  onClick,
+}) => (
+  <button
+    onClick={onClick}
+    className="w-full flex items-center justify-between py-3"
+    aria-expanded={open}
+  >
+    <span className="text-[15px] font-semibold text-neutral-900">
+      {label}
+    </span>
+    {open ? (
+      <ChevronUp className="w-4 h-4" />
+    ) : (
+      <ChevronDown className="w-4 h-4" />
+    )}
   </button>
 );
 
 /* ===== WeeklyStatsChart (SVG) ===== */
-const WeeklyStatsChart: FC<{ labels: string[]; goal: number[]; actual: number[] }> = ({ labels, goal, actual }) => {
-  const width = 640, height = 220, padL = 28, padR = 16, padT = 20, padB = 28;
+const WeeklyStatsChart: FC<{
+  labels: string[];
+  goal: number[];
+  actual: number[];
+}> = ({ labels, goal, actual }) => {
+  const width = 640,
+    height = 220,
+    padL = 28,
+    padR = 16,
+    padT = 20,
+    padB = 28;
   const n = 7;
-  const xs = (i: number) => padL + (i * (width - padL - padR)) / Math.max(1, n - 1);
+  const xs = (i: number) =>
+    padL + (i * (width - padL - padR)) / Math.max(1, n - 1);
   const maxY = Math.max(5, ...goal, ...actual);
   const niceMax = Math.max(5, Math.ceil(maxY / 5) * 5);
-  const ys = (v: number) => padT + (height - padT - padB) * (1 - v / (niceMax || 1));
+  const ys = (v: number) =>
+    padT + (height - padT - padB) * (1 - v / (niceMax || 1));
   const gridLines = 4;
-  const pathFor = (arr: number[]) => arr.map((v, i) => `${i === 0 ? 'M' : 'L'} ${xs(i)} ${ys(v)}`).join(' ');
+  const pathFor = (arr: number[]) =>
+    arr
+      .map(
+        (v, i) =>
+          `${i === 0 ? 'M' : 'L'} ${xs(i)} ${ys(v)}`
+      )
+      .join(' ');
   const goalPath = pathFor(goal);
   const actualPath = pathFor(actual);
 
@@ -1049,24 +1293,91 @@ const WeeklyStatsChart: FC<{ labels: string[]; goal: number[]; actual: number[] 
       <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto">
         <rect x="0" y="0" width={width} height={height} fill="white" />
         {[...Array(gridLines + 1)].map((_, i) => {
-          const y = padT + ((height - padT - padB) * i) / gridLines;
-          return <line key={`g${i}`} x1={padL} x2={width - padR} y1={y} y2={y} stroke="#e5e7eb" strokeWidth="1" />;
+          const y =
+            padT + ((height - padT - padB) * i) / gridLines;
+          return (
+            <line
+              key={`g${i}`}
+              x1={padL}
+              x2={width - padR}
+              y1={y}
+              y2={y}
+              stroke="#e5e7eb"
+              strokeWidth="1"
+            />
+          );
         })}
         {[0, 0.25, 0.5, 0.75, 1].map((p, i) => {
           const val = Math.round(niceMax * p);
-          const y = padT + (height - padT - padB) * (1 - p);
-          return <text key={`t${i}`} x={width - padR + 6} y={y + 4} fontSize="10" fill="#6b7280">{val}</text>;
+          const y =
+            padT + (height - padT - padB) * (1 - p);
+          return (
+            <text
+              key={`t${i}`}
+              x={width - padR + 6}
+              y={y + 4}
+              fontSize="10"
+              fill="#6b7280"
+            >
+              {val}
+            </text>
+          );
         })}
-        <path d={goalPath} fill="none" stroke="#d1d5db" strokeWidth="2" />
-        <path d={actualPath} fill="none" stroke="#3b82f6" strokeWidth="2" />
-        {goal.map((v, i) => <circle key={`pg${i}`} cx={xs(i)} cy={ys(v)} r="4" fill="white" stroke="#d1d5db" strokeWidth="2" />)}
-        {actual.map((v, i) => <circle key={`pa${i}`} cx={xs(i)} cy={ys(v)} r="4" fill="white" stroke="#3b82f6" strokeWidth="2" />)}
+        <path
+          d={goalPath}
+          fill="none"
+          stroke="#d1d5db"
+          strokeWidth="2"
+        />
+        <path
+          d={actualPath}
+          fill="none"
+          stroke="#3b82f6"
+          strokeWidth="2"
+        />
+        {goal.map((v, i) => (
+          <circle
+            key={`pg${i}`}
+            cx={xs(i)}
+            cy={ys(v)}
+            r="4"
+            fill="white"
+            stroke="#d1d5db"
+            strokeWidth="2"
+          />
+        ))}
+        {actual.map((v, i) => (
+          <circle
+            key={`pa${i}`}
+            cx={xs(i)}
+            cy={ys(v)}
+            r="4"
+            fill="white"
+            stroke="#3b82f6"
+            strokeWidth="2"
+          />
+        ))}
         {labels.map((l, i) => (
-          <text key={`lx${i}`} x={xs(i)} y={height - padB + 16} textAnchor="middle" fontSize="11" fill="#6b7280">
+          <text
+            key={`lx${i}`}
+            x={xs(i)}
+            y={height - padB + 16}
+            textAnchor="middle"
+            fontSize="11"
+            fill="#6b7280"
+          >
             {l || ' '}
           </text>
         ))}
-        <text x={width - 4} y={padT - 6} textAnchor="end" fontSize="12" fill="#6b7280">Retos</text>
+        <text
+          x={width - 4}
+          y={padT - 6}
+          textAnchor="end"
+          fontSize="12"
+          fill="#6b7280"
+        >
+          Retos
+        </text>
       </svg>
     </div>
   );

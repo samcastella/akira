@@ -36,6 +36,14 @@ import {
 
 import { pushStartProgram, pushResetProgram, pullUserPrograms } from '@/lib/programSync';
 
+/* === Compromiso (mismo sistema que ProgramDetail) === */
+import CommitmentModal from '@/components/commitment/CommitmentModal';
+import {
+  hasValidCommitment,
+  setCommitment,
+  COMMITMENT_VERSION,
+} from '@/lib/commitments';
+
 /* =========================================================================================
    Carga ProgramJson desde /public/data/programs/[slug].json?v=BUILD_V (client-side)
    ========================================================================================= */
@@ -294,6 +302,9 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title }: Props)
   const [resetting, setResetting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // Compromiso
+  const [showCommitment, setShowCommitment] = useState(false);
+
   // Puntos
   const [pointsTotals, setPointsTotals] = useState<ProgramPointsTotals | null>(null);
   const [loadingPoints, setLoadingPoints] = useState(false);
@@ -471,6 +482,17 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title }: Props)
       setErrorMsg('No se pudo iniciar el programa. Inténtalo de nuevo.');
     } finally { setStarting(false); }
   }
+
+  // Gate de compromiso (igual que en ProgramDetail)
+  function onStartClick() {
+    if (!uid) return;
+    if (hasValidCommitment(uid, slug)) {
+      void handleStartProgram();
+      return;
+    }
+    setShowCommitment(true);
+  }
+
   async function confirmReset() {
     setErrorMsg(null); setResetting(true);
     try {
@@ -579,7 +601,7 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title }: Props)
         <div className="mt-1 flex items-center gap-2">
           {!started ? (
             <button
-              onClick={handleStartProgram}
+              onClick={onStartClick}
               disabled={starting || !uid}
               className="inline-flex items-center gap-2 rounded-2xl px-5 py-3.5 text-[15px] font-semibold bg-black text-white shadow-md active:scale-[0.98] disabled:opacity-60"
             >
@@ -840,6 +862,28 @@ export default function ProgramCommunityDetail({ slug, imageSrc, title }: Props)
         title={`${displayTitle} · ${infoTitle}`}
         detail={infoDetail}
         onClose={closeInfo}
+      />
+
+      {/* Modal: Formulario de compromiso (igual que en ProgramDetail) */}
+      <CommitmentModal
+        open={showCommitment}
+        onClose={() => setShowCommitment(false)}
+        programTitle={program?.title ?? displayTitle}
+        defaultName={'' /* si quieres, aquí podríamos pasar perfil.nombre */}
+        context="program"
+        version={COMMITMENT_VERSION}
+        onAccept={(payload) => {
+          if (!uid) return;
+          setCommitment(uid, slug, {
+            name: payload.name,
+            checks: payload.checks,
+            context: 'program',
+            version: payload.version,
+            acceptedAt: payload.acceptedAt,
+          });
+          setShowCommitment(false);
+          void handleStartProgram();
+        }}
       />
     </div>
   );

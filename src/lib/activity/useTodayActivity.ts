@@ -5,8 +5,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { loadActive, saveActive, type LocalProgram } from '@/lib/programsLocal';
 import { useAuthUserId } from '@/lib/user';
 import { supabase } from '@/lib/supabaseClient';
-import { resolveProgramDef } from '@/data/programs'; // usa el util existente de defs (si está)
-import { loadProgramJson } from '@/lib/programJson';
+import { resolveProgramDef } from '@/data/programs';
+import { loadProgramJson, type ProgramJson } from '@/lib/programJson';
 
 /* ===== Tipos públicos para hoy ===== */
 export type ProgramToday = {
@@ -31,43 +31,14 @@ export type TodaySuggestion = {
   payload?: any;
 };
 
-/* ===== Build tag para bustear caché de JSON ===== */
-const BUILD_V = process.env.NEXT_PUBLIC_BUILD_VERSION || 'dev';
-
-/* Lee JSON fresco desde la API; fallback a require del bundle */
-// Ahora acepta opcionalmente AbortSignal
-async function fetchProgramJsonFresh(slug: string, signal?: AbortSignal) {
-  const url = `/data/programs/${encodeURIComponent(slug)}.json?v=${encodeURIComponent(BUILD_V)}`;
-  const res = await fetch(url, { cache: 'no-store', signal });
-  if (!res.ok) throw new Error(`HTTP ${res.status} en ${url}`);
-  return res.json();
-}
-
-function tryGetProgramJsonBundled(slug: string): any | null {
-  // Fallback síncrono SOLO si el JSON está empaquetado en el bundle.
-  // Si no está, devolvemos null y usaremos el loader “fresh” desde /public.
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    // @ts-ignore – dynamic require como último recurso
-    const m = require(`@/data/programs/${slug}.json`);
-    return m?.default ?? m ?? null;
-  } catch {
-    return null;
-  }
-}
-
-function getDayDef(json: any, day: number) {
-  return json?.days?.find((x: any) => x.day === day) ?? json?.days?.[day - 1];
-}
-
 /* ===== Hook principal ===== */
 export function useTodayActivity() {
   const uid = useAuthUserId();
   const todayISO = useISODate(new Date());
   const [version, setVersion] = useState(0); // fuerza re-render tras toggle
 
-  /* Cache en memoria de JSON frescos por slug */
-  const [programJsonCache, setProgramJsonCache] = useState<Record<string, any>>({});
+  /* Cache en memoria de JSON por slug */
+  const [programJsonCache, setProgramJsonCache] = useState<Record<string, ProgramJson>>({});
 
   /* Firma de slugs activos (empezados y no completados) para re-disparar fetch */
   const activeSlugsSig = useMemo(() => {
@@ -82,7 +53,7 @@ export function useTodayActivity() {
     return JSON.stringify(slugs);
   }, [version, todayISO]);
 
-  // Descarga JSON actualizados para los slugs activos; reintenta al cambiar build o slugs
+  // Descarga JSON actualizados para los slugs activos usando el loader unificado
   useEffect(() => {
     const store = loadActive();
     const activeSlugs = Object.entries(store)
@@ -95,20 +66,21 @@ export function useTodayActivity() {
     if (!activeSlugs.length) return;
 
     let cancelled = false;
-    const controller = new AbortController();
 
     (async () => {
       await Promise.all(
         activeSlugs.map(async (slug) => {
           try {
-            const fresh = await fetchProgramJsonFresh(slug, controller.signal);
-            if (!cancelled) {
-              setProgramJsonCache((prev) => (prev[slug] ? prev : { ...prev, [slug]: fresh }));
-              // al llegar “fresh” forzamos re-render para sustituir bundled
+            const fresh = await loadProgramJson(slug); // ✅ sin AbortSignal
+            if (!cancelled && fresh) {
+              setProgramJsonCache((prev) =>
+                prev[slug] ? prev : { ...prev, [slug]: fresh }
+              );
               setVersion((v) => v + 1);
             }
-          } catch {
-            // si falla la red/API, nos quedamos con bundled
+          } catch (err) {
+            // si falla la red/API, simplemente no mostramos ese programa hoy
+            console.warn('[useTodayActivity] loadProgramJson error', slug, err);
           }
         })
       );
@@ -116,13 +88,12 @@ export function useTodayActivity() {
 
     return () => {
       cancelled = true;
-      controller.abort();
     };
-  }, [BUILD_V, activeSlugsSig]);
+  }, [activeSlugsSig]);
 
-  /* Getter: usa fresco si existe; si no, cae al bundled */
+  /* Getter: si hay fresco en caché, úsalo; si no hay, devuelve null */
   const getJson = useCallback(
-    (slug: string) => programJsonCache[slug] ?? tryGetProgramJsonBundled(slug),
+    (slug: string) => programJsonCache[slug] ?? null,
     [programJsonCache]
   );
 
@@ -143,7 +114,7 @@ export function useTodayActivity() {
       if (!started || completed) return; // terminado → fuera
 
       const json = getJson(slug);
-      if (!json) return; // ⬅ guard: aún no disponible
+      if (!json) return; // aún no disponible
 
       const totalDays = json?.days?.length ?? json?.durationDays ?? 0;
       if (!totalDays) return;
@@ -293,7 +264,10 @@ export function useTodayActivity() {
   /* ===== Históricos / series ===== */
   const historicalPoints = 0; // fallback hasta conectar RPC/BD
   const programsCompleted = 0; // fallback hasta conectar RPC/BD
-  const weeklySeries = useMemo(() => buildWeeklySeriesReal(getJson), [todayISO, version, getJson]);
+  const weeklySeries = useMemo(
+    () => buildWeeklySeriesReal(getJson),
+    [todayISO, version, getJson]
+  );
 
   return {
     uid,
@@ -315,7 +289,6 @@ export function useTodayActivity() {
     weeklySeries,
 
     toggleProgramTask: (slug: string, day: number, taskId: string) => {
-      // Marca/desmarca en local
       const store = loadActive();
       const lp = store[slug] as LocalProgram & {
         progress?: Record<number, Record<string, boolean>>;
@@ -335,8 +308,11 @@ export function useTodayActivity() {
         const isLastDay = day >= totalDays;
         if (isLastDay) {
           const dayDef = getDayDef(json, day);
-          const ids = ((dayDef?.tasks ?? []) as Array<{ id?: string }>).map((t, i) => t.id ?? `task_${i}`);
-          const allDone = ids.length > 0 && ids.every((id) => lp.progress![day]?.[id]);
+          const ids = ((dayDef?.tasks ?? []) as Array<{ id?: string }>).map(
+            (t, i) => t.id ?? `task_${i}`
+          );
+          const allDone =
+            ids.length > 0 && ids.every((id) => lp.progress![day]?.[id]);
           if (allDone) {
             lp.completedAt = Date.now();
           }
@@ -381,23 +357,31 @@ function dayIdxSince(startedAt: number, when: Date) {
   return Math.floor((b - a) / 86_400_000) + 1;
 }
 function colorFor(slug: string) {
-try {
-  const def = resolveProgramDef?.(slug as string);
-  if (def?.themeColor) return def.themeColor as string;
-} catch {}
+  try {
+    const def = resolveProgramDef?.(slug as string);
+    if (def?.themeColor) return def.themeColor as string;
+  } catch {}
   if ((slug || '').includes('detox')) return '#0a7cff';
   if ((slug || '').includes('lectura')) return '#f59e0b';
   return '#111';
 }
+function getDayDef(json: ProgramJson | any, day: number) {
+  return json?.days?.find((x: any) => x.day === day) ?? json?.days?.[day - 1];
+}
 
 /* ===== weeklySeries real (4 semanas, Lun→Dom) usando getJson() ===== */
-function buildWeeklySeriesReal(getJson: (slug: string) => any) {
+function buildWeeklySeriesReal(getJson: (slug: string) => ProgramJson | null) {
   const labels = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
   const store = loadActive();
   const today = new Date();
   const week0Start = startOfWeekMonday(today);
 
-  const out: Array<{ labels: string[]; goal: number[]; actual: number[]; range: [string, string] }> = [];
+  const out: Array<{
+    labels: string[];
+    goal: number[];
+    actual: number[];
+    range: [string, string];
+  }> = [];
 
   for (let w = 0; w < 4; w++) {
     const start = addDays(week0Start, -7 * w);
@@ -424,17 +408,24 @@ function buildWeeklySeriesReal(getJson: (slug: string) => any) {
         const dayNum = dayIdxSince(lp.startedAt!, d);
         if (dayNum < 1 || dayNum > totalDays) continue;
 
-        const dayDef = json?.days?.find((x: any) => x.day === dayNum) ?? json?.days?.[dayNum - 1];
+        const dayDef =
+          json?.days?.find((x: any) => x.day === dayNum) ??
+          json?.days?.[dayNum - 1];
         const planned = Math.max(0, dayDef?.tasks?.length ?? 0);
         goal[i] += planned;
 
-        const doneMap = (lp.progress?.[dayNum] as Record<string, boolean> | undefined) ?? {};
+        const doneMap =
+          (lp.progress?.[dayNum] as Record<string, boolean> | undefined) ??
+          {};
         const done = Object.values(doneMap).filter(Boolean).length;
         actual[i] += done;
       }
     }
 
-    const fmt = (d: Date) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const fmt = (d: Date) =>
+      `${String(d.getDate()).padStart(2, '0')}/${String(
+        d.getMonth() + 1
+      ).padStart(2, '0')}`;
     const range: [string, string] = [fmt(start), fmt(addDays(start, 6))];
 
     out.push({ labels, goal, actual, range });
