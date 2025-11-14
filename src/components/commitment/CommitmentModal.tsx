@@ -44,25 +44,26 @@ export default function CommitmentModal({
   const descId = useId();
 
   const [checked, setChecked] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(POINTS.map(p => [p.id, false])),
+    Object.fromEntries(POINTS.map((p) => [p.id, false])),
   );
   const [name, setName] = useState(defaultName);
 
-  const allOk = POINTS.every(p => checked[p.id]) && name.trim().length >= 2;
+  const allOk = POINTS.every((p) => checked[p.id]) && name.trim().length >= 2;
 
-  // Focus trap básico y cierre con ESC
+  // Cierre con ESC y enfoque inicial (sin abrir teclado)
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
     document.addEventListener('keydown', onKey);
-    // focus inicial en el input de nombre
-    const input = dialogRef.current?.querySelector(
-      'input[name="signature"]',
-    ) as HTMLInputElement | null;
-    input?.focus();
-    return () => document.removeEventListener('keydown', onKey);
+
+    // Enfocamos el botón de cerrar para accesibilidad, pero NO el input (evitamos teclado+zoom)
+    closeBtnRef.current?.focus();
+
+    return () => {
+      document.removeEventListener('keydown', onKey);
+    };
   }, [open, onClose]);
 
   // Evitar scroll del body al abrir
@@ -93,7 +94,7 @@ export default function CommitmentModal({
       {/* Card */}
       <div
         ref={dialogRef}
-        className="relative z-[101] w-[min(560px,92vw)] max-h-[60vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl sm:p-6"
+        className="relative z-[101] w-[min(520px,90vw)] max-h-[52vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl sm:p-6"
       >
         {/* Close */}
         <button
@@ -111,7 +112,7 @@ export default function CommitmentModal({
         </h2>
 
         {/* Eliminado: título del programa debajo del heading */}
-        {/* 
+        {/*
         {programTitle && (
           <p className="mb-4 text-sm text-gray-600">
             Programa:{' '}
@@ -130,12 +131,12 @@ export default function CommitmentModal({
 
         {/* Checks */}
         <ul className="mb-5 space-y-3">
-          {POINTS.map(p => (
+          {POINTS.map((p) => (
             <li key={p.id}>
               <label className="group flex cursor-pointer select-none items-start gap-3">
                 <span
                   className={[
-                    'mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-md border',
+                    'inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-[5px] border',
                     checked[p.id]
                       ? 'border-black bg-black text-white'
                       : 'border-gray-300 bg-white',
@@ -148,8 +149,8 @@ export default function CommitmentModal({
                   type="checkbox"
                   className="sr-only"
                   checked={!!checked[p.id]}
-                  onChange={e =>
-                    setChecked(prev => ({ ...prev, [p.id]: e.target.checked }))
+                  onChange={(e) =>
+                    setChecked((prev) => ({ ...prev, [p.id]: e.target.checked }))
                   }
                 />
                 <span className="text-[15px] leading-6 text-gray-900">
@@ -173,7 +174,7 @@ export default function CommitmentModal({
             id={nameInputId}
             name="signature"
             value={name}
-            onChange={e => setName(e.target.value)}
+            onChange={(e) => setName(e.target.value)}
             placeholder="Escribe tu nombre"
             autoComplete="name"
             aria-invalid={name.trim().length < 2 ? 'true' : 'false'}
@@ -194,7 +195,7 @@ export default function CommitmentModal({
           onClick={() =>
             onAccept({
               name: name.trim(),
-              checks: POINTS.map(p => p.id),
+              checks: POINTS.map((p) => p.id),
               acceptedAt: Date.now(),
               version,
             })
