@@ -300,8 +300,8 @@ export default function ProgramasPage() {
 
         <SectionTitle title="Tus programas" />
         <div className="grid grid-cols-3 gap-3 items-start">
-          <button
-            onClick={() => setSoonOpen(true)}
+          <Link
+            href="/programas/guardados"
             className="block rounded-2xl p-2 text-left active:scale-[0.99] transition"
           >
             <div className="w-full aspect-square rounded-xl overflow-hidden mb-2">
@@ -317,10 +317,10 @@ export default function ProgramasPage() {
             <div className="text-neutral-500 text-[12px] mt-1">
               {savedCount} programas
             </div>
-          </button>
+          </Link>
 
-          <button
-            onClick={() => setSoonOpen(true)}
+          <Link
+            href="/programas/activos"
             className="block rounded-2xl p-2 text-left active:scale-[0.99] transition"
           >
             <div className="w-full aspect-square rounded-xl overflow-hidden mb-2">
@@ -336,10 +336,10 @@ export default function ProgramasPage() {
             <div className="text-neutral-500 text-[12px] mt-1">
               {activeCount} activos
             </div>
-          </button>
+          </Link>
 
           <Link
-            href="/404"
+            href="/programas/todos"
             className="block rounded-2xl p-2 text-left active:scale-[0.99] transition"
           >
             <div className="w-full aspect-square rounded-xl overflow-hidden mb-2">
