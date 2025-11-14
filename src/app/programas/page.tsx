@@ -35,8 +35,11 @@ const ALL_PROGRAMS: Program[] = PROGRAMS.map(toIndexCard) as Program[];
 /* =========================== LS utils =========================== */
 function loadSaved(): Set<string> {
   if (typeof window === 'undefined') return new Set();
-  try { return new Set(JSON.parse(localStorage.getItem(LS_SAVED) || '[]')); }
-  catch { return new Set(); }
+  try {
+    return new Set(JSON.parse(localStorage.getItem(LS_SAVED) || '[]'));
+  } catch {
+    return new Set();
+  }
 }
 function saveSaved(setIds: Set<string>) {
   if (typeof window === 'undefined') return;
@@ -79,8 +82,14 @@ function SoonModal({ open, onClose }: { open: boolean; onClose: () => void }) {
 }
 
 function ProgramCard({
-  program, saved, onToggleSave,
-}: { program: Program; saved: boolean; onToggleSave: (id: string) => void }) {
+  program,
+  saved,
+  onToggleSave,
+}: {
+  program: Program;
+  saved: boolean;
+  onToggleSave: (id: string) => void;
+}) {
   const isAvailable = AVAILABLE_PROGRAM_SLUGS.has(program.slug);
   const href = isAvailable ? `/programas/${program.slug}` : '/404';
 
@@ -96,19 +105,26 @@ function ProgramCard({
             className="w-full h-full object-cover"
             priority={false}
           />
-        ) : <div className="w-full h-full" />}
+        ) : (
+          <div className="w-full h-full" />
+        )}
       </div>
 
       <div className="flex-1 min-w-0">
         <h4 className="text-[15px] font-semibold leading-snug">{program.title}</h4>
-        <p className="text-[13px] text-neutral-500 mt-1 leading-snug">{program.description}</p>
+        <p className="text-[13px] text-neutral-500 mt-1 leading-snug">
+          {program.description}
+        </p>
         <p className="text-[12px] text-neutral-400 mt-2">{program.days} días</p>
       </div>
 
       <button
         type="button"
         aria-label={saved ? 'Quitar de guardados' : 'Guardar programa'}
-        onClick={(e) => { e.preventDefault(); onToggleSave(program.id); }}
+        onClick={(e) => {
+          e.preventDefault();
+          onToggleSave(program.id);
+        }}
         className="p-2 rounded-full hover:bg-neutral-100 active:scale-95 transition"
       >
         {saved ? <BookmarkCheck className="w-5 h-5" /> : <Bookmark className="w-5 h-5" />}
@@ -138,10 +154,11 @@ export default function ProgramasPage() {
     const base = existingPrograms;
     const q = query.trim().toLowerCase();
     if (!q) return base;
-    return base.filter((p) =>
-      p.title.toLowerCase().includes(q) ||
-      p.description.toLowerCase().includes(q) ||
-      p.categories.some((c) => c.toLowerCase().includes(q))
+    return base.filter(
+      (p) =>
+        p.title.toLowerCase().includes(q) ||
+        p.description.toLowerCase().includes(q) ||
+        p.categories.some((c) => c.toLowerCase().includes(q))
     );
   }, [query, existingPrograms]);
 
@@ -182,12 +199,14 @@ export default function ProgramasPage() {
         />
       </div>
 
-      {/* Tu contenido original */}
+      {/* Contenido */}
       <div className="px-4 pb-28 pt-4">
         <h1 className="text-3xl font-semibold tracking-tight mb-3">Programas</h1>
 
         <div className="mb-6">
-          <label className="sr-only" htmlFor="search">Buscar programas</label>
+          <label className="sr-only" htmlFor="search">
+            Buscar programas
+          </label>
           <input
             id="search"
             value={query}
@@ -203,7 +222,12 @@ export default function ProgramasPage() {
         />
         <div className="divide-y divide-neutral-100">
           {good.map((p) => (
-            <ProgramCard key={p.id} program={p} saved={saved.has(p.id)} onToggleSave={toggleSave} />
+            <ProgramCard
+              key={p.id}
+              program={p}
+              saved={saved.has(p.id)}
+              onToggleSave={toggleSave}
+            />
           ))}
         </div>
         <button
@@ -222,7 +246,12 @@ export default function ProgramasPage() {
             <p className="text-sm text-neutral-500 py-2">Próximamente</p>
           ) : (
             bad.map((p) => (
-              <ProgramCard key={p.id} program={p} saved={saved.has(p.id)} onToggleSave={toggleSave} />
+              <ProgramCard
+                key={p.id}
+                program={p}
+                saved={saved.has(p.id)}
+                onToggleSave={toggleSave}
+              />
             ))
           )}
         </div>
@@ -238,41 +267,94 @@ export default function ProgramasPage() {
           {[
             { label: 'Salud', cat: 'salud' as const, img: '/images/cat/health.jpg' },
             { label: 'Bienestar', cat: 'bienestar' as const, img: '/images/cat/wellbeing.jpg' },
-            { label: 'Productividad', cat: 'productividad' as const, img: '/images/cat/productivity.jpg' },
-            { label: 'Malos hábitos', cat: 'malos-habitos' as const, img: '/images/cat/badhabits.jpg' },
+            {
+              label: 'Productividad',
+              cat: 'productividad' as const,
+              img: '/images/cat/productivity.jpg',
+            },
+            {
+              label: 'Malos hábitos',
+              cat: 'malos-habitos' as const,
+              img: '/images/cat/badhabits.jpg',
+            },
           ].map((c) => (
-            <Link key={c.cat} href="/404" className="relative overflow-hidden h-28 w-full text-left active:scale-[0.99] transition">
-              <Image src={c.img} alt={c.label} width={1920} height={640} className="w-full h-full object-cover" />
+            <Link
+              key={c.cat}
+              href={`/programas/categoria/${c.cat}`}
+              className="relative overflow-hidden h-28 w-full text-left active:scale-[0.99] transition"
+            >
+              <Image
+                src={c.img}
+                alt={c.label}
+                width={1920}
+                height={640}
+                className="w-full h-full object-cover"
+              />
               <div className="absolute inset-0 bg-black/25" />
-              <div className="absolute left-3 bottom-2 text-white text-lg font-semibold drop-shadow">{c.label}</div>
+              <div className="absolute left-3 bottom-2 text-white text-lg font-semibold drop-shadow">
+                {c.label}
+              </div>
             </Link>
           ))}
         </div>
 
         <SectionTitle title="Tus programas" />
         <div className="grid grid-cols-3 gap-3 items-start">
-          <button onClick={() => setSoonOpen(true)} className="block rounded-2xl p-2 text-left active:scale-[0.99] transition">
+          <button
+            onClick={() => setSoonOpen(true)}
+            className="block rounded-2xl p-2 text-left active:scale-[0.99] transition"
+          >
             <div className="w-full aspect-square rounded-xl overflow-hidden mb-2">
-              <Image src="/images/ui/programs-saved.jpg" alt="Programas guardados" width={1000} height={1000} className="w-full h-full object-cover" />
+              <Image
+                src="/images/ui/programs-saved.jpg"
+                alt="Programas guardados"
+                width={1000}
+                height={1000}
+                className="w-full h-full object-cover"
+              />
             </div>
             <div className="text-[13px] font-medium">Guardado</div>
-            <div className="text-neutral-500 text-[12px] mt-1">{savedCount} programas</div>
+            <div className="text-neutral-500 text-[12px] mt-1">
+              {savedCount} programas
+            </div>
           </button>
 
-          <button onClick={() => setSoonOpen(true)} className="block rounded-2xl p-2 text-left active:scale-[0.99] transition">
+          <button
+            onClick={() => setSoonOpen(true)}
+            className="block rounded-2xl p-2 text-left active:scale-[0.99] transition"
+          >
             <div className="w-full aspect-square rounded-xl overflow-hidden mb-2">
-              <Image src="/images/ui/programs-active.jpg" alt="Programas activos" width={1000} height={1000} className="w-full h-full object-cover" />
+              <Image
+                src="/images/ui/programs-active.jpg"
+                alt="Programas activos"
+                width={1000}
+                height={1000}
+                className="w-full h-full object-cover"
+              />
             </div>
             <div className="text-[13px] font-medium">Programas activos</div>
-            <div className="text-neutral-500 text-[12px] mt-1">{activeCount} activos</div>
+            <div className="text-neutral-500 text-[12px] mt-1">
+              {activeCount} activos
+            </div>
           </button>
 
-          <Link href="/404" className="block rounded-2xl p-2 text-left active:scale-[0.99] transition">
+          <Link
+            href="/404"
+            className="block rounded-2xl p-2 text-left active:scale-[0.99] transition"
+          >
             <div className="w-full aspect-square rounded-xl overflow-hidden mb-2">
-              <Image src="/images/ui/programs-all.jpg" alt="Todos los programas" width={1000} height={1000} className="w-full h-full object-cover" />
+              <Image
+                src="/images/ui/programs-all.jpg"
+                alt="Todos los programas"
+                width={1000}
+                height={1000}
+                className="w-full h-full object-cover"
+              />
             </div>
             <div className="text-[13px] font-medium">Todos los programas</div>
-            <div className="text-neutral-500 text-[12px] mt-1">{allCount} en total</div>
+            <div className="text-neutral-500 text-[12px] mt-1">
+              {allCount} en total
+            </div>
           </Link>
         </div>
       </div>
