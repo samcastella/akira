@@ -8,6 +8,7 @@ const TABS = [
   { href: '/amigos/retos', label: 'Retos' },
   { href: '/amigos/mis-amigos', label: 'Mis amigos' },
   { href: '/amigos/rankings', label: 'Rankings' },
+  { href: '/amigos/articulos', label: 'Artículos' }, // 🆕 ahora es la quinta posición
 ];
 
 export default function AmigosLayout({ children }: { children: React.ReactNode }) {
