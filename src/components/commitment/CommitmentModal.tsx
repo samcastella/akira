@@ -32,7 +32,7 @@ const POINTS = [
 export default function CommitmentModal({
   open,
   onClose,
-  programTitle,
+  programTitle, // seguimos aceptando la prop por compatibilidad, pero ya no la mostramos
   defaultName = '',
   context = 'program',
   onAccept,
@@ -58,7 +58,9 @@ export default function CommitmentModal({
     };
     document.addEventListener('keydown', onKey);
     // focus inicial en el input de nombre
-    const input = dialogRef.current?.querySelector('input[name="signature"]') as HTMLInputElement | null;
+    const input = dialogRef.current?.querySelector(
+      'input[name="signature"]',
+    ) as HTMLInputElement | null;
     input?.focus();
     return () => document.removeEventListener('keydown', onKey);
   }, [open, onClose]);
@@ -68,7 +70,9 @@ export default function CommitmentModal({
     if (!open) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = prev; };
+    return () => {
+      document.body.style.overflow = prev;
+    };
   }, [open]);
 
   if (!open) return null;
@@ -81,12 +85,15 @@ export default function CommitmentModal({
       className="fixed inset-0 z-[100] flex items-center justify-center"
     >
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        onClick={onClose}
+      />
 
       {/* Card */}
       <div
         ref={dialogRef}
-        className="relative z-[101] w-[min(560px,92vw)] rounded-2xl bg-white p-6 shadow-xl"
+        className="relative z-[101] w-[min(560px,92vw)] max-h-[60vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl sm:p-6"
       >
         {/* Close */}
         <button
@@ -99,16 +106,26 @@ export default function CommitmentModal({
           <X size={18} />
         </button>
 
-        <h2 className="mb-2 text-2xl font-semibold tracking-tight">
+        <h2 className="mb-3 text-2xl font-semibold tracking-tight">
           Formulario de compromiso
         </h2>
+
+        {/* Eliminado: título del programa debajo del heading */}
+        {/* 
         {programTitle && (
           <p className="mb-4 text-sm text-gray-600">
-            Programa: <span className="font-medium text-gray-800">{programTitle}</span>
+            Programa:{' '}
+            <span className="font-medium text-gray-800">{programTitle}</span>
           </p>
         )}
-        <p id={descId} className="mb-5 text-[15px] leading-relaxed text-gray-700">
-          Antes de empezar un programa es necesario que te comprometas contigo mismo a algunas cosas:
+        */}
+
+        <p
+          id={descId}
+          className="mb-5 text-[15px] leading-relaxed text-gray-700"
+        >
+          Antes de empezar un programa es necesario que te comprometas contigo
+          mismo a algunas cosas:
         </p>
 
         {/* Checks */}
@@ -135,7 +152,9 @@ export default function CommitmentModal({
                     setChecked(prev => ({ ...prev, [p.id]: e.target.checked }))
                   }
                 />
-                <span className="text-[15px] leading-6 text-gray-900">{p.label}</span>
+                <span className="text-[15px] leading-6 text-gray-900">
+                  {p.label}
+                </span>
               </label>
             </li>
           ))}
@@ -147,7 +166,8 @@ export default function CommitmentModal({
             htmlFor={nameInputId}
             className="mb-1 block text-sm font-medium text-gray-800"
           >
-            Firma: <span className="font-normal text-gray-600">(tu nombre)</span>
+            Firma:{' '}
+            <span className="font-normal text-gray-600">(tu nombre)</span>
           </label>
           <input
             id={nameInputId}
@@ -157,10 +177,13 @@ export default function CommitmentModal({
             placeholder="Escribe tu nombre"
             autoComplete="name"
             aria-invalid={name.trim().length < 2 ? 'true' : 'false'}
-            className="w-full rounded-xl border border-gray-300 px-3 py-2 text-[15px] outline-none placeholder:text-gray-400 focus:border-gray-500 focus:ring-0"
+            // text-base (16px) para evitar el auto-zoom de Safari al enfocar el input
+            className="w-full rounded-xl border border-gray-300 px-3 py-2 text-base outline-none placeholder:text-gray-400 focus:border-gray-500 focus:ring-0"
           />
           {name.trim().length < 2 && (
-            <p className="mt-1 text-xs text-gray-500">Introduce al menos 2 caracteres.</p>
+            <p className="mt-1 text-xs text-gray-500">
+              Introduce al menos 2 caracteres.
+            </p>
           )}
         </div>
 
